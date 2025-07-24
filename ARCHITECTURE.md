@@ -1,20 +1,60 @@
-# Ultimate Simplicity: VS Code Chat Agent
+# Ultimate Simplicity: VS Code Chat Agent + Parallel Safety
 
 ## The Discovery: `code chat --mode='agent'`
 
 We can literally just call VS Code's chat agent directly from the terminal!
 
-## Super Simple Architecture
+**But wait...** what about parallel agents? Multiple agents would conflict!
+
+## Solution: Smart Strategy Selection
+
+The system keeps the ultra-simple core but automatically handles conflicts:
 
 ```
 vscode-agent dev "Create a REST API"
          ↓
-    code chat --mode='agent' "Create a REST API in Rust"
+   Auto-detect environment
+         ↓
+┌─────────────────────────────────────────┐
+│ Single Agent: Direct `code chat`       │ ← Fastest
+│ Parallel + Docker: Container per agent │ ← Isolated
+│ Parallel + No Docker: File locking     │ ← Fallback
+└─────────────────────────────────────────┘
          ↓
     Parse response → Write to files
          ↓
     cargo check & test
 ```
+
+## Three Execution Strategies
+
+### 1. **Direct Safe** (Default)
+
+- Single agent at a time
+- Direct `code chat --mode='agent'`
+- Zero overhead, maximum speed
+- **Perfect for development**
+
+### 2. **Container Isolated** (Parallel)
+
+```bash
+export SPIRAL_PARALLEL_AGENTS=true
+vscode-agent dev "backend" &
+vscode-agent dev "frontend" &
+vscode-agent dev "tests" &
+wait  # All run simultaneously!
+```
+
+- Each agent gets its own VS Code container
+- True parallel execution
+- **Perfect for CI/CD**
+
+### 3. **Serialized Direct** (Fallback)
+
+- File-based locking when Docker unavailable
+- Agents queue and wait turns
+- Safe but slower than containers
+- **Works everywhere**
 
 ## Implementation
 

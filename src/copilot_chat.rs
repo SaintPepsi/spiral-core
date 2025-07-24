@@ -2,6 +2,7 @@ use anyhow::Result;
 use regex::Regex;
 use crate::workspace::TaskWorkspace;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::io;
 use chrono::Utc;
 
 // Global counter for unique agent IDs
@@ -38,21 +39,78 @@ pub fn generate_container_name() -> String {
     format!("agent-{}-{}", hostname, counter)
 }
 
+/// Check if we're already running inside a container
+fn is_running_in_container() -> bool {
+    // Check for common container indicators
+    
+    // 1. Check if /.dockerenv exists (Docker containers)
+    if std::path::Path::new("/.dockerenv").exists() {
+        return true;
+    }
+    
+    // 2. Check if we're in a dev container (VS Code dev containers set this)
+    if std::env::var("REMOTE_CONTAINERS").is_ok() || 
+       std::env::var("CODESPACES").is_ok() ||
+       std::env::var("VSCODE_REMOTE_CONTAINERS_SESSION").is_ok() {
+        return true;
+    }
+    
+    // 3. Check cgroup (Linux containers)
+    if let Ok(cgroup_content) = std::fs::read_to_string("/proc/1/cgroup") {
+        if cgroup_content.contains("docker") || cgroup_content.contains("containerd") {
+            return true;
+        }
+    }
+    
+    // 4. Check if hostname suggests we're in a container
+    if let Ok(hostname) = std::env::var("HOSTNAME") {
+        if hostname.len() == 12 && hostname.chars().all(|c| c.is_ascii_hexdigit()) {
+            // Looks like a Docker container ID
+            return true;
+        }
+    }
+    
+    false
+}
+
 pub async fn ask_chat_agent(prompt: &str) -> Result<String> {
     println!("🤖 Asking VS Code Chat Agent: {}", prompt);
 
-    // Check if we should use containerized VS Code
-    let use_container = std::env::var("VSCODE_AGENT_USE_CONTAINER")
-        .unwrap_or_else(|_| "auto".to_string());
-    
-    if use_container == "true" || (use_container == "auto" && should_use_container().await) {
-        ask_chat_agent_containerized(prompt).await
-    } else {
-        ask_chat_agent_direct(prompt).await
-    }
+    // Simple container-based execution for all requests
+    ask_chat_agent_containerized(prompt).await
+}
+
+fn is_parallel_mode() -> bool {
+    // Check if we're running in parallel mode (multiple agents)
+    std::env::var("VSCODE_AGENT_PARALLEL").as_deref() == Ok("true") ||
+    std::env::var("SPIRAL_PARALLEL_AGENTS").as_deref() == Ok("true")
+}
+
+async fn is_docker_available() -> bool {
+    tokio::process::Command::new("docker")
+        .arg("--version")
+        .output()
+        .await
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+async fn is_vscode_running() -> bool {
+    tokio::process::Command::new("pgrep")
+        .arg("Code")
+        .output()
+        .await
+        .map(|o| o.status.success() && !o.stdout.is_empty())
+        .unwrap_or(false)
 }
 
 async fn should_use_container() -> bool {
+    // If we're already in a container, no need for another container
+    if is_running_in_container() {
+        println!("📦 Already in container - using direct VS Code access");
+        return false;
+    }
+    
     // Check if Docker is available
     if let Ok(output) = tokio::process::Command::new("docker")
         .arg("--version")
@@ -60,87 +118,223 @@ async fn should_use_container() -> bool {
         .await 
     {
         if output.status.success() {
-            println!("🐳 Docker detected - using containerized VS Code for isolation");
-            return true;
+            println!("🐳 Docker detected - checking for conflicts");
+            
+            // Check if VS Code is currently running (which could cause conflicts)
+            if let Ok(output) = tokio::process::Command::new("pgrep")
+                .arg("Code")
+                .output()
+                .await 
+            {
+                if output.status.success() && !output.stdout.is_empty() {
+                    println!("⚠️  VS Code is running - using container mode for isolation");
+                    return true;
+                }
+            }
+            
+            println!("✅ No VS Code conflicts detected - direct mode should work");
+            return false;
         }
     }
     
-    // Check if VS Code is currently running (which could cause conflicts)
-    if let Ok(output) = tokio::process::Command::new("pgrep")
-        .arg("Code")
-        .output()
-        .await 
-    {
-        if output.status.success() && !output.stdout.is_empty() {
-            println!("⚠️  VS Code is running - consider using container mode for isolation");
-            println!("   Set VSCODE_AGENT_USE_CONTAINER=true to avoid conflicts");
-        }
-    }
     
     false
 }
 
-async fn ask_chat_agent_direct(prompt: &str) -> Result<String> {
-    println!("💻 Using direct VS Code CLI (may conflict with active sessions)");
-    
-    // Call VS Code chat agent with the exact prompt provided
-    let output = tokio::process::Command::new("code")
-        .arg("chat")
-        .arg("--mode=agent")
-        .arg(prompt)
+/// Get information about the current execution environment
+pub async fn get_execution_mode_info() -> String {
+    let in_container = is_running_in_container();
+    let docker_available = tokio::process::Command::new("docker")
+        .arg("--version")
         .output()
-        .await?;
+        .await
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    
+    let vscode_running = tokio::process::Command::new("pgrep")
+        .arg("Code")
+        .output()
+        .await
+        .map(|o| o.status.success() && !o.stdout.is_empty())
+        .unwrap_or(false);
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("VS Code chat agent failed: {}", stderr);
+    if in_container {
+        format!(
+            "🏠 Execution Mode: CONTAINER-DIRECT\n\
+            📦 Running inside container (optimal for isolation)\n\
+            🤖 VS Code and Copilot available directly\n\
+            ✅ No conflicts possible with host VS Code"
+        )
+    } else if vscode_running && docker_available {
+        format!(
+            "🏠 Execution Mode: HOST-CONTAINERIZED\n\
+            ⚠️  VS Code running on host (potential conflicts)\n\
+            🐳 Docker available for isolation\n\
+            💡 Recommendation: Use containerized mode"
+        )
+    } else if vscode_running {
+        format!(
+            "🏠 Execution Mode: HOST-DIRECT (RISKY)\n\
+            ⚠️  VS Code running on host (will conflict!)\n\
+            ❌ Docker not available for isolation\n\
+            💡 Recommendation: Close VS Code or run in dev container"
+        )
+    } else {
+        format!(
+            "🏠 Execution Mode: HOST-DIRECT\n\
+            ✅ No VS Code conflicts detected\n\
+            💻 Direct mode should work fine\n\
+            💡 For best isolation, consider using dev container"
+        )
     }
+}
 
-    let response = String::from_utf8_lossy(&output.stdout);
-
-    if response.trim().is_empty() {
-        anyhow::bail!("VS Code chat agent returned empty response. Make sure Copilot is enabled.");
+/// Show current execution strategy and recommendations
+pub async fn show_execution_strategy() -> Result<()> {
+    let in_container = is_running_in_container();
+    let docker_available = is_docker_available().await;
+    let vscode_running = is_vscode_running().await;
+    let parallel_mode = is_parallel_mode();
+    
+    println!("🔍 VS Code Agent Execution Analysis:");
+    println!("   📦 In Container: {}", if in_container { "✅ Yes" } else { "❌ No" });
+    println!("   🐳 Docker Available: {}", if docker_available { "✅ Yes" } else { "❌ No" });
+    println!("   💻 VS Code Running: {}", if vscode_running { "⚠️  Yes (potential conflicts)" } else { "✅ No" });
+    println!("   🔄 Parallel Mode: {}", if parallel_mode { "⚠️  Yes (needs isolation)" } else { "✅ No" });
+    
+    println!("\n🎯 Selected Strategy: Container Isolation");
+    println!("   🐳 Each agent gets its own VS Code container");
+    println!("   ✅ Perfect isolation - no conflicts possible");
+    println!("   ⚠️  Requires Docker and container setup");
+    
+    println!("\n💡 Recommendations:");
+    if !docker_available {
+        println!("   🐳 Install Docker to use VS Code agents");
+        println!("   📝 Docker is required for containerized execution");
+    } else {
+        println!("   ✅ Setup is optimal for VS Code agents");
     }
-
-    println!("✅ Chat agent responded with {} characters", response.len());
-    Ok(response.to_string())
+    
+    println!("\n🔧 Environment Variables:");
+    println!("   export VSCODE_AGENT_KEEP_CONTAINERS=true  # Keep containers for reuse");
+    println!("   export SPIRAL_PARALLEL_AGENTS=true        # Enable parallel mode");
+    
+    Ok(())
 }
 
 async fn ask_chat_agent_containerized(prompt: &str) -> Result<String> {
-    println!("🐳 Using containerized VS Code for isolation");
+    println!("🐳 Using containerized VS Code for parallel isolation");
     
-    // Generate unique agent name for this session
-    let container_name = generate_agent_name();
+    // Generate unique container name for this agent instance
+    let container_name = format!("vscode-agent-{}", std::process::id());
     println!("🏷️  Using container: {}", container_name);
     
-    // Create or ensure container exists
+    // Ensure we have a fresh container for this agent
     ensure_agent_container(&container_name).await?;
     
-    // Run the chat command in the isolated container
-    let output = tokio::process::Command::new("docker")
+    // Create a prompt file inside the container
+    let temp_dir = std::env::temp_dir();
+    let prompt_file = temp_dir.join(format!("vscode-agent-prompt-{}.md", std::process::id()));
+    
+    let prompt_content = format!(
+        "# VS Code Agent Task (Container: {})\n\n\
+        **Prompt:** {}\n\n\
+        ## Instructions\n\
+        1. Use GitHub Copilot to generate code for the above prompt\n\
+        2. Include complete, working code with:\n\
+           - Cargo.toml (if needed)\n\
+           - Rust source files\n\
+           - Unit tests\n\
+           - Documentation\n\
+        3. Save this file when you're done with the generated code\n\n\
+        ## Generated Code\n\
+        ```rust\n\
+        // Your generated code will go here\n\
+        ```\n\n\
+        ## Generated Cargo.toml (if needed)\n\
+        ```toml\n\
+        # Your Cargo.toml content here if needed\n\
+        ```\n",
+        container_name, prompt
+    );
+    
+    tokio::fs::write(&prompt_file, &prompt_content).await?;
+    
+    // Copy the prompt file into the container
+    let container_prompt_path = "/workspace/agent-prompt.md";
+    let copy_output = tokio::process::Command::new("docker")
+        .arg("cp")
+        .arg(&prompt_file)
+        .arg(&format!("{}:{}", container_name, container_prompt_path))
+        .output()
+        .await?;
+    
+    if !copy_output.status.success() {
+        let stderr = String::from_utf8_lossy(&copy_output.stderr);
+        let _ = remove_container(&container_name).await;
+        anyhow::bail!("Failed to copy prompt to container: {}", stderr);
+    }
+    
+    // Open VS Code in the container with the prompt file
+    println!("📝 Opening VS Code in isolated container...");
+    println!("🤖 Container {} is ready - no chat conflicts possible!", container_name);
+    println!("⏳ Please use Copilot to generate code, then save the file when done.");
+    println!("💡 When finished, press Enter here to continue...");
+    
+    let vscode_output = tokio::process::Command::new("docker")
         .arg("exec")
         .arg("-it")
         .arg(&container_name)
         .arg("code")
-        .arg("chat")
-        .arg("--mode=agent")
-        .arg(prompt)
+        .arg(container_prompt_path)
         .output()
         .await?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Containerized VS Code chat agent failed: {}", stderr);
+    if !vscode_output.status.success() {
+        let stderr = String::from_utf8_lossy(&vscode_output.stderr);
+        let _ = remove_container(&container_name).await;
+        anyhow::bail!("Failed to open VS Code in container: {}", stderr);
     }
 
-    let response = String::from_utf8_lossy(&output.stdout);
+    // Wait for user confirmation instead of using --wait
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
 
-    if response.trim().is_empty() {
-        anyhow::bail!("Containerized chat agent returned empty response. Make sure container has Copilot enabled.");
+    // Copy the updated file back from the container
+    let copy_back_output = tokio::process::Command::new("docker")
+        .arg("cp")
+        .arg(&format!("{}:{}", container_name, container_prompt_path))
+        .arg(&prompt_file)
+        .output()
+        .await?;
+    
+    if !copy_back_output.status.success() {
+        let stderr = String::from_utf8_lossy(&copy_back_output.stderr);
+        let _ = remove_container(&container_name).await;
+        anyhow::bail!("Failed to copy result from container: {}", stderr);
     }
 
-    println!("✅ Containerized chat agent responded with {} characters", response.len());
-    Ok(response.to_string())
+    // Read the updated file
+    let response = tokio::fs::read_to_string(&prompt_file).await?;
+    
+    // Clean up files
+    let _ = tokio::fs::remove_file(&prompt_file).await;
+    
+    // Clean up container after successful use (optional - could keep for reuse)
+    let keep_containers = std::env::var("VSCODE_AGENT_KEEP_CONTAINERS").as_deref() == Ok("true");
+    if !keep_containers {
+        let _ = remove_container(&container_name).await;
+        println!("🗑️  Container {} cleaned up", container_name);
+    } else {
+        println!("💾 Container {} kept for reuse", container_name);
+    }
+
+    if response.trim() == prompt_content.trim() {
+        anyhow::bail!("No changes detected in container. Please generate code using Copilot and save the file.");
+    }
+
+    println!("✅ Containerized chat agent completed successfully!");
+    Ok(response)
 }
 
 pub async fn ensure_agent_container(container_name: &str) -> Result<()> {
@@ -520,34 +714,24 @@ pub async fn test_chat_agent() -> Result<()> {
 
     let test_prompt = "Create a simple Rust function that adds two numbers";
     
-    // Try to use the same method as ask_chat_agent
-    let use_container = std::env::var("VSCODE_AGENT_USE_CONTAINER")
-        .unwrap_or_else(|_| "auto".to_string());
+    println!("🧪 Testing with containerized VS Code isolation");
     
-    let output = if use_container == "true" || (use_container == "auto" && should_use_container().await) {
-        // Test containerized version with unique name
-        let test_container_name = generate_agent_name();
-        println!("🧪 Testing with container: {}", test_container_name);
-        ensure_agent_container(&test_container_name).await?;
-        tokio::process::Command::new("docker")
-            .arg("exec")
-            .arg("-it")
-            .arg(&test_container_name)
-            .arg("code")
-            .arg("chat")
-            .arg("--mode=agent")
-            .arg(test_prompt)
-            .output()
-            .await?
-    } else {
-        // Test direct version
-        tokio::process::Command::new("code")
-            .arg("chat")
-            .arg("--mode=agent")
-            .arg(test_prompt)
-            .output()
-            .await?
-    };
+    // Test containerized version with unique name
+    let test_container_name = format!("vscode-agent-test-{}", std::process::id());
+    println!("🧪 Testing with container: {}", test_container_name);
+    ensure_agent_container(&test_container_name).await?;
+    let output = tokio::process::Command::new("docker")
+        .arg("exec")
+        .arg(&test_container_name)
+        .arg("code")
+        .arg("chat")
+        .arg("--mode=agent")
+        .arg(test_prompt)
+        .output()
+        .await?;
+    
+    // Clean up test container
+    let _ = remove_container(&test_container_name).await;
 
     if output.status.success() {
         let response = String::from_utf8_lossy(&output.stdout);
