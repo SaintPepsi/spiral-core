@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  spiral-dev:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    container_name: spiral-dev-container
+    volumes:
+      # Mount the project directory
+      - .:/workspace
+      # Persist cargo registry and build cache
+      - cargo-cache:/usr/local/cargo/registry
+      - target-cache:/workspace/target
+      # Mount Docker socket for Docker-in-Docker if needed
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      # Common development ports
+      - "3000:3000"
+      - "8000:8000"
+      - "8080:8080"
+      - "9000:9000"
+    working_dir: /workspace
+    environment:
+      - RUST_LOG=debug
+      - CARGO_TARGET_DIR=/workspace/target
+    # Keep container running
+    command: sleep infinity
+    # Enable Docker-in-Docker if needed for agents
+    privileged: false
+    user: vscode
+
+volumes:
+  cargo-cache:
+  target-cache:

@@ -280,33 +280,16 @@ pub async fn setup_copilot_in_container(container_name: &str) -> Result<()> {
 }
 
 async fn create_agent_container(container_name: &str) -> Result<()> {
-    // Create a dedicated directory for the build context
-    let build_dir = std::env::temp_dir().join("vscode-agent-build");
-    tokio::fs::create_dir_all(&build_dir).await?;
+    // Get the current project directory to find the Dockerfile
+    let current_dir = std::env::current_dir()?;
+    let dockerfile_path = current_dir.join("src/resources/Dockerfile.vscode-agent");
     
-    // Create Dockerfile for the agent container
-    let dockerfile_content = r#"FROM mcr.microsoft.com/vscode/devcontainers/base:ubuntu
-
-# Install VS Code CLI
-RUN curl -fsSL https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64 | tar -xz -C /usr/local/bin
-RUN chmod +x /usr/local/bin/code
-
-# Install Rust (for building generated projects)
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
-
-# Set up workspace directory
-WORKDIR /workspace
-
-# Keep container running
-CMD ["tail", "-f", "/dev/null"]
-"#;
+    // Check if Dockerfile exists
+    if !dockerfile_path.exists() {
+        anyhow::bail!("Dockerfile.vscode-agent not found at: {}", dockerfile_path.display());
+    }
     
-    // Write Dockerfile to the dedicated build directory
-    let dockerfile_path = build_dir.join("Dockerfile");
-    tokio::fs::write(&dockerfile_path, dockerfile_content).await?;
-    
-    // Build the image from the dedicated directory
+    // Build the image using the external Dockerfile
     println!("🔨 Building VS Code agent Docker image...");
     let build_output = tokio::process::Command::new("docker")
         .arg("build")
@@ -314,7 +297,7 @@ CMD ["tail", "-f", "/dev/null"]
         .arg("vscode-agent:latest")
         .arg("-f")
         .arg(&dockerfile_path)
-        .arg(&build_dir)
+        .arg(&current_dir)
         .output()
         .await?;
     
@@ -340,9 +323,6 @@ CMD ["tail", "-f", "/dev/null"]
     }
     
     println!("✅ VS Code agent container created and running");
-    
-    // Cleanup build directory
-    let _ = tokio::fs::remove_dir_all(&build_dir).await;
     
     println!("⚠️  Note: You'll need to configure GitHub Copilot in the container");
     println!("   Run: vscode-agent container setup");
