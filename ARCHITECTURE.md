@@ -6,22 +6,23 @@ A high-performance, memory-efficient agent system built in Rust where agents col
 
 ## Why Rust is Perfect for This System
 
-### Resource Efficiency on 8GB VPS
+### Resource Efficiency on 8GB VPS (Simplified Architecture)
 
 ```
-Total Memory Usage: ~3.2GB (vs 5.5GB TypeScript)
-├── 6 Rust Agents: 30MB
-├── Redis Message Queues: 2GB
-├── PostgreSQL: 1GB
-├── Discord Bot: 15MB
-├── Notion Integration: 10MB
-├── Custom AI Tools: 50MB
-├── System Overhead: 95MB
-└── Available Buffer: 4.8GB
+Total Memory Usage: ~2.1GB (Dramatically Reduced!)
+├── 6 Rust Agents: 150MB (Claude Code orchestrators)
+├── Claude Code Client: 100MB
+├── GitHub Integration: 50MB  
+├── Discord Bot: 75MB
+├── Redis Message Queues: 800MB
+├── PostgreSQL: 800MB
+├── System Overhead: 125MB
+└── Available Buffer: 5.9GB
 
-Startup Time: 0.5-1 second
-CPU Efficiency: Maximum
+Startup Time: 0.3-0.8 seconds
+CPU Efficiency: Maximum (no local LLM inference)
 Concurrent Agents: 6+ easily
+Intelligence: Claude Code API (external)
 ```
 
 ### Compile-Time Safety for Agent Coordination
@@ -208,7 +209,7 @@ impl DiscordInterface {
 }
 ```
 
-## Core Rust Agent Framework
+## Core Rust Agent Framework (Claude Code Orchestration)
 
 ### Agent Resource Management
 
@@ -220,41 +221,42 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
-    pub max_prompts_per_cycle: u32,
+    pub max_claude_requests_per_cycle: u32,
     pub max_messages_per_conversation: u8,
-    pub efficiency_threshold: f64,
-    pub response_timeout_ms: u64,
+    pub claude_timeout_ms: u64,
+    pub github_integration: bool,
 }
 
 #[derive(Debug)]
 pub struct AgentResources {
-    pub prompts_remaining: u32,
+    pub claude_requests_remaining: u32,
     pub conversations_active: HashMap<String, u8>, // topic -> message_count
     pub current_tasks: Vec<TaskId>,
-    pub tools_available: Vec<String>,
-    pub efficiency_score: f64,
+    pub claude_code_sessions: Vec<ClaudeSessionId>,
+    pub coordination_efficiency: f64,
 }
 
-pub struct BaseAgent {
+pub struct SpiralAgent {
     pub id: AgentId,
     pub role: AgentRole,
     pub config: AgentConfig,
     pub resources: Arc<RwLock<AgentResources>>,
+    pub claude_code_client: ClaudeCodeClient,
     pub message_queue: mpsc::Receiver<AgentMessage>,
     pub outbound_tx: mpsc::Sender<AgentMessage>,
 }
 
-impl BaseAgent {
-    pub async fn consume_prompt(&self, task_description: &str) -> Result<bool, AgentError> {
+impl SpiralAgent {
+    pub async fn consume_claude_request(&self, task_description: &str) -> Result<bool, AgentError> {
         let mut resources = self.resources.write().await;
 
-        if resources.prompts_remaining == 0 {
-            self.request_more_prompts(task_description).await?;
+        if resources.claude_requests_remaining == 0 {
+            self.request_more_claude_allocation(task_description).await?;
             return Ok(false);
         }
 
-        resources.prompts_remaining -= 1;
-        self.log_prompt_usage(task_description).await;
+        resources.claude_requests_remaining -= 1;
+        self.log_claude_usage(task_description).await;
         Ok(true)
     }
 
@@ -272,18 +274,27 @@ impl BaseAgent {
             return Ok(None);
         }
 
-        // Consume a prompt for processing
-        if !self.consume_prompt(&format!("Responding to: {}", message.content)).await? {
-            return Err(AgentError::InsufficientPrompts);
+        // Consume Claude Code request allocation
+        if !self.consume_claude_request(&format!("Processing: {}", message.content)).await? {
+            return Err(AgentError::InsufficientClaudeRequests);
         }
 
-        // Generate response based on agent role
-        let response = self.generate_role_specific_response(&message).await?;
+        // Generate response via Claude Code with agent specialization
+        let claude_result = self.execute_claude_code_task(&message).await?;
+        let response = self.process_claude_result(claude_result).await?;
 
         // Track conversation participation
         self.increment_conversation_counter(&message.conversation_id).await?;
 
         Ok(Some(response))
+    }
+
+    async fn execute_claude_code_task(&self, message: &AgentMessage) -> Result<ClaudeResult, AgentError> {
+        let specialized_prompt = self.create_agent_specific_prompt(&message.content);
+        let claude_strategy = self.determine_claude_strategy(&message.task_complexity);
+        
+        self.claude_code_client.execute_task(specialized_prompt, claude_strategy).await
+            .map_err(AgentError::ClaudeCodeError)
     }
 }
 ```
@@ -354,32 +365,51 @@ impl ProjectManagerAgent {
 }
 ```
 
-## Priority Tool Development Roadmap
+## Priority Tool Development Roadmap (Claude Code Focused)
 
-### Phase 1: Essential Infrastructure (Week 1-2)
+### Phase 1: Claude Code Foundation (Week 1-2)
 
 ```rust
-// 1. Basic HTTP LLM Client
-pub struct LLMClient {
+// 1. Claude Code Client Integration
+pub struct ClaudeCodeClient {
     api_key: String,
-    base_url: String,
-    client: reqwest::Client,
+    workspace_manager: WorkspaceManager,
+    session_tracker: SessionTracker,
     rate_limiter: RateLimiter,
 }
 
-// 2. Prompt Template System
-pub struct PromptTemplate {
-    template: String,
-    variables: HashSet<String>,
-    role_specific: HashMap<AgentRole, String>,
+impl ClaudeCodeClient {
+    pub async fn execute_task(&self, prompt: String, strategy: ClaudeStrategy) -> Result<ClaudeResult, ClaudeError> {
+        // Direct integration with Claude Code API
+    }
+    
+    pub async fn create_specialized_session(&self, agent_type: AgentType, context: ProjectContext) -> Result<ClaudeSession, ClaudeError> {
+        // Agent-specific Claude Code sessions
+    }
 }
 
-// 3. Response Parser
-pub struct ResponseParser;
-impl ResponseParser {
-    pub fn extract_code_blocks(response: &str) -> Vec<String> { /* ... */ }
-    pub fn extract_json<T>(response: &str) -> Result<T, Error> { /* ... */ }
-    pub fn extract_decisions(response: &str) -> Vec<Decision> { /* ... */ }
+// 2. Agent-Specific Prompt Templates
+pub struct AgentPromptEngine {
+    templates: HashMap<AgentRole, PromptTemplate>,
+    context_enhancer: ContextEnhancer,
+}
+
+impl AgentPromptEngine {
+    pub fn create_developer_prompt(&self, task: &str, context: &ProjectContext) -> String {
+        // Specialized prompts for Claude Code execution
+    }
+    
+    pub fn create_pm_analysis_prompt(&self, task: &str, context: &ProjectContext) -> String {
+        // Strategic analysis prompts for project management
+    }
+}
+
+// 3. Claude Code Result Processor
+pub struct ClaudeResultProcessor;
+impl ClaudeResultProcessor {
+    pub fn extract_code_changes(result: &ClaudeResult) -> Vec<CodeChange> { /* ... */ }
+    pub fn extract_analysis_insights(result: &ClaudeResult) -> AnalysisResult { /* ... */ }
+    pub fn validate_result_quality(result: &ClaudeResult) -> QualityScore { /* ... */ }
 }
 ```
 
@@ -621,15 +651,23 @@ impl DeveloperAgent {
     async fn create_claude_task(&self, task: &str, strategy: ExecutionStrategy) -> Result<ClaudeTask, Error> {
         let enhanced_prompt = format!(
             "Task: {}\n\n\
+            Language: {} (detected with {}% confidence)\n\n\
             Requirements:\n\
-            - Use Rust as the primary language\n\
+            - Create implementation in **{}**\n\
+            - Follow {} best practices and conventions\n\
             - Include comprehensive error handling\n\
-            - Add thorough unit and integration tests\n\
-            - Generate documentation\n\
-            - Follow Rust best practices\n\
-            - Ensure production-ready code quality\n\n\
-            Please create a complete, working implementation.",
-            task
+            - Add thorough unit and integration tests using {} testing frameworks\n\
+            - Generate clear documentation with examples\n\
+            - Ensure production-ready code quality\n\
+            - Use appropriate package managers and dependency management\n\n\
+            Please create a complete, working implementation that follows {} community standards.",
+            task,
+            language_context.detected_language.display_name(),
+            (language_context.confidence * 100.0) as u8,
+            language_context.detected_language.display_name(),
+            language_context.detected_language.display_name(),
+            language_context.detected_language.display_name(),
+            language_context.detected_language.display_name()
         );
 
         Ok(ClaudeTask::builder()
@@ -1323,15 +1361,23 @@ agent_workspace: PathBuf::from("./agent-workspace"),
     async fn create_claude_task(&self, task: &str, strategy: ExecutionStrategy) -> Result<ClaudeTask, Error> {
         let enhanced_prompt = format!(
             "Task: {}\n\n\
+            Language: {} (detected with {}% confidence)\n\n\
             Requirements:\n\
-            - Use Rust as the primary language\n\
+            - Create implementation in **{}**\n\
+            - Follow {} best practices and conventions\n\
             - Include comprehensive error handling\n\
-            - Add thorough unit and integration tests\n\
-            - Generate documentation\n\
-            - Follow Rust best practices\n\
-            - Ensure production-ready code quality\n\n\
-            Please create a complete, working implementation.",
-            task
+            - Add thorough unit and integration tests using {} testing frameworks\n\
+            - Generate clear documentation with examples\n\
+            - Ensure production-ready code quality\n\
+            - Use appropriate package managers and dependency management\n\n\
+            Please create a complete, working implementation that follows {} community standards.",
+            task,
+            language_context.detected_language.display_name(),
+            (language_context.confidence * 100.0) as u8,
+            language_context.detected_language.display_name(),
+            language_context.detected_language.display_name(),
+            language_context.detected_language.display_name(),
+            language_context.detected_language.display_name()
         );
 
         Ok(ClaudeTask::builder()

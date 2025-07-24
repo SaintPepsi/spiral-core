@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "WebFetch(domain:en.wikipedia.org)",
+      "WebFetch(domain:en.wikipedia.org)",
+      "WebFetch(domain:github.com)",
+      "Bash(mkdir:*)"
+    ],
+    "deny": []
+  }
+}
