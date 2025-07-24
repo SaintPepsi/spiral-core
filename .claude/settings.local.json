@@ -5,7 +5,9 @@
       "WebFetch(domain:en.wikipedia.org)",
       "WebFetch(domain:en.wikipedia.org)",
       "WebFetch(domain:github.com)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(npm install:*)",
+      "Bash(npx chokidar:*)"
     ],
     "deny": []
   }

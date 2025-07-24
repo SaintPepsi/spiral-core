@@ -20,12 +20,28 @@ Cargo.lock
 ehthumbs.db
 Thumbs.db
 
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+
 # Project specific
 /generated_workspaces/
 /workspaces/
 *.log
 .env
 .env.local
+
+# Claude docs coordination temp files
+/tmp/claude-docs.lock
+/tmp/claude-docs.pid
+/tmp/claude-docs-state
+/tmp/claude-docs.log
+/tmp/claude-docs-cooldown
+/tmp/claude-docs-watcher.pid
 
 # Docker
 docker-build/

@@ -195,7 +195,7 @@ start_watcher() {
     log "INFO" "🎯 Starting Claude documentation watcher"
     
     # Enhanced chokidar command with feedback loop prevention
-    chokidar "CLAUDE*.md" --ignore-initial --debounce 10000 -c "
+    npx chokidar "CLAUDE*.md" --ignore-initial --debounce 10000 -c "
         source '$(pwd)/claude-docs-coordinator.sh'
         
         # Check if we're in a feedback loop cooldown
@@ -298,6 +298,7 @@ stop_watcher() {
     
     # Also cleanup any lingering chokidar processes
     pkill -f "chokidar.*CLAUDE" 2>/dev/null || true
+    pkill -f "npx chokidar.*CLAUDE" 2>/dev/null || true
 }
 
 restart_watcher() {

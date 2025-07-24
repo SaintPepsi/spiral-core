@@ -1,0 +1,43 @@
+{
+  "name": "spiral-core",
+  "version": "1.0.0",
+  "description": "AI agent orchestration system with Claude Code integration",
+  "main": "index.js",
+  "scripts": {
+    "install-tools": "npm install",
+    "watch-docs": "./claude-docs-coordinator.sh start-watcher",
+    "stop-watch": "./claude-docs-coordinator.sh stop-watcher",
+    "validate-docs": "./claude-docs-coordinator.sh manual 'validation' 'claude-code --prompt \"Validate all CLAUDE*.md files for consistency\"'",
+    "status": "./claude-docs-coordinator.sh status",
+    "dev": "echo 'Spiral Core development environment ready'",
+    "test": "echo 'No tests configured yet'"
+  },
+  "keywords": [
+    "ai",
+    "claude",
+    "rust",
+    "documentation",
+    "automation",
+    "orchestration"
+  ],
+  "author": "Spiral Core Team",
+  "license": "MIT",
+  "devDependencies": {
+    "chokidar": "^4.0.3",
+    "chokidar-cli": "^3.0.0",
+    "concurrently": "^9.2.0",
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/spiral-core.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/spiral-core/issues"
+  },
+  "homepage": "https://github.com/your-org/spiral-core#readme"
+}
