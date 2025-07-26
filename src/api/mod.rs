@@ -3,9 +3,10 @@ use crate::{
     auth::{auth_middleware, create_auth_state},
     config::{ApiConfig, Config},
     models::{AgentType, Priority, Task, TaskStatus},
-    rate_limit::{rate_limit_middleware}, // RateLimitConfig},
+    rate_limit::rate_limit_middleware, // RateLimitConfig},
     validation::TaskContentValidator,
-    Result, SpiralError,
+    Result,
+    SpiralError,
 };
 use axum::{
     extract::{Path, State},
@@ -106,30 +107,38 @@ impl ApiServer {
 
     pub async fn run(&self) -> Result<()> {
         let app = self.build_router();
-        
-        let listener = tokio::net::TcpListener::bind(format!("{}:{}", self.config.host, self.config.port))
-            .await
-            .map_err(|e| SpiralError::Internal(e.into()))?;
 
-        info!("API server listening on {}:{}", self.config.host, self.config.port);
+        let listener =
+            tokio::net::TcpListener::bind(format!("{}:{}", self.config.host, self.config.port))
+                .await
+                .map_err(|e| SpiralError::Internal(e.into()))?;
 
-        axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
-            .await
-            .map_err(|e| SpiralError::Internal(e.into()))?;
+        info!(
+            "API server listening on {}:{}",
+            self.config.host, self.config.port
+        );
+
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .map_err(|e| SpiralError::Internal(e.into()))?;
 
         Ok(())
     }
 
     pub fn build_router(&self) -> Router {
         let auth_state = create_auth_state(self.config.clone());
-        
+
         // SECURITY: Configure restrictive CORS policy
         let cors_layer = CorsLayer::new()
             .allow_origin(
-                self.config.allowed_origins
+                self.config
+                    .allowed_origins
                     .iter()
                     .filter_map(|origin| origin.parse().ok())
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>(),
             )
             .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
             .allow_headers([
@@ -138,7 +147,7 @@ impl ApiServer {
                 axum::http::HeaderName::from_static("x-api-key"),
             ])
             .max_age(std::time::Duration::from_secs(3600)); // 1 hour cache
-        
+
         Router::new()
             .route("/health", get(health_check))
             .route("/tasks", post(create_task))
@@ -152,7 +161,7 @@ impl ApiServer {
                     .layer(middleware::from_fn(rate_limit_middleware)) // SECURITY: Rate limiting
                     .layer(middleware::from_fn_with_state(auth_state, auth_middleware))
                     .layer(TraceLayer::new_for_http())
-                    .layer(cors_layer) // SECURITY: Restrictive CORS policy
+                    .layer(cors_layer), // SECURITY: Restrictive CORS policy
             )
             .with_state(self.clone())
     }
@@ -176,12 +185,18 @@ async fn create_task(
     // 🛡️ SECURITY AUDIT CHECKPOINT: Content validation and sanitization
     // CRITICAL: This is the primary defense against malicious task content
     // Verify: XSS prevention, injection attack mitigation, content length limits
-    let sanitized_content = match api_server.validator.validate_and_sanitize_task_content(&request.content) {
+    let sanitized_content = match api_server
+        .validator
+        .validate_and_sanitize_task_content(&request.content)
+    {
         Ok(content) => content,
         Err(_e) => {
             // 🚨 SECURITY INCIDENT: Invalid content detected
             // AUDIT: Check if this indicates an attack attempt or accidental malformed input
-            warn!("Task content validation failed for content: {}", &request.content[..std::cmp::min(100, request.content.len())]);
+            warn!(
+                "Task content validation failed for content: {}",
+                &request.content[..std::cmp::min(100, request.content.len())]
+            );
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
@@ -192,7 +207,7 @@ async fn create_task(
         }
     };
 
-    // 📊 PRIORITY ASSIGNMENT: Default to medium priority for balanced processing  
+    // 📊 PRIORITY ASSIGNMENT: Default to medium priority for balanced processing
     // AUDIT: Verify priority escalation policies and user privilege alignment
     let priority = request.priority.unwrap_or(Priority::Medium);
     let mut task = Task::new(request.agent_type, sanitized_content, priority);
@@ -203,7 +218,7 @@ async fn create_task(
     if let Some(context) = request.context {
         for (key, value) in context {
             // 🔑 KEY VALIDATION: Prevent malicious context keys
-            if let Err(_) = api_server.validator.validate_context_key(&key) {
+            if api_server.validator.validate_context_key(&key).is_err() {
                 warn!("Invalid context key detected: {}", key);
                 return Err((
                     StatusCode::BAD_REQUEST,
@@ -215,10 +230,17 @@ async fn create_task(
             }
 
             // 🛡️ VALUE SANITIZATION: Clean potentially malicious context values
-            let sanitized_value = match api_server.validator.validate_and_sanitize_context_value(&value) {
+            let sanitized_value = match api_server
+                .validator
+                .validate_and_sanitize_context_value(&value)
+            {
                 Ok(val) => val,
                 Err(_) => {
-                    warn!("Invalid context value for key '{}': {}", key, &value[..std::cmp::min(50, value.len())]);
+                    warn!(
+                        "Invalid context value for key '{}': {}",
+                        key,
+                        &value[..std::cmp::min(50, value.len())]
+                    );
                     return Err((
                         StatusCode::BAD_REQUEST,
                         Json(ErrorResponse {
@@ -245,7 +267,7 @@ async fn create_task(
                 task_id,
                 status: "submitted".to_string(),
             }))
-        },
+        }
         Err(e) => {
             // 🚨 SUBMISSION FAILURE AUDIT CHECKPOINT: System capacity or validation issue
             // CRITICAL: Could indicate system overload, agent unavailability, or attack
@@ -331,7 +353,7 @@ async fn get_agent_status(
                 StatusCode::NOT_FOUND,
                 Json(ErrorResponse {
                     error: "Agent not found".to_string(),
-                    details: Some(format!("Agent type: {}", agent_type_str)),
+                    details: Some(format!("Agent type: {agent_type_str}")),
                 }),
             ));
         }
@@ -379,9 +401,7 @@ async fn get_all_agent_statuses(
     Json(response)
 }
 
-async fn get_system_status(
-    State(api_server): State<ApiServer>,
-) -> Json<SystemStatusResponse> {
+async fn get_system_status(State(api_server): State<ApiServer>) -> Json<SystemStatusResponse> {
     let agent_statuses = api_server.orchestrator.get_all_agent_statuses().await;
     let queue_length = api_server.orchestrator.get_queue_length().await;
     let system_uptime = api_server.orchestrator.get_system_uptime().await;
@@ -409,4 +429,3 @@ async fn get_system_status(
         system_uptime,
     })
 }
-

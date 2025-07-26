@@ -112,7 +112,7 @@ impl FromStr for AgentType {
             "DecisionMaker" => Ok(AgentType::DecisionMaker),
             "CreativeInnovator" => Ok(AgentType::CreativeInnovator),
             "ProcessCoach" => Ok(AgentType::ProcessCoach),
-            _ => Err(format!("Unknown agent type: {}", s)),
+            _ => Err(format!("Unknown agent type: {s}")),
         }
     }
 }
@@ -134,7 +134,9 @@ impl AgentType {
         match self {
             AgentType::SoftwareDeveloper => AgentCapability {
                 name: "Software Developer".to_string(),
-                description: "Autonomous code generation with language detection and Claude Code integration".to_string(),
+                description:
+                    "Autonomous code generation with language detection and Claude Code integration"
+                        .to_string(),
                 supported_languages: vec![
                     "rust".to_string(),
                     "python".to_string(),
@@ -151,7 +153,10 @@ impl AgentType {
                 name: "Project Manager".to_string(),
                 description: "Strategic analysis and task coordination".to_string(),
                 supported_languages: vec![],
-                required_tools: vec!["claude_code_client".to_string(), "github_client".to_string()],
+                required_tools: vec![
+                    "claude_code_client".to_string(),
+                    "github_client".to_string(),
+                ],
             },
             _ => AgentCapability {
                 name: format!("{self:?}"),

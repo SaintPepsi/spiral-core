@@ -25,20 +25,25 @@ pub async fn auth_middleware(
 ) -> Result<Response, Response> {
     let method = request.method().clone();
     let path = request.uri().path();
-    let client_ip = headers.get("x-forwarded-for")
+    let client_ip = headers
+        .get("x-forwarded-for")
         .or_else(|| headers.get("x-real-ip"))
         .and_then(|v| v.to_str().ok())
         .unwrap_or("unknown");
-    
-    tracing::debug!("Auth middleware processing request to: {} from IP: {}", path, client_ip);
-    
+
+    tracing::debug!(
+        "Auth middleware processing request to: {} from IP: {}",
+        path,
+        client_ip
+    );
+
     // 🌐 CORS PREFLIGHT BYPASS: Allow OPTIONS requests to proceed without auth
     // REASONING: CORS preflight requests need to succeed to enable browser CORS
     if method == Method::OPTIONS {
         tracing::debug!("Bypassing auth for CORS preflight request to: {}", path);
         return Ok(next.run(request).await);
     }
-    
+
     // 🛡️ SECURITY POLICY AUDIT CHECKPOINT: No bypass paths allowed
     // CRITICAL: Every endpoint requires authentication to prevent unauthorized access
     // Previous vulnerability: Health check bypass removed for security hardening
@@ -47,30 +52,53 @@ pub async fn auth_middleware(
     // AUDIT: Verify both x-api-key and Authorization header handling
     let provided_key = if let Some(header_value) = headers.get("x-api-key") {
         // Direct API key header
-        header_value.to_str()
-            .map_err(|_| {
-                warn!("Malformed x-api-key header from IP: {} for path: {}", client_ip, path);
-                (StatusCode::UNAUTHORIZED, Json(json!({"error": "Unauthorized"}))).into_response()
-            })?
+        header_value.to_str().map_err(|_| {
+            warn!(
+                "Malformed x-api-key header from IP: {} for path: {}",
+                client_ip, path
+            );
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "Unauthorized"})),
+            )
+                .into_response()
+        })?
     } else if let Some(header_value) = headers.get("authorization") {
         // Authorization header - must start with "Bearer "
-        let auth_str = header_value.to_str()
-            .map_err(|_| {
-                warn!("Malformed authorization header from IP: {} for path: {}", client_ip, path);
-                (StatusCode::UNAUTHORIZED, Json(json!({"error": "Unauthorized"}))).into_response()
-            })?;
-        
+        let auth_str = header_value.to_str().map_err(|_| {
+            warn!(
+                "Malformed authorization header from IP: {} for path: {}",
+                client_ip, path
+            );
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "Unauthorized"})),
+            )
+                .into_response()
+        })?;
+
         // 🏷️ BEARER TOKEN SUPPORT: Standard OAuth-style authentication
         if let Some(token) = auth_str.strip_prefix("Bearer ") {
             token
         } else {
             // 🚨 SECURITY: Reject authorization headers without proper Bearer prefix
-            warn!("Invalid authorization header format from IP: {} for path: {}", client_ip, path);
-            return Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "Unauthorized"}))).into_response());
+            warn!(
+                "Invalid authorization header format from IP: {} for path: {}",
+                client_ip, path
+            );
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "Unauthorized"})),
+            )
+                .into_response());
         }
     } else {
         warn!("Missing API key in request to: {}", path);
-        return Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "Unauthorized"}))).into_response());
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "Unauthorized"})),
+        )
+            .into_response());
     };
 
     // 🔐 VALIDATE API KEY
@@ -80,18 +108,33 @@ pub async fn auth_middleware(
             // CRITICAL: Use secure comparison to prevent API key extraction via timing
             if provided_key == expected_key {
                 // ✅ AUTHENTICATION SUCCESS: Proceed to next middleware/handler
-                tracing::debug!("Authentication successful for path: {} from IP: {}", path, client_ip);
+                tracing::debug!(
+                    "Authentication successful for path: {} from IP: {}",
+                    path,
+                    client_ip
+                );
                 Ok(next.run(request).await)
             } else {
                 // 🚨 AUTHENTICATION FAILURE AUDIT CHECKPOINT: Invalid credentials
                 // CRITICAL: Log for security monitoring but don't reveal details
-                warn!("Authentication failed for path: {} from IP: {} (invalid key)", path, client_ip);
-                Err((StatusCode::UNAUTHORIZED, Json(json!({"error": "Unauthorized"}))).into_response())
+                warn!(
+                    "Authentication failed for path: {} from IP: {} (invalid key)",
+                    path, client_ip
+                );
+                Err((
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({"error": "Unauthorized"})),
+                )
+                    .into_response())
             }
         }
         None => {
             warn!("API authentication enabled but no API key configured");
-            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Internal Server Error"}))).into_response())
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Internal Server Error"})),
+            )
+                .into_response())
         }
     }
 }

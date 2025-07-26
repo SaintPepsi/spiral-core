@@ -9,17 +9,12 @@ use governor::{
     state::{InMemoryState, NotKeyed},
     Quota, RateLimiter,
 };
-use std::{
-    net::SocketAddr,
-    num::NonZeroU32,
-    sync::Arc,
-    time::Duration,
-};
+use std::{net::SocketAddr, num::NonZeroU32, sync::Arc, time::Duration};
 use tracing::warn;
 
 // SECURITY: Rate limiting configuration
-pub const REQUESTS_PER_MINUTE: u32 = 60;  // Allow 60 requests per minute per IP
-pub const TASK_REQUESTS_PER_MINUTE: u32 = 10;  // More restrictive for task creation
+pub const REQUESTS_PER_MINUTE: u32 = 60; // Allow 60 requests per minute per IP
+pub const TASK_REQUESTS_PER_MINUTE: u32 = 10; // More restrictive for task creation
 
 #[derive(Clone)]
 pub struct RateLimitConfig {
@@ -30,15 +25,11 @@ pub struct RateLimitConfig {
 impl RateLimitConfig {
     pub fn new() -> Self {
         // SECURITY: General rate limiter - 60 requests per minute
-        let general_quota = Quota::per_minute(
-            NonZeroU32::new(REQUESTS_PER_MINUTE).unwrap()
-        );
+        let general_quota = Quota::per_minute(NonZeroU32::new(REQUESTS_PER_MINUTE).unwrap());
         let general_limiter = Arc::new(RateLimiter::direct(general_quota));
 
         // SECURITY: Task creation rate limiter - 10 requests per minute
-        let task_quota = Quota::per_minute(
-            NonZeroU32::new(TASK_REQUESTS_PER_MINUTE).unwrap()
-        );
+        let task_quota = Quota::per_minute(NonZeroU32::new(TASK_REQUESTS_PER_MINUTE).unwrap());
         let task_limiter = Arc::new(RateLimiter::direct(task_quota));
 
         Self {
@@ -62,13 +53,16 @@ pub async fn rate_limit_middleware(
 ) -> Result<Response, StatusCode> {
     // Note: This is a simple global rate limiter
     // For production, you'd want per-IP rate limiting with a distributed cache
-    
+
     let path = request.uri().path();
-    
+
     // SECURITY: Log rate limit attempts for monitoring
     if path.starts_with("/tasks") && request.method() == "POST" {
         // Task creation gets more restrictive rate limiting
-        warn!("Rate limiting not fully implemented for task creation from IP: {}", addr.ip());
+        warn!(
+            "Rate limiting not fully implemented for task creation from IP: {}",
+            addr.ip()
+        );
     }
 
     // For now, we'll implement a basic delay to prevent abuse
@@ -113,11 +107,11 @@ mod tests {
     #[tokio::test]
     async fn test_rate_limit_quota() {
         let config = RateLimitConfig::new();
-        
+
         // Should allow initial requests
         assert!(config.general_limiter.check().is_ok());
         assert!(config.task_limiter.check().is_ok());
-        
+
         // After many requests, should start limiting
         // (This test would need to be adjusted based on actual quota limits)
     }

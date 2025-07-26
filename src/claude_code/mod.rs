@@ -26,7 +26,6 @@ pub struct Message {
     pub content: String,
 }
 
-
 #[derive(Debug, Deserialize)]
 pub struct ClaudeCodeResponse {
     pub content: Vec<ContentBlock>,
@@ -88,42 +87,40 @@ pub struct FileModification {
 }
 
 // SECURITY: Allowed Claude API domains
-const ALLOWED_CLAUDE_DOMAINS: &[&str] = &[
-    "api.anthropic.com",
-    "api.claude.ai",
-];
+const ALLOWED_CLAUDE_DOMAINS: &[&str] = &["api.anthropic.com", "api.claude.ai"];
 
 impl ClaudeCodeClient {
     pub fn new(config: ClaudeCodeConfig) -> Result<Self> {
         // SECURITY: Validate base URL is a trusted Claude endpoint
         Self::validate_base_url(&config.base_url)?;
-        
+
         let client = Client::new();
         Ok(Self { client, config })
     }
 
     // SECURITY: Validate that base_url points to legitimate Claude API
     fn validate_base_url(base_url: &str) -> Result<()> {
-        let url = Url::parse(base_url)
-            .map_err(|_| SpiralError::ConfigurationError("Invalid Claude API base URL".to_string()))?;
+        let url = Url::parse(base_url).map_err(|_| {
+            SpiralError::ConfigurationError("Invalid Claude API base URL".to_string())
+        })?;
 
         // SECURITY: Ensure HTTPS only
         if url.scheme() != "https" {
             return Err(SpiralError::ConfigurationError(
-                "Claude API base URL must use HTTPS".to_string()
+                "Claude API base URL must use HTTPS".to_string(),
             ));
         }
 
         // SECURITY: Validate domain is in allowed list
         if let Some(domain) = url.domain() {
             if !ALLOWED_CLAUDE_DOMAINS.contains(&domain) {
-                return Err(SpiralError::ConfigurationError(
-                    format!("Claude API domain '{}' is not in allowed list", domain)
-                ));
+                return Err(SpiralError::ConfigurationError(format!(
+                    "Claude API domain '{domain}' is not in allowed list"
+                )));
             }
         } else {
             return Err(SpiralError::ConfigurationError(
-                "Claude API URL must have a valid domain".to_string()
+                "Claude API URL must have a valid domain".to_string(),
             ));
         }
 
@@ -131,23 +128,23 @@ impl ClaudeCodeClient {
         // Check both the original URL and the normalized path
         if base_url.contains("..") {
             return Err(SpiralError::ConfigurationError(
-                "Claude API URL contains path traversal patterns".to_string()
+                "Claude API URL contains path traversal patterns".to_string(),
             ));
         }
-        
+
         let path = url.path();
         if path.contains("..") {
             return Err(SpiralError::ConfigurationError(
-                "Claude API URL contains invalid path characters".to_string()
+                "Claude API URL contains invalid path characters".to_string(),
             ));
         }
 
         // SECURITY: Validate path is acceptable for Claude API
         // Allow empty path, root path, or /v1 paths
         if !path.is_empty() && path != "/" && !path.starts_with("/v1") {
-            return Err(SpiralError::ConfigurationError(
-                format!("Claude API URL path '{}' is not valid", path)
-            ));
+            return Err(SpiralError::ConfigurationError(format!(
+                "Claude API URL path '{path}' is not valid"
+            )));
         }
 
         Ok(())
@@ -156,16 +153,24 @@ impl ClaudeCodeClient {
     /// 🤖 CLAUDE CODE GENERATION: Primary AI intelligence interface
     /// AUDIT CHECKPOINT: External API integration with security and cost implications
     /// Verify: Request sanitization, response validation, API key handling, rate limiting
-    pub async fn generate_code(&self, request: CodeGenerationRequest) -> Result<CodeGenerationResult> {
+    pub async fn generate_code(
+        &self,
+        request: CodeGenerationRequest,
+    ) -> Result<CodeGenerationResult> {
         info!("Generating code for language: {}", request.language);
-        
+
         // 🔍 REQUEST VALIDATION AUDIT CHECKPOINT: Sanitize before external API call
         // CRITICAL: Prevent injection attacks and data exfiltration via AI prompts
         if request.description.len() > 10000 {
-            warn!("Code generation request exceeds safe length: {} chars", request.description.len());
-            return Err(SpiralError::Validation("Request description too long".to_string()));
+            warn!(
+                "Code generation request exceeds safe length: {} chars",
+                request.description.len()
+            );
+            return Err(SpiralError::Validation(
+                "Request description too long".to_string(),
+            ));
         }
-        
+
         // 🛡️ CONTENT SAFETY: Check for potential prompt injection patterns
         let description_lower = request.description.to_lowercase();
         let injection_patterns = [
@@ -178,14 +183,19 @@ impl ClaudeCodeClient {
             "system: override",
             "break out of your constraints",
         ];
-        
+
         for pattern in &injection_patterns {
             if description_lower.contains(pattern) {
-                warn!("Potential prompt injection detected in code generation request: {}", pattern);
-                return Err(SpiralError::Validation("Invalid request content".to_string()));
+                warn!(
+                    "Potential prompt injection detected in code generation request: {}",
+                    pattern
+                );
+                return Err(SpiralError::Validation(
+                    "Invalid request content".to_string(),
+                ));
             }
         }
-        
+
         let system_prompt = self.build_system_prompt(&request);
         let user_prompt = self.build_user_prompt(&request);
 
@@ -196,33 +206,31 @@ impl ClaudeCodeClient {
             model: self.config.model.clone(),
             max_tokens: self.config.max_tokens,
             temperature: self.config.temperature,
-            messages: vec![
-                Message {
-                    role: "user".to_string(),
-                    content: format!("{system_prompt}\n\n{user_prompt}"),
-                }
-            ],
+            messages: vec![Message {
+                role: "user".to_string(),
+                content: format!("{system_prompt}\n\n{user_prompt}"),
+            }],
             tools: None,
         };
 
         let response = self.send_request(claude_request).await?;
         let duration = request_start.elapsed();
-        
+
         // 📈 PERFORMANCE METRICS: Log API call performance for monitoring
         // Why: Essential for capacity planning and cost optimization on 8GB VPS
         info!(
-            "Claude Code API call completed - Duration: {:?}ms, Model: {}, Tokens: {}", 
-            duration.as_millis(), 
-            self.config.model, 
+            "Claude Code API call completed - Duration: {:?}ms, Model: {}, Tokens: {}",
+            duration.as_millis(),
+            self.config.model,
             self.config.max_tokens
         );
-        
+
         self.parse_code_generation_response(response, request.language)
     }
 
     pub async fn detect_language(&self, code_snippet: &str, context: &str) -> Result<String> {
         debug!("Detecting language for code snippet");
-        
+
         let prompt = format!(
             "Analyze the following code snippet and context to determine the programming language. \
              Respond with just the language name (e.g., 'rust', 'python', 'javascript').\n\n\
@@ -233,17 +241,15 @@ impl ClaudeCodeClient {
             model: self.config.model.clone(),
             max_tokens: self.config.language_detection_tokens,
             temperature: self.config.language_detection_temperature,
-            messages: vec![
-                Message {
-                    role: "user".to_string(),
-                    content: prompt,
-                }
-            ],
+            messages: vec![Message {
+                role: "user".to_string(),
+                content: prompt,
+            }],
             tools: None,
         };
 
         let response = self.send_request(claude_request).await?;
-        
+
         if let Some(content) = response.content.first() {
             if let Some(text) = &content.text {
                 let language = text.trim().to_lowercase();
@@ -252,13 +258,26 @@ impl ClaudeCodeClient {
             }
         }
 
-        Err(SpiralError::LanguageDetection("No language detected".to_string()))
+        Err(SpiralError::LanguageDetection(
+            "No language detected".to_string(),
+        ))
     }
 
-    pub async fn analyze_task(&self, task_description: &str, context: HashMap<String, String>) -> Result<TaskAnalysis> {
-        info!("Analyzing task: {}", task_description.chars().take(crate::constants::TASK_DESCRIPTION_PREVIEW_LENGTH).collect::<String>());
-        
-        let context_str = context.iter()
+    pub async fn analyze_task(
+        &self,
+        task_description: &str,
+        context: HashMap<String, String>,
+    ) -> Result<TaskAnalysis> {
+        info!(
+            "Analyzing task: {}",
+            task_description
+                .chars()
+                .take(crate::constants::TASK_DESCRIPTION_PREVIEW_LENGTH)
+                .collect::<String>()
+        );
+
+        let context_str = context
+            .iter()
             .map(|(k, v)| format!("{k}: {v}"))
             .collect::<Vec<_>>()
             .join("\n");
@@ -279,17 +298,15 @@ impl ClaudeCodeClient {
             model: self.config.model.clone(),
             max_tokens: self.config.task_analysis_tokens,
             temperature: self.config.task_analysis_temperature,
-            messages: vec![
-                Message {
-                    role: "user".to_string(),
-                    content: prompt,
-                }
-            ],
+            messages: vec![Message {
+                role: "user".to_string(),
+                content: prompt,
+            }],
             tools: None,
         };
 
         let response = self.send_request(claude_request).await?;
-        
+
         if let Some(content) = response.content.first() {
             if let Some(text) = &content.text {
                 return Ok(TaskAnalysis {
@@ -309,7 +326,8 @@ impl ClaudeCodeClient {
     }
 
     async fn send_request(&self, request: ClaudeCodeRequest) -> Result<ClaudeCodeResponse> {
-        let response = self.client
+        let response = self
+            .client
             .post(format!("{}/v1/messages", self.config.base_url))
             .header("Content-Type", "application/json")
             .header("x-api-key", &self.config.api_key)
@@ -319,7 +337,10 @@ impl ClaudeCodeClient {
             .await?;
 
         if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             warn!("Claude Code API error: {}", error_text);
             return Err(SpiralError::Agent {
                 message: format!("Claude Code API error: {error_text}"),
@@ -327,8 +348,11 @@ impl ClaudeCodeClient {
         }
 
         let response_body: ClaudeCodeResponse = response.json().await?;
-        debug!("Received response with {} content blocks", response_body.content.len());
-        
+        debug!(
+            "Received response with {} content blocks",
+            response_body.content.len()
+        );
+
         Ok(response_body)
     }
 
@@ -356,34 +380,43 @@ impl ClaudeCodeClient {
     }
 
     fn build_user_prompt(&self, request: &CodeGenerationRequest) -> String {
-        let mut prompt = format!("Generate {} code for: {}", request.language, request.description);
-        
+        let mut prompt = format!(
+            "Generate {} code for: {}",
+            request.language, request.description
+        );
+
         // Include context information
         if !request.context.is_empty() {
             prompt.push_str("\n\nContext:");
             for (key, value) in &request.context {
-                prompt.push_str(&format!("\n- {}: {}", key, value));
+                prompt.push_str(&format!("\n- {key}: {value}"));
             }
         }
-        
+
         // Include requirements
         if !request.requirements.is_empty() {
             prompt.push_str("\n\nRequirements:");
             for requirement in &request.requirements {
-                prompt.push_str(&format!("\n- {}", requirement));
+                prompt.push_str(&format!("\n- {requirement}"));
             }
         }
-        
+
         if let Some(existing) = &request.existing_code {
-            prompt.push_str(&format!("\n\nExisting code to modify:\n```{}\n{}\n```", request.language, existing));
+            prompt.push_str(&format!(
+                "\n\nExisting code to modify:\n```{}\n{}\n```",
+                request.language, existing
+            ));
         }
 
         prompt.push_str("\n\nProvide the complete implementation with explanations.");
         prompt
     }
 
-
-    fn parse_code_generation_response(&self, response: ClaudeCodeResponse, language: String) -> Result<CodeGenerationResult> {
+    fn parse_code_generation_response(
+        &self,
+        response: ClaudeCodeResponse,
+        language: String,
+    ) -> Result<CodeGenerationResult> {
         let mut code = String::new();
         let mut explanation = String::new();
         let mut files_to_create = Vec::new();
@@ -404,12 +437,16 @@ impl ClaudeCodeClient {
                     if let Some(tool_use) = content.tool_use {
                         match tool_use.name.as_str() {
                             "create_file" => {
-                                if let Ok(file_creation) = serde_json::from_value::<FileCreation>(tool_use.input) {
+                                if let Ok(file_creation) =
+                                    serde_json::from_value::<FileCreation>(tool_use.input)
+                                {
                                     files_to_create.push(file_creation);
                                 }
                             }
                             "modify_file" => {
-                                if let Ok(file_modification) = serde_json::from_value::<FileModification>(tool_use.input) {
+                                if let Ok(file_modification) =
+                                    serde_json::from_value::<FileModification>(tool_use.input)
+                                {
                                     files_to_modify.push(file_modification);
                                 }
                             }
@@ -431,10 +468,7 @@ impl ClaudeCodeClient {
     }
 
     fn extract_code_block(&self, text: &str, language: &str) -> String {
-        let patterns = [
-            format!("```{language}\n"),
-            "```\n".to_string(),
-        ];
+        let patterns = [format!("```{language}\n"), "```\n".to_string()];
 
         for pattern in &patterns {
             if let Some(start) = text.find(pattern) {
@@ -466,14 +500,39 @@ impl ClaudeCodeClient {
         // Extract skills mentioned in the analysis text
         let text_lower = text.to_lowercase();
         let mut skills = Vec::new();
-        
+
         // Common programming languages
-        let languages = ["rust", "python", "javascript", "typescript", "go", "java", "c++", "c#"];
+        let languages = [
+            "rust",
+            "python",
+            "javascript",
+            "typescript",
+            "go",
+            "java",
+            "c++",
+            "c#",
+        ];
         // Technologies and frameworks
-        let technologies = ["docker", "kubernetes", "aws", "git", "sql", "nosql", "api", "rest", "graphql"];
+        let technologies = [
+            "docker",
+            "kubernetes",
+            "aws",
+            "git",
+            "sql",
+            "nosql",
+            "api",
+            "rest",
+            "graphql",
+        ];
         // Development practices
-        let practices = ["testing", "debugging", "refactoring", "architecture", "microservices"];
-        
+        let practices = [
+            "testing",
+            "debugging",
+            "refactoring",
+            "architecture",
+            "microservices",
+        ];
+
         for skill_set in [&languages[..], &technologies[..], &practices[..]].iter() {
             for skill in *skill_set {
                 if text_lower.contains(skill) {
@@ -492,7 +551,7 @@ impl ClaudeCodeClient {
     fn extract_challenges(&self, text: &str) -> Vec<String> {
         let mut challenges = Vec::new();
         let text_lower = text.to_lowercase();
-        
+
         // Look for challenge-related keywords
         let challenge_indicators = [
             ("complex", "Implementation complexity"),
@@ -505,39 +564,42 @@ impl ClaudeCodeClient {
             ("security", "Security considerations"),
             ("integration", "Integration complexity"),
         ];
-        
+
         for (keyword, challenge) in &challenge_indicators {
             if text_lower.contains(keyword) {
                 challenges.push(challenge.to_string());
             }
         }
-        
+
         if challenges.is_empty() {
             challenges.push(crate::constants::DEFAULT_IMPLEMENTATION_CHALLENGE.to_string());
         }
-        
+
         challenges
     }
 
     fn extract_approach(&self, text: &str) -> String {
         let text_lower = text.to_lowercase();
-        
+
         // Look for approach-related sections
         let approach_keywords = ["approach", "strategy", "method", "plan", "implementation"];
-        
+
         for keyword in &approach_keywords {
             if let Some(start) = text_lower.find(keyword) {
                 // Find the sentence containing the approach
                 let section_start = text[..start].rfind('.').map(|i| i + 1).unwrap_or(0);
-                let section_end = text[start..].find('.').map(|i| start + i + 1).unwrap_or(text.len());
-                
+                let section_end = text[start..]
+                    .find('.')
+                    .map(|i| start + i + 1)
+                    .unwrap_or(text.len());
+
                 let approach_text = text[section_start..section_end].trim();
                 if !approach_text.is_empty() {
                     return approach_text.to_string();
                 }
             }
         }
-        
+
         crate::constants::DEFAULT_IMPLEMENTATION_APPROACH.to_string()
     }
 }

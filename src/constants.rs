@@ -1,6 +1,6 @@
-/// 🎯 SPIRAL CORE CONSTANTS: System-wide configuration values
-/// DECISION ARCHAEOLOGY: Each constant includes reasoning for its specific value
-/// AUDIT: Verify these values align with deployment constraints and user expectations
+//! 🎯 SPIRAL CORE CONSTANTS: System-wide configuration values
+//! DECISION ARCHAEOLOGY: Each constant includes reasoning for its specific value
+//! AUDIT: Verify these values align with deployment constraints and user expectations
 
 // 🌐 API CONFIGURATION
 /// 📅 ANTHROPIC API VERSION: Locked to stable API version
@@ -46,7 +46,7 @@ pub const MAX_STORED_RESULTS: usize = 5000;
 /// Alternative: 1min (rejected: too frequent), 15min (rejected: memory buildup risk)
 pub const CLEANUP_INTERVAL_SECS: u64 = 300;
 
-// 💬 DISCORD INTEGRATION CONFIGURATION  
+// 💬 DISCORD INTEGRATION CONFIGURATION
 /// ✂️ DISCORD MESSAGE TRUNCATION: Discord 2000 char limit with safety buffer
 /// Why: 1000 chars provides full context while staying well under Discord limit
 /// Safety: 50% of Discord limit prevents message rejection from formatting overhead
@@ -81,7 +81,8 @@ pub const DEFAULT_PROGRAMMING_SKILL: &str = "programming";
 /// 📋 DEFAULT IMPLEMENTATION APPROACH: Safe methodology when analysis incomplete
 /// Why: "Incremental development" promotes good practices in unclear situations
 /// Philosophy: Encourages testing and validation even for simple tasks
-pub const DEFAULT_IMPLEMENTATION_APPROACH: &str = "Incremental development with testing and validation";
+pub const DEFAULT_IMPLEMENTATION_APPROACH: &str =
+    "Incremental development with testing and validation";
 
 /// ⚠️ DEFAULT IMPLEMENTATION CHALLENGE: Neutral challenge assessment fallback
 /// Why: "Standard requirements" avoids over/under-stating complexity

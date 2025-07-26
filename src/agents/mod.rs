@@ -19,7 +19,7 @@ pub trait Agent: Send + Sync {
     fn agent_type(&self) -> AgentType;
     fn name(&self) -> String;
     fn description(&self) -> String;
-    
+
     async fn can_handle(&self, task: &Task) -> bool;
     async fn execute(&self, task: Task) -> Result<TaskResult>;
     async fn analyze_task(&self, task: &Task) -> Result<TaskAnalysis>;
@@ -56,8 +56,10 @@ impl AgentStatus {
         self.is_busy = false;
         self.current_task_id = None;
         self.tasks_completed += 1;
-        
-        self.average_execution_time = (self.average_execution_time * (self.tasks_completed - 1) as f64 + execution_time) / self.tasks_completed as f64;
+
+        self.average_execution_time =
+            (self.average_execution_time * (self.tasks_completed - 1) as f64 + execution_time)
+                / self.tasks_completed as f64;
     }
 
     pub fn fail_task(&mut self) {

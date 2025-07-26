@@ -55,6 +55,28 @@ cargo run --bin spiral-core
 
 See [Development Practices](docs/DEVELOPMENT_PRACTICES.md) for complete environment setup.
 
+### Verify Installation
+
+Run the comprehensive verification suite to ensure everything is working:
+
+```bash
+# Full system verification
+npm run verify
+
+# Quick verification (skips some time-consuming checks)
+npm run verify:quick
+```
+
+The verification script checks:
+
+- Environment setup (Rust, Node.js, dependencies)
+- Build processes (Cargo build, TypeScript)
+- Code quality (formatting, linting, clippy)
+- Test suites (unit and integration tests)
+- Documentation validity
+- Security audits (if tools installed)
+- API health (if server running)
+
 ## Usage
 
 ### Discord Integration

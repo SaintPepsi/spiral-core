@@ -24,13 +24,13 @@ pub struct AgentOrchestrator {
 impl AgentOrchestrator {
     pub async fn new(config: Config) -> Result<Self> {
         info!("Initializing Agent Orchestrator");
-        
+
         // 🧠 AGENT COORDINATION DECISION: Using ClaudeCodeClient as shared intelligence engine
         // Why: Centralizes API management, rate limiting, and response handling across agents
         // Alternative: Individual clients per agent (rejected: increases complexity, API overhead)
         // Audit: Check claude_code.rs:45-60 for client initialization patterns
         let claude_client = ClaudeCodeClient::new(config.claude_code.clone())?;
-        
+
         // 🔧 ARCHITECTURE DECISION: HashMap for agent registry with AgentType enum keys
         // Why: Type-safe agent lookup, prevents duplicate registrations, O(1) access
         // Alternative: Vec<Agent> with linear search (rejected: O(n) lookups for task routing)
@@ -43,7 +43,10 @@ impl AgentOrchestrator {
         // Alternative: Auto-discovery/reflection (rejected: runtime errors, unclear dependencies)
         // Future: Consider agent plugin architecture when we have >5 agent types
         let developer_agent = SoftwareDeveloperAgent::new(claude_client.clone());
-        statuses.insert(AgentType::SoftwareDeveloper, developer_agent.status().clone());
+        statuses.insert(
+            AgentType::SoftwareDeveloper,
+            developer_agent.status().clone(),
+        );
         agents.insert(AgentType::SoftwareDeveloper, Box::new(developer_agent));
 
         info!("Registered {} agents", agents.len());
@@ -65,7 +68,7 @@ impl AgentOrchestrator {
 
     pub async fn run(&self) -> Result<()> {
         info!("Starting Agent Orchestrator");
-        
+
         let (result_tx, mut result_rx) = mpsc::unbounded_channel();
         {
             let mut sender = self.result_sender.lock().await;
@@ -73,20 +76,20 @@ impl AgentOrchestrator {
         }
 
         let orchestrator = self.clone();
-        let task_processor = tokio::spawn(async move {
-            orchestrator.process_tasks().await
-        });
+        let task_processor = tokio::spawn(async move { orchestrator.process_tasks().await });
 
         let result_processor = tokio::spawn(async move {
             while let Some(result) = result_rx.recv().await {
-                info!("Received task result: {} - {:?}", result.task_id, result.result);
+                info!(
+                    "Received task result: {} - {:?}",
+                    result.task_id, result.result
+                );
             }
         });
 
         let cleanup_orchestrator = self.clone();
-        let cleanup_processor = tokio::spawn(async move {
-            cleanup_orchestrator.cleanup_loop().await
-        });
+        let cleanup_processor =
+            tokio::spawn(async move { cleanup_orchestrator.cleanup_loop().await });
 
         tokio::select! {
             result = task_processor => {
@@ -113,8 +116,11 @@ impl AgentOrchestrator {
     /// This is the primary interface between Discord/API and the agent system
     /// AUDIT CHECKPOINT: Verify task validation, queue management, and error handling
     pub async fn submit_task(&self, mut task: Task) -> Result<String> {
-        debug!("Submitting task: {} for agent: {:?}", task.id, task.agent_type);
-        
+        debug!(
+            "Submitting task: {} for agent: {:?}",
+            task.id, task.agent_type
+        );
+
         // 🛡️ SAFETY CHECK: Prevent tasks for non-existent agents before queue insertion
         // Why: Early validation prevents resource waste and provides clear error messages
         // Alternative: Check during execution (rejected: wastes queue space, delays error feedback)
@@ -141,9 +147,9 @@ impl AgentOrchestrator {
         // Why: Enables status queries, cleanup processes, and execution time tracking
         task.status = TaskStatus::Pending;
         task.updated_at = chrono::Utc::now();
-        
+
         let task_id = task.id.clone();
-        
+
         // 💾 PERSISTENCE STRATEGY: Dual storage for queue processing and status queries
         // Why: Queue for processing order, storage for external status API access
         // Alternative: Single storage with status flags (rejected: complicates priority queue logic)
@@ -152,14 +158,18 @@ impl AgentOrchestrator {
             let mut storage = self.task_storage.lock().await;
             storage.insert(task_id.clone(), task.clone());
         }
-        
+
         // 🎯 PRIORITY QUEUE MANAGEMENT: Higher priority tasks execute first
         // Why: Ensures urgent tasks don't wait behind large batches of low-priority work
         // Implementation: Rust sorts in ascending order, so we reverse compare (b vs a)
         {
             let mut queue = self.task_queue.lock().await;
             queue.push(task);
-            queue.sort_by(|a, b| b.priority.partial_cmp(&a.priority).unwrap_or(std::cmp::Ordering::Equal));
+            queue.sort_by(|a, b| {
+                b.priority
+                    .partial_cmp(&a.priority)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
         }
 
         info!("Task {} submitted and queued", task_id);
@@ -182,10 +192,13 @@ impl AgentOrchestrator {
 
     async fn cleanup_loop(&self) -> Result<()> {
         info!("Starting cleanup loop");
-        
+
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(crate::constants::CLEANUP_INTERVAL_SECS)).await;
-            
+            tokio::time::sleep(tokio::time::Duration::from_secs(
+                crate::constants::CLEANUP_INTERVAL_SECS,
+            ))
+            .await;
+
             if let Err(e) = self.perform_cleanup().await {
                 error!("Cleanup failed: {}", e);
             }
@@ -196,27 +209,27 @@ impl AgentOrchestrator {
     /// AUDIT CHECKPOINT: Verify retention policy doesn't remove active tasks or needed results
     async fn perform_cleanup(&self) -> Result<()> {
         debug!("Performing system cleanup");
-        
+
         let now = chrono::Utc::now();
         // 📅 RETENTION POLICY: 24-hour sliding window for historical data
         // Why: Balances memory usage with debugging/audit capabilities
         // Alternative: Configurable retention (future enhancement), No cleanup (rejected: memory leak)
         let cutoff_time = now - chrono::Duration::hours(24);
-        
+
         // 🗂️ TASK STORAGE CLEANUP: Remove old completed/failed tasks while preserving active work
         // Why: Active tasks must remain available for status queries and execution
         {
             let mut storage = self.task_storage.lock().await;
             let initial_count = storage.len();
-            
+
             // 🔍 SELECTIVE RETENTION: Keep recent data OR active tasks regardless of age
             // Logic: Preserve anything recent OR anything still being processed
             // Audit: Verify Pending/InProgress tasks are never cleaned up prematurely
             storage.retain(|_, task| {
-                task.updated_at > cutoff_time || 
-                matches!(task.status, TaskStatus::Pending | TaskStatus::InProgress)
+                task.updated_at > cutoff_time
+                    || matches!(task.status, TaskStatus::Pending | TaskStatus::InProgress)
             });
-            
+
             let removed = initial_count - storage.len();
             if removed > 0 {
                 info!("Cleaned up {} old tasks from storage", removed);
@@ -228,11 +241,9 @@ impl AgentOrchestrator {
         {
             let mut results = self.task_results.lock().await;
             let initial_count = results.len();
-            
-            results.retain(|_, result| {
-                result.completed_at > cutoff_time
-            });
-            
+
+            results.retain(|_, result| result.completed_at > cutoff_time);
+
             let removed = initial_count - results.len();
             if removed > 0 {
                 info!("Cleaned up {} old task results", removed);
@@ -264,7 +275,7 @@ impl AgentOrchestrator {
 
     async fn process_tasks(&self) -> Result<()> {
         info!("Task processor started");
-        
+
         loop {
             let task = {
                 let mut queue = self.task_queue.lock().await;
@@ -276,7 +287,10 @@ impl AgentOrchestrator {
                     error!("Failed to execute task: {}", e);
                 }
             } else {
-                tokio::time::sleep(tokio::time::Duration::from_millis(crate::constants::TASK_POLL_INTERVAL_MS)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(
+                    crate::constants::TASK_POLL_INTERVAL_MS,
+                ))
+                .await;
             }
         }
     }
@@ -286,7 +300,7 @@ impl AgentOrchestrator {
     /// AUDIT CHECKPOINT: Critical path for all task processing - verify error handling and state consistency
     async fn execute_task(&self, mut task: Task) -> Result<()> {
         debug!("Executing task: {}", task.id);
-        
+
         // 🔍 AGENT LOOKUP STRATEGY: Read lock allows concurrent task execution for different agent types
         // Why: Multiple agents can work simultaneously without blocking each other
         // Performance: O(1) lookup, minimal lock contention for heterogeneous workloads
@@ -303,7 +317,7 @@ impl AgentOrchestrator {
                             message: format!("Agent {:?} cannot handle task", task.agent_type),
                         });
                     }
-                    
+
                     // 📊 STATE TRANSITION: Pending → InProgress
                     // Why: Enables external monitoring and prevents duplicate execution
                     task.status = TaskStatus::InProgress;
@@ -337,7 +351,7 @@ impl AgentOrchestrator {
                         Ok(task_result) => {
                             // ✅ SUCCESS PATH: Update all tracking systems for completed task
                             // Audit: Verify no race conditions between these state updates
-                            
+
                             // 💾 TASK STATUS UPDATE: Mark completion in primary storage
                             {
                                 let mut storage = self.task_storage.lock().await;
@@ -371,13 +385,16 @@ impl AgentOrchestrator {
                                 }
                             }
 
-                            info!("Task {} completed successfully in {:.2}s", task.id, execution_time);
+                            info!(
+                                "Task {} completed successfully in {:.2}s",
+                                task.id, execution_time
+                            );
                             Ok(())
                         }
                         Err(e) => {
                             // ❌ FAILURE PATH: Comprehensive error state management
                             // Audit: Ensure failure state is consistent across all tracking systems
-                            
+
                             // 💾 TASK STATUS UPDATE: Mark failure in primary storage
                             {
                                 let mut storage = self.task_storage.lock().await;
@@ -415,16 +432,18 @@ impl AgentOrchestrator {
 
     pub async fn analyze_task(&self, task: &Task) -> Result<crate::claude_code::TaskAnalysis> {
         let agents = self.agents.read().await;
-        let agent = agents.get(&task.agent_type).ok_or_else(|| SpiralError::Agent {
-            message: format!("No agent found for type: {:?}", task.agent_type),
-        })?;
+        let agent = agents
+            .get(&task.agent_type)
+            .ok_or_else(|| SpiralError::Agent {
+                message: format!("No agent found for type: {:?}", task.agent_type),
+            })?;
 
         agent.analyze_task(task).await
     }
 
     pub async fn shutdown(&self) -> Result<()> {
         info!("Shutting down Agent Orchestrator");
-        
+
         {
             let mut sender = self.result_sender.lock().await;
             *sender = None;

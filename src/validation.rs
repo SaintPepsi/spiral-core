@@ -1,7 +1,6 @@
 /// 🛡️ INPUT VALIDATION: Critical security boundary for user content
 /// DECISION ARCHAEOLOGY: Every validation rule includes security reasoning
 /// AUDIT CHECKPOINT: These patterns prevent XSS, injection, and DoS attacks
-
 use crate::SpiralError;
 use html_escape::encode_text;
 use regex::Regex;
@@ -30,7 +29,8 @@ pub const MAX_CONTEXT_VALUE_LENGTH: usize = 1000;
 /// Why: Includes all necessary chars for code requests: A-Z, 0-9, punctuation, whitespace
 /// Security: Blocks control chars, unicode exploits, binary data
 /// Alternative: Blocklist (rejected: whack-a-mole security), Plain text only (rejected: too restrictive)
-static SAFE_TASK_CONTENT_REGEX: &str = r"^[a-zA-Z0-9\s\.,!?:;()\[\]{}\-_+=@#$%^&*|\\/<>'`~\n\r\t]+$";
+static SAFE_TASK_CONTENT_REGEX: &str =
+    r"^[a-zA-Z0-9\s\.,!?:;()\[\]{}\-_+=@#$%^&*|\\/<>'`~\n\r\t]+$";
 
 /// 🚨 DANGEROUS PATTERNS: Known attack vectors and exploitation attempts
 /// SECURITY PHILOSOPHY: Multi-layer defense with pattern recognition
@@ -38,36 +38,32 @@ static SAFE_TASK_CONTENT_REGEX: &str = r"^[a-zA-Z0-9\s\.,!?:;()\[\]{}\-_+=@#$%^&
 /// Updates: Review quarterly and add new patterns from security advisories
 static DANGEROUS_PATTERNS: &[&str] = &[
     // 📜 SCRIPT INJECTION: Prevent XSS and code execution
-    "<script",     // HTML script tags
-    "javascript:", // JavaScript URLs
+    "<script",        // HTML script tags
+    "javascript:",    // JavaScript URLs
     "data:text/html", // Data URLs with HTML
-    "vbscript:",   // VBScript URLs (legacy but still dangerous)
-    
+    "vbscript:",      // VBScript URLs (legacy but still dangerous)
     // 💻 COMMAND INJECTION: Prevent shell command execution
-    "&&",          // Command chaining
-    "||",          // Command OR logic
-    ";rm",         // Unix file deletion
-    ";del",        // Windows file deletion
-    "`rm",         // Backtick command substitution
-    "`del",        // Backtick Windows deletion
-    "$(rm",        // Command substitution
-    "$(del",       // Command substitution Windows
-    
+    "&&",    // Command chaining
+    "||",    // Command OR logic
+    ";rm",   // Unix file deletion
+    ";del",  // Windows file deletion
+    "`rm",   // Backtick command substitution
+    "`del",  // Backtick Windows deletion
+    "$(rm",  // Command substitution
+    "$(del", // Command substitution Windows
     // 🗄️ SQL INJECTION: Prevent database attacks
-    "';",          // SQL statement termination
-    "\";",         // Double-quote SQL termination
+    "';",           // SQL statement termination
+    "\";",          // Double-quote SQL termination
     "union select", // SQL UNION attacks
-    "drop table",  // Table deletion
-    "delete from", // Record deletion
-    
+    "drop table",   // Table deletion
+    "delete from",  // Record deletion
     // 📁 PATH TRAVERSAL: Prevent file system access
-    "../",         // Unix directory traversal
-    "..\\",        // Windows directory traversal
-    
+    "../",  // Unix directory traversal
+    "..\\", // Windows directory traversal
     // 🗂️ SENSITIVE FILE ACCESS: Prevent system file exposure
-    "file://",     // File protocol URLs
-    "/etc/passwd", // Unix password file
-    "/etc/shadow", // Unix shadow passwords
+    "file://",               // File protocol URLs
+    "/etc/passwd",           // Unix password file
+    "/etc/shadow",           // Unix shadow passwords
     "C:\\Windows\\System32", // Windows system directory
 ];
 
@@ -81,7 +77,7 @@ impl TaskContentValidator {
     pub fn new() -> Result<Self, SpiralError> {
         let safe_content_regex = Regex::new(SAFE_TASK_CONTENT_REGEX)
             .map_err(|e| SpiralError::ConfigurationError(format!("Invalid regex pattern: {e}")))?;
-        
+
         let dangerous_patterns: HashSet<String> = DANGEROUS_PATTERNS
             .iter()
             .map(|s| s.to_lowercase())
@@ -97,7 +93,9 @@ impl TaskContentValidator {
         // SECURITY: Length validation
         if content.len() > MAX_TASK_CONTENT_LENGTH {
             return Err(SpiralError::Agent {
-                message: format!("Task content exceeds maximum length of {} characters", MAX_TASK_CONTENT_LENGTH),
+                message: format!(
+                    "Task content exceeds maximum length of {MAX_TASK_CONTENT_LENGTH} characters"
+                ),
             });
         }
 
@@ -126,21 +124,24 @@ impl TaskContentValidator {
 
         // SECURITY: HTML escape the content
         let sanitized = encode_text(content).to_string();
-        
+
         Ok(sanitized)
     }
 
     pub fn validate_context_key(&self, key: &str) -> Result<(), SpiralError> {
         if key.is_empty() || key.len() > MAX_CONTEXT_KEY_LENGTH {
             return Err(SpiralError::Agent {
-                message: format!("Context key must be non-empty and under {} characters", MAX_CONTEXT_KEY_LENGTH),
+                message: format!(
+                    "Context key must be non-empty and under {MAX_CONTEXT_KEY_LENGTH} characters"
+                ),
             });
         }
 
         // SECURITY: Only allow alphanumeric and underscore for keys
         if !key.chars().all(|c| c.is_alphanumeric() || c == '_') {
             return Err(SpiralError::Agent {
-                message: "Context keys can only contain alphanumeric characters and underscores".to_string(),
+                message: "Context keys can only contain alphanumeric characters and underscores"
+                    .to_string(),
             });
         }
 
@@ -150,7 +151,9 @@ impl TaskContentValidator {
     pub fn validate_and_sanitize_context_value(&self, value: &str) -> Result<String, SpiralError> {
         if value.len() > MAX_CONTEXT_VALUE_LENGTH {
             return Err(SpiralError::Agent {
-                message: format!("Context value exceeds maximum length of {} characters", MAX_CONTEXT_VALUE_LENGTH),
+                message: format!(
+                    "Context value exceeds maximum length of {MAX_CONTEXT_VALUE_LENGTH} characters"
+                ),
             });
         }
 
@@ -166,7 +169,7 @@ impl TaskContentValidator {
 
         // SECURITY: HTML escape context values
         let sanitized = encode_text(value).to_string();
-        
+
         Ok(sanitized)
     }
 }
@@ -184,14 +187,16 @@ mod tests {
     #[test]
     fn test_valid_content() {
         let validator = TaskContentValidator::new().unwrap();
-        let result = validator.validate_and_sanitize_task_content("Create a hello world function in Rust");
+        let result =
+            validator.validate_and_sanitize_task_content("Create a hello world function in Rust");
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_script_injection_blocked() {
         let validator = TaskContentValidator::new().unwrap();
-        let result = validator.validate_and_sanitize_task_content("Create a function <script>alert('xss')</script>");
+        let result = validator
+            .validate_and_sanitize_task_content("Create a function <script>alert('xss')</script>");
         assert!(result.is_err());
     }
 
@@ -222,19 +227,19 @@ mod tests {
     #[test]
     fn test_xss_prevention_comprehensive() {
         let validator = TaskContentValidator::new().unwrap();
-        
+
         // 🚨 MALICIOUS INPUTS: Common XSS attack vectors that should be blocked
         let xss_payloads = vec![
             "<script>alert('xss')</script>",
-            "javascript:alert('xss')", 
+            "javascript:alert('xss')",
             "vbscript:alert(1)",
             "data:text/html,<script>alert(1)</script>",
         ];
-        
+
         for payload in xss_payloads {
             let result = validator.validate_and_sanitize_task_content(payload);
             // Should be rejected due to dangerous patterns
-            assert!(result.is_err(), "Should reject XSS payload: {}", payload);
+            assert!(result.is_err(), "Should reject XSS payload: {payload}");
         }
     }
 
@@ -242,17 +247,17 @@ mod tests {
     #[test]
     fn test_content_length_limits_comprehensive() {
         let validator = TaskContentValidator::new().unwrap();
-        
+
         // ✅ VALID LENGTH: Should accept reasonable content
         let valid_content = "Create a simple Rust function that adds two numbers";
         let result = validator.validate_and_sanitize_task_content(valid_content);
         assert!(result.is_ok(), "Should accept reasonable length content");
-        
+
         // 🎯 BOUNDARY TESTING: Test exact limits
         let boundary_content = "x".repeat(MAX_TASK_CONTENT_LENGTH);
         let result = validator.validate_and_sanitize_task_content(&boundary_content);
         assert!(result.is_ok(), "Should accept content at exact limit");
-        
+
         let over_boundary = "x".repeat(MAX_TASK_CONTENT_LENGTH + 1);
         let result = validator.validate_and_sanitize_task_content(&over_boundary);
         assert!(result.is_err(), "Should reject content over limit");
@@ -262,23 +267,23 @@ mod tests {
     #[test]
     fn test_context_key_validation_comprehensive() {
         let validator = TaskContentValidator::new().unwrap();
-        
+
         // ✅ VALID KEYS: Should accept standard alphanumeric keys
         let valid_keys = vec![
             "project_type",
-            "file_path", 
+            "file_path",
             "coding_standards",
             "language",
             "framework",
             "test_type",
             "priority_hint",
         ];
-        
+
         for key in valid_keys {
             let result = validator.validate_context_key(key);
-            assert!(result.is_ok(), "Should accept valid key: {}", key);
+            assert!(result.is_ok(), "Should accept valid key: {key}");
         }
-        
+
         // 🚨 INVALID KEYS: Should reject potentially dangerous keys
         let invalid_keys = vec![
             "", // Empty key
@@ -288,10 +293,10 @@ mod tests {
             "key/with/slashes",
             "key<with>brackets",
         ];
-        
+
         for key in invalid_keys {
             let result = validator.validate_context_key(key);
-            assert!(result.is_err(), "Should reject invalid key: {}", key);
+            assert!(result.is_err(), "Should reject invalid key: {key}");
         }
     }
 
@@ -299,22 +304,22 @@ mod tests {
     #[test]
     fn test_context_value_sanitization_comprehensive() {
         let validator = TaskContentValidator::new().unwrap();
-        
+
         // ✅ CLEAN VALUES: Should pass through safely
         let clean_values = vec![
             "rust",
             "web application",
-            "REST API", 
+            "REST API",
             "unit tests",
             "SOLID principles",
             "high priority",
         ];
-        
+
         for value in clean_values {
             let result = validator.validate_and_sanitize_context_value(value);
-            assert!(result.is_ok(), "Should accept clean value: {}", value);
+            assert!(result.is_ok(), "Should accept clean value: {value}");
         }
-        
+
         // 🚨 DANGEROUS VALUES: Should be rejected due to dangerous patterns
         let dangerous_values = vec![
             "<script>alert('xss')</script>",
@@ -322,10 +327,10 @@ mod tests {
             "javascript:alert(1)",
             "file://etc/passwd",
         ];
-        
+
         for value in dangerous_values {
             let result = validator.validate_and_sanitize_context_value(value);
-            assert!(result.is_err(), "Should reject dangerous value: {}", value);
+            assert!(result.is_err(), "Should reject dangerous value: {value}");
         }
     }
 
@@ -333,50 +338,54 @@ mod tests {
     #[test]
     fn test_validation_performance() {
         let validator = TaskContentValidator::new().unwrap();
-        
+
         let test_content = "Create a comprehensive web application with authentication".repeat(50);
-        
+
         let start = std::time::Instant::now();
-        
+
         // Run validation multiple times
         for _ in 0..100 {
             let _ = validator.validate_and_sanitize_task_content(&test_content);
         }
-        
+
         let duration = start.elapsed();
-        
+
         // ⚡ PERFORMANCE REQUIREMENT: Should complete quickly
-        assert!(duration.as_millis() < 1000, 
-            "Validation should be fast: took {}ms for 100 operations", 
-            duration.as_millis());
+        assert!(
+            duration.as_millis() < 1000,
+            "Validation should be fast: took {}ms for 100 operations",
+            duration.as_millis()
+        );
     }
 
     /// 🔄 IDEMPOTENCY TEST: Multiple validations should yield same result
     #[test]
     fn test_validation_idempotency() {
         let validator = TaskContentValidator::new().unwrap();
-        
+
         let test_inputs = vec![
             "Simple clean text",
             "Text with ampersands & symbols",
             "Mixed content with valid punctuation!",
         ];
-        
+
         for input in test_inputs {
             let result1 = validator.validate_and_sanitize_task_content(input);
             let result2 = validator.validate_and_sanitize_task_content(input);
-            
+
             // 🔄 CONSISTENCY CHECK: Same input should yield same result
             match (result1, result2) {
                 (Ok(output1), Ok(output2)) => {
-                    assert_eq!(output1, output2, 
-                        "Validation should be idempotent for: {}", input);
+                    assert_eq!(
+                        output1, output2,
+                        "Validation should be idempotent for: {input}"
+                    );
                 }
                 (Err(_), Err(_)) => {
                     // Both rejections is consistent
                 }
                 _ => {
-                    panic!("Validation should be consistent for: {}", input);
+                    panic!("Validation should be consistent for: {input}");
                 }
             }
         }

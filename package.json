@@ -6,13 +6,16 @@
   "scripts": {
     "install-tools": "npm install",
     "dev": "echo 'Spiral Core development environment ready'",
-    "test": "echo 'No tests configured yet'",
+    "test": "npm run test:docs",
     "prepare": "husky",
-    "lint:md": "markdownlint --config .markdownlint.json '**/*.md' --ignore 'node_modules/**'",
-    "lint:md:fix": "markdownlint --config .markdownlint.json --fix '**/*.md' --ignore 'node_modules/**'",
+    "lint": "npm run lint:md",
+    "lint:md": "markdownlint --config .markdownlint.json --ignore-path .markdownlintignore '**/*.md'",
+    "lint:md:fix": "markdownlint --config .markdownlint.json --fix --ignore-path .markdownlintignore '**/*.md'",
     "format:md": "npm run lint:md:fix",
-    "validate:docs": "npm run lint:md && npx tsx scripts/validate-docs.ts",
-    "test:docs": "npx tsx scripts/validate-docs.ts"
+    "test:docs": "npx tsx scripts/validate-docs.ts",
+    "verify": "./scripts/verify-spiral-core.sh",
+    "verify:quick": "./scripts/verify-spiral-core.sh --quick",
+    "discord": "echo 'Discord bot not yet implemented'"
   },
   "keywords": [
     "ai",

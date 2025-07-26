@@ -42,13 +42,13 @@
       "Bash(npm run lint:md:*)",
       "Bash(npm run test:docs:*)",
       "Bash(npm run format:md:*)",
-      "Bash(npm run validate:docs:*)",
       "Bash(RUST_BACKTRACE=1 cargo test claude_code::tests::unit::test_api_url_validation --lib -- --nocapture)",
       "Bash(hurl:*)",
       "Bash(curl:*)",
       "Bash(./scripts/run-hurl-tests.sh:*)",
       "Bash(nohup cargo run --bin spiral-core > server.log 2>&1 &)",
-      "Bash(scripts/test-api-hurl.sh:*)"
+      "Bash(scripts/test-api-hurl.sh:*)",
+      "Bash(cat:*)"
     ],
     "deny": [
       "Bash(npm install -g:*)",

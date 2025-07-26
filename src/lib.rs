@@ -10,4 +10,4 @@ pub mod models;
 pub mod rate_limit;
 pub mod validation;
 
-pub use error::{SpiralError, Result};
+pub use error::{Result, SpiralError};

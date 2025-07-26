@@ -1,7 +1,7 @@
 use crate::{Result, SpiralError};
+use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 use std::env;
-use dotenv::dotenv;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -30,7 +30,6 @@ pub struct DiscordConfig {
     pub agent_mention_pattern: String,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiConfig {
     pub host: String,
@@ -47,16 +46,17 @@ impl Config {
             Ok(path) => tracing::info!("Loaded .env file from: {:?}", path),
             Err(e) => tracing::warn!("Could not load .env file: {}", e),
         }
-        
+
         // SECURITY: Validate Claude API key is provided
-        let claude_api_key = env::var("CLAUDE_API_KEY")
-            .map_err(|_| SpiralError::ConfigurationError(
-                "CLAUDE_API_KEY environment variable is required".to_string()
-            ))?;
+        let claude_api_key = env::var("CLAUDE_API_KEY").map_err(|_| {
+            SpiralError::ConfigurationError(
+                "CLAUDE_API_KEY environment variable is required".to_string(),
+            )
+        })?;
 
         if claude_api_key.trim().is_empty() {
             return Err(SpiralError::ConfigurationError(
-                "CLAUDE_API_KEY cannot be empty".to_string()
+                "CLAUDE_API_KEY cannot be empty".to_string(),
             ));
         }
 
@@ -100,35 +100,39 @@ impl Config {
         };
 
         // SECURITY: Validate Discord token is provided
-        let discord_token = env::var("DISCORD_TOKEN")
-            .map_err(|_| SpiralError::ConfigurationError(
-                "DISCORD_TOKEN environment variable is required".to_string()
-            ))?;
+        let discord_token = env::var("DISCORD_TOKEN").map_err(|_| {
+            SpiralError::ConfigurationError(
+                "DISCORD_TOKEN environment variable is required".to_string(),
+            )
+        })?;
 
         if discord_token.trim().is_empty() {
             return Err(SpiralError::ConfigurationError(
-                "DISCORD_TOKEN cannot be empty".to_string()
+                "DISCORD_TOKEN cannot be empty".to_string(),
             ));
         }
 
         // SECURITY: Validate Discord token format (basic check)
-        if discord_token.len() < 50 || !discord_token.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '-') {
+        if discord_token.len() < 50
+            || !discord_token
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '-')
+        {
             return Err(SpiralError::ConfigurationError(
-                "DISCORD_TOKEN appears to be invalid".to_string()
+                "DISCORD_TOKEN appears to be invalid".to_string(),
             ));
         }
 
         let discord = DiscordConfig {
             token: discord_token,
-            command_prefix: env::var("DISCORD_PREFIX")
-                .unwrap_or_else(|_| "!spiral".to_string()),
+            command_prefix: env::var("DISCORD_PREFIX").unwrap_or_else(|_| "!spiral".to_string()),
             agent_mention_pattern: env::var("AGENT_MENTION_PATTERN")
                 .unwrap_or_else(|_| r"@(\w+)agent".to_string()),
         };
 
         // SECURITY: Authentication is always enabled in production
         let api_key = env::var("API_KEY").ok();
-        
+
         tracing::info!("API authentication is enforced for security");
 
         // SECURITY: Validate required API authentication
@@ -137,21 +141,21 @@ impl Config {
                 tracing::error!("SECURITY ERROR: API_KEY is blank");
                 tracing::error!("Set API_KEY to a secure value: openssl rand -hex 32");
                 return Err(crate::SpiralError::ConfigurationError(
-                    "API key is required and cannot be blank".to_string()
+                    "API key is required and cannot be blank".to_string(),
                 ));
             }
             None => {
                 tracing::error!("SECURITY ERROR: API_KEY environment variable not set");
                 tracing::error!("Generate and set API_KEY: openssl rand -hex 32");
                 return Err(crate::SpiralError::ConfigurationError(
-                    "API key is required for security".to_string()
+                    "API key is required for security".to_string(),
                 ));
             }
             Some(key) if key.len() < 32 => {
                 tracing::error!("SECURITY ERROR: API key is too short (minimum 32 characters)");
                 tracing::error!("Generate a secure key with: openssl rand -hex 32");
                 return Err(crate::SpiralError::ConfigurationError(
-                    "API key must be at least 32 characters for security".to_string()
+                    "API key must be at least 32 characters for security".to_string(),
                 ));
             }
             Some(_) => {
@@ -168,8 +172,7 @@ impl Config {
             .collect();
 
         let api = ApiConfig {
-            host: env::var("API_HOST")
-                .unwrap_or_else(|_| "127.0.0.1".to_string()), // SECURITY: Default to localhost only
+            host: env::var("API_HOST").unwrap_or_else(|_| "127.0.0.1".to_string()), // SECURITY: Default to localhost only
             port: env::var("API_PORT")
                 .unwrap_or_else(|_| "3000".to_string())
                 .parse()
