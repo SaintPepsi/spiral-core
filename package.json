@@ -5,7 +5,6 @@
   "main": "index.js",
   "scripts": {
     "install-tools": "npm install",
-    "dev": "echo 'Spiral Core development environment ready'",
     "test": "npm run test:docs",
     "prepare": "husky",
     "lint": "npm run lint:md",
@@ -13,9 +12,9 @@
     "lint:md:fix": "markdownlint --config .markdownlint.json --fix --ignore-path .markdownlintignore '**/*.md'",
     "format:md": "npm run lint:md:fix",
     "test:docs": "npx tsx scripts/validate-docs.ts",
+    "test:hurl": "./scripts/test-api-hurl.sh",
     "verify": "./scripts/verify-spiral-core.sh",
-    "verify:quick": "./scripts/verify-spiral-core.sh --quick",
-    "discord": "echo 'Discord bot not yet implemented'"
+    "verify:quick": "./scripts/verify-spiral-core.sh --quick"
   },
   "keywords": [
     "ai",

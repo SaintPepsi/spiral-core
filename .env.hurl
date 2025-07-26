@@ -4,9 +4,9 @@
 # API Server Configuration
 API_HOST=127.0.0.1
 API_PORT=3000
-base_url=http://127.0.0.1:3000
-api_key=test-api-key-1234567890123456789012345678901234567890
-invalid_key=invalid-test-key-123
+BASE_URL=http://127.0.0.1:3000
+API_KEY=test-api-key-1234567890123456789012345678901234567890
+INVALID_KEY=invalid-test-key-123
 
 # Authentication Configuration for Testing
 API_KEY=test-api-key-1234567890123456789012345678901234567890

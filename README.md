@@ -55,6 +55,39 @@ cargo run --bin spiral-core
 
 See [Development Practices](docs/DEVELOPMENT_PRACTICES.md) for complete environment setup.
 
+### Available Aliases
+
+The development environment includes helpful aliases for common tasks:
+
+```bash
+# Show all available Spiral Core aliases
+aliases
+
+# Core operations
+spiral-run          # Start the Spiral Core server
+spiral-health       # Test health endpoint
+spiral-test         # Run API task tests
+
+# API Testing (with test environment)
+api-health          # Test health endpoint
+api-test            # Run all API tests
+api-status          # Test system status
+api-all             # Run all test files
+
+# API Testing (with real environment)
+api-health-real     # Test with real API keys
+api-test-real       # Run tests with real environment
+api-status-real     # Test status with real config
+api-all-real        # Run all tests with real env
+
+# Tool management
+hurl-test           # Run comprehensive test script
+install-hurl        # Install Hurl API testing tool
+install-tools       # Install all development tools
+```
+
+**Note**: The `-real` aliases use your actual `.env` configuration, while regular aliases use test configuration from `.env.hurl`.
+
 ### Verify Installation
 
 Run the comprehensive verification suite to ensure everything is working:

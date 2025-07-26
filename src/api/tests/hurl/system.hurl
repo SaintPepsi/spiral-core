@@ -2,15 +2,15 @@
 # Tests /system/status endpoint for overall system health
 
 # Test 1: Get system status without authentication should fail
-GET {{base_url}}/system/status
+GET {{BASE_URL}}/system/status
 
 HTTP 401
 [Asserts]
 jsonpath "$.error" == "Unauthorized"
 
 # Test 2: Get system status should succeed
-GET {{base_url}}/system/status
-x-api-key: {{api_key}}
+GET {{BASE_URL}}/system/status
+x-api-key: {{API_KEY}}
 
 HTTP 200
 [Asserts]
@@ -26,8 +26,8 @@ jsonpath "$.agents.SoftwareDeveloper.average_execution_time" exists
 header "Content-Type" contains "application/json"
 
 # Test 3: Verify initial system state (fresh server)
-GET {{base_url}}/system/status
-x-api-key: {{api_key}}
+GET {{BASE_URL}}/system/status
+x-api-key: {{API_KEY}}
 
 HTTP 200
 [Asserts]
@@ -37,8 +37,8 @@ jsonpath "$.agents.SoftwareDeveloper.is_busy" == false
 jsonpath "$.agents.SoftwareDeveloper.tasks_completed" == 0
 
 # Test 4: Get system status with Bearer token should succeed
-GET {{base_url}}/system/status
-Authorization: Bearer {{api_key}}
+GET {{BASE_URL}}/system/status
+Authorization: Bearer {{API_KEY}}
 
 HTTP 200
 [Asserts]
@@ -47,8 +47,8 @@ jsonpath "$.queue_length" exists
 jsonpath "$.system_uptime" exists
 
 # Test 5: Verify queue length is numeric
-GET {{base_url}}/system/status
-x-api-key: {{api_key}}
+GET {{BASE_URL}}/system/status
+x-api-key: {{API_KEY}}
 
 HTTP 200
 [Asserts]
@@ -56,8 +56,8 @@ jsonpath "$.queue_length" isInteger
 jsonpath "$.system_uptime" isFloat
 
 # Test 6: Verify agents object structure
-GET {{base_url}}/system/status
-x-api-key: {{api_key}}
+GET {{BASE_URL}}/system/status
+x-api-key: {{API_KEY}}
 
 HTTP 200
 [Asserts]

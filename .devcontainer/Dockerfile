@@ -61,43 +61,11 @@ RUN curl -fsSL https://claude.ai/install.sh -o /tmp/claude-install.sh \
     && echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc \
     && echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 
-# Add comprehensive aliases to bashrc
+# Copy and source aliases file
+COPY aliases.sh /tmp/aliases.sh
 RUN echo '' >> ~/.bashrc \
-    && echo '# System aliases' >> ~/.bashrc \
-    && echo 'alias ll="ls -la"' >> ~/.bashrc \
-    && echo 'alias la="ls -A"' >> ~/.bashrc \
-    && echo 'alias l="ls -CF"' >> ~/.bashrc \
-    && echo 'alias ..="cd .."' >> ~/.bashrc \
-    && echo 'alias ...="cd ../.."' >> ~/.bashrc \
-    && echo '' >> ~/.bashrc \
-    && echo '# Git aliases' >> ~/.bashrc \
-    && echo 'alias gs="git status"' >> ~/.bashrc \
-    && echo 'alias gd="git diff"' >> ~/.bashrc \
-    && echo 'alias gl="git log --oneline -10"' >> ~/.bashrc \
-    && echo '' >> ~/.bashrc \
-    && echo '# Cargo shortcuts' >> ~/.bashrc \
-    && echo 'alias cb="cargo build"' >> ~/.bashrc \
-    && echo 'alias cr="cargo run"' >> ~/.bashrc \
-    && echo 'alias ct="cargo test"' >> ~/.bashrc \
-    && echo 'alias cc="cargo check"' >> ~/.bashrc \
-    && echo 'alias cw="cargo watch -x check -x test"' >> ~/.bashrc \
-    && echo 'alias cf="cargo fmt"' >> ~/.bashrc \
-    && echo 'alias ccl="cargo clippy"' >> ~/.bashrc \
-    && echo '' >> ~/.bashrc \
-    && echo '# Spiral Core specific aliases' >> ~/.bashrc \
-    && echo 'alias spiral-start="cargo run --bin spiral-core"' >> ~/.bashrc \
-    && echo 'alias spiral-discord="cargo run --bin discord-bot"' >> ~/.bashrc \
-    && echo 'alias spiral-test="hurl --test tests/api/api.hurl"' >> ~/.bashrc \
-    && echo 'alias spiral-health="hurl --test tests/api/health.hurl"' >> ~/.bashrc \
-    && echo 'alias spiral-build="cargo build --release"' >> ~/.bashrc \
-    && echo 'alias spiral-watch="cargo watch -x run --bin spiral-core"' >> ~/.bashrc \
-    && echo '' >> ~/.bashrc \
-    && echo '# API Testing shortcuts with Hurl' >> ~/.bashrc \
-    && echo 'alias api-test="hurl --test tests/api/"' >> ~/.bashrc \
-    && echo 'alias api-health="hurl --test tests/api/health.hurl"' >> ~/.bashrc \
-    && echo 'alias api-status="hurl --test tests/api/status.hurl"' >> ~/.bashrc \
-    && echo 'alias api-all="hurl --test tests/api/*.hurl"' >> ~/.bashrc \
-    && echo 'alias hurl-test="./scripts/test-api-hurl.sh"' >> ~/.bashrc
-
-# Append aliases to zsh config (preserve Oh My Zsh)
-RUN cat ~/.bashrc >> ~/.zshrc
+    && echo '# Spiral Core Development Aliases' >> ~/.bashrc \
+    && echo 'source /tmp/aliases.sh' >> ~/.bashrc \
+    && echo '' >> ~/.zshrc \
+    && echo '# Spiral Core Development Aliases' >> ~/.zshrc \
+    && echo 'source /tmp/aliases.sh' >> ~/.zshrc
