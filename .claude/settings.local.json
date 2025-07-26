@@ -48,7 +48,8 @@
       "Bash(./scripts/run-hurl-tests.sh:*)",
       "Bash(nohup cargo run --bin spiral-core > server.log 2>&1 &)",
       "Bash(scripts/test-api-hurl.sh:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(./scripts/verify-spiral-core.sh:*)"
     ],
     "deny": [
       "Bash(npm install -g:*)",
