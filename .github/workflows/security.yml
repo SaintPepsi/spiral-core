@@ -113,7 +113,6 @@ jobs:
             p/rust
             p/secrets
             p/supply-chain
-          generateSarif: true
         continue-on-error: true
 
       # SECURITY: Upload Semgrep results
