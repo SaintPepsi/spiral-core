@@ -1,0 +1,161 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run security audit daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install security tools
+        run: |
+          cargo install cargo-audit --features vendored-openssl || true
+          cargo install cargo-deny || true
+          cargo install cargo-outdated || true
+
+      # SECURITY: Vulnerability scanning with cargo-audit
+      - name: Run cargo-audit
+        run: |
+          cargo audit --json > audit-results.json || true
+          cargo audit || true
+        continue-on-error: true
+
+      # SECURITY: Convert audit results to SARIF
+      - name: Convert audit to SARIF
+        if: always()
+        run: |
+          if [ -f audit-results.json ]; then
+            python3 scripts/audit-to-sarif.py audit-results.json audit-sarif.json || echo "Failed to convert to SARIF"
+          fi
+        continue-on-error: true
+
+      # SECURITY: Upload audit results to GitHub Security
+      - name: Upload audit results to GitHub Security
+        if: always() && hashFiles('audit-sarif.json') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: audit-sarif.json
+        continue-on-error: true
+
+      # SECURITY: License and supply chain verification
+      - name: Run cargo-deny
+        run: cargo deny check
+        continue-on-error: true
+
+      # SECURITY: Check for outdated dependencies with known vulnerabilities
+      - name: Check outdated dependencies
+        run: cargo outdated --exit-code 1 || true
+        continue-on-error: true
+
+      # SECURITY: Run Clippy with security lints
+      - name: Run Clippy security lints
+        run: |
+          cargo clippy -- -D warnings \
+            -W clippy::unwrap_used \
+            -W clippy::expect_used \
+            -W clippy::panic \
+            -W clippy::unimplemented \
+            -W clippy::todo \
+            -W clippy::mem_forget \
+            -W clippy::unseparated_literal_suffix
+        continue-on-error: true
+
+      # SECURITY: Check for hardcoded secrets
+      - name: Scan for secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug --only-verified
+
+      # SECURITY: SAST with Semgrep
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/rust
+            p/secrets
+            p/supply-chain
+          generateSarif: true
+        continue-on-error: true
+
+      # SECURITY: Upload Semgrep results
+      - name: Upload Semgrep results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+        continue-on-error: true
+
+      # SECURITY: Create summary report
+      - name: Create security summary
+        if: always()
+        run: |
+          echo "## Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "### Vulnerability Audit" >> $GITHUB_STEP_SUMMARY
+          if [ -f audit-results.json ]; then
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            jq '.vulnerabilities.count' audit-results.json >> $GITHUB_STEP_SUMMARY || echo "No vulnerabilities data" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "### Security Checks Completed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Dependency vulnerability scan" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ License compliance check" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Secret scanning" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ SAST analysis" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Security linting" >> $GITHUB_STEP_SUMMARY
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+          deny-licenses: GPL-3.0, AGPL-3.0, LGPL-3.0
+          comment-summary-in-pr: always

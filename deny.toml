@@ -1,0 +1,102 @@
+# cargo-deny configuration for Spiral Core
+# Security and license compliance checks
+
+[bans]
+# Deny multiple versions of the same crate
+multiple-versions = "warn"
+# Deny crates with security vulnerabilities
+vulnerability = "deny"
+# Deny unmaintained crates
+unmaintained = "warn"
+# Deny crates that have been yanked from crates.io
+yanked = "warn"
+# Skip certain crates when checking for duplicates
+skip = []
+# Similarly named crates that are allowed to coexist
+allow = []
+
+[licenses]
+# List of allowed licenses
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "Zlib",
+    "BSL-1.0",
+]
+
+# List of denied licenses
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "LGPL-2.0",
+    "LGPL-2.1",
+    "LGPL-3.0",
+    "AGPL-3.0",
+]
+
+# Lint level for when a crate doesn't have a license
+unlicensed = "deny"
+
+# Deny crates with commercial licenses
+copyleft = "deny"
+
+# Allow ISC license but show warning
+[[licenses.exceptions]]
+allow = ["ISC"]
+name = "openssl"
+
+[sources]
+# Deny crates from unknown registries
+unknown-registry = "warn"
+# Deny git dependencies
+unknown-git = "warn"
+# Allow crates from crates.io
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+
+[advisories]
+# The path where the advisory database is cloned/fetched into
+db-path = "~/.cargo/advisory-db"
+# The url(s) of the advisory databases to use
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# Deny crates with security vulnerabilities
+vulnerability = "deny"
+# Deny unmaintained crates
+unmaintained = "warn"
+# Deny crates that have been yanked from crates.io
+yanked = "warn"
+# A list of advisory IDs to ignore
+ignore = []
+
+# SECURITY: Specific vulnerability checks
+[[advisories.deny]]
+name = "openssl"
+version = "<0.10.48"  # CVE-2023-0286
+
+[[advisories.deny]]
+name = "tokio"
+version = "<1.18.5"  # CVE-2023-22466
+
+# SECURITY: Known problematic crates
+[[bans.deny]]
+name = "openssl"
+version = "<0.10.48"
+
+[[bans.deny]]
+name = "ring"
+version = "<0.16.20"  # Memory safety issues
+
+# Warn about specific crates that may have issues
+[[bans.warn]]
+name = "time"
+version = "<0.3.20"  # RUSTSEC-2020-0071
+
+# SECURITY: Require specific versions for critical dependencies
+[[bans.require]]
+name = "rustls"
+version = ">=0.21.0"  # TLS security fixes

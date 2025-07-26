@@ -1,0 +1,49 @@
+[package]
+name = "spiral-core"
+version = "0.1.0"
+edition = "2021"
+authors = ["Anti Spiral Interactive"]
+description = "AI agent orchestration system built with Claude Code integration"
+license = "MIT"
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
+anyhow = "1.0"
+thiserror = "1.0"
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["trace", "cors"] }
+clap = { version = "4.0", features = ["derive"] }
+config = "0.14"
+async-trait = "0.1"
+regex = "1.0"
+dotenv = "0.15"
+validator = { version = "0.16", features = ["derive"] }
+html-escape = "0.2"
+url = "2.4"
+governor = "0.6"
+
+# Discord integration
+serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model"] }
+
+
+[dev-dependencies]
+tokio-test = "0.4"
+mockito = "1.0"
+tower = { version = "0.4", features = ["util"] }
+serial_test = "3.0"
+
+[[bin]]
+name = "spiral-core"
+path = "src/main.rs"
+
+[[bin]]
+name = "discord-bot"
+path = "src/bin/discord_bot.rs"

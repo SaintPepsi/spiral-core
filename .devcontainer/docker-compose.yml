@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  spiral-core-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/workspaces/spiral-core:cached
+      - spiral-cargo-cache:/home/vscode/.cargo
+      - spiral-target-cache:/workspaces/spiral-core/target
+    
+    # Keep container running
+    command: sleep infinity
+    
+    # Forward ports
+    ports:
+      - "3000:3000"   # Spiral Core API
+      - "8080:8080"   # Alternative port
+    
+    # Environment variables
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+    
+    # Use bridge networking for proper isolation
+
+  # Optional: Redis for future message queue features
+  # redis:
+  #   image: redis:7-alpine
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - spiral-redis-data:/data
+  #   command: redis-server --appendonly yes
+
+volumes:
+  spiral-cargo-cache:
+  spiral-target-cache:
+  spiral-redis-data:

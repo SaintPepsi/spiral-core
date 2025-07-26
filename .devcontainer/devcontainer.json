@@ -1,0 +1,87 @@
+{
+  "name": "Spiral Core Development Environment (Fast Build)",
+  "build": {
+    "dockerfile": "Dockerfile.fast",
+    "context": "."
+  },
+  
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": true,
+      "installOhMyZsh": true,
+      "upgradePackages": true,
+      "username": "vscode",
+      "userUid": 1000,
+      "userGid": 1000
+    },
+    "ghcr.io/devcontainers/features/git:1": {
+      "ppa": true,
+      "version": "os-provided"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "nodeGypDependencies": true,
+      "version": "20",
+      "nvmVersion": "0.39.0"
+    }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "vadimcn.vscode-lldb",
+        "swellaby.vscode-rust-test-adapter",
+        "tamasfe.even-better-toml",
+        "ms-vscode.vscode-json",
+        "redhat.vscode-yaml",
+        "fill-labs.dependi",
+        "wmaurer.change-case",
+        "Anthropic.claude-code",
+        "streetsidesoftware.code-spell-checker",
+        "adpyke.codesnap",
+        "ms-azuretools.vscode-containers",
+        "quicktype.quicktype",
+        "pflannery.vscode-versionlens",
+        "DavidAnson.vscode-markdownlint",
+        "JacobPfeifer.pfeifer-hurl"
+      ],
+      "settings": {
+        "rust-analyzer.checkOnSave.command": "clippy",
+        "rust-analyzer.cargo.features": "all",
+        "rust-analyzer.procMacro.enable": true,
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.fixAll": "explicit",
+          "source.organizeImports": "explicit"
+        },
+        "files.watcherExclude": {
+          "**/target/**": true
+        },
+        "terminal.integrated.defaultProfile.linux": "zsh"
+      }
+    }
+  },
+
+  "postCreateCommand": ".devcontainer/post-create.sh",
+
+  "forwardPorts": [3000, 8080],
+  "portsAttributes": {
+    "3000": {
+      "label": "Spiral Core API",
+      "onAutoForward": "notify"
+    }
+  },
+
+  "mounts": [
+    "source=${localWorkspaceFolder}/.env,target=/workspaces/spiral-core/.env,type=bind,consistency=cached"
+  ],
+
+  "remoteUser": "vscode",
+  "workspaceFolder": "/workspaces/spiral-core",
+
+  "containerEnv": {
+    "RUST_LOG": "debug",
+    "RUST_BACKTRACE": "1"
+  }
+}

@@ -73,4 +73,4 @@ Spiral Core (Central intelligence and control)
 
 ---
 
-_© Anti Spiral Interactive_
+© Anti Spiral Interactive

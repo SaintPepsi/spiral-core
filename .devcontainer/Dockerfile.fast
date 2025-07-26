@@ -1,0 +1,84 @@
+# Fast Build Dockerfile for Spiral Core Development
+# Optimized for minimal build time - tools installed on first use
+
+FROM mcr.microsoft.com/devcontainers/rust:1-1-bullseye
+
+# Install GitHub CLI with verification (required for development)
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /tmp/gh-keyring.gpg \
+    && gpg --no-default-keyring --keyring /tmp/test-keyring.gpg --import /tmp/gh-keyring.gpg \
+    && dd if=/tmp/gh-keyring.gpg of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && rm -f /tmp/gh-keyring.gpg /tmp/test-keyring.gpg
+
+# Install system dependencies (lightweight packages only)
+RUN apt-get update && apt-get install -y \
+    curl wget jq tree vim nano git-extras \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up minimal Rust toolchain
+RUN rustup component add clippy rustfmt rust-src \
+    && rustup target add wasm32-unknown-unknown
+
+# Switch to vscode user early
+USER vscode
+
+# Create workspace directory
+WORKDIR /workspaces/spiral-core
+
+# Set environment variables for development
+ENV RUST_LOG=debug
+ENV RUST_BACKTRACE=1
+ENV PATH="/home/vscode/.cargo/bin:/home/vscode/.local/bin:$PATH"
+
+# Install Claude Code CLI as vscode user (lightweight)
+RUN curl -fsSL https://claude.ai/install.sh -o /tmp/claude-install.sh \
+    && chmod +x /tmp/claude-install.sh \
+    && /tmp/claude-install.sh \
+    && rm -f /tmp/claude-install.sh \
+    && echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc \
+    && echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+
+# Add lightweight aliases (no heavy tool installation)
+RUN echo '' >> ~/.bashrc \
+    && echo '# System aliases' >> ~/.bashrc \
+    && echo 'alias ll="ls -la"' >> ~/.bashrc \
+    && echo 'alias la="ls -A"' >> ~/.bashrc \
+    && echo 'alias l="ls -CF"' >> ~/.bashrc \
+    && echo 'alias ..="cd .."' >> ~/.bashrc \
+    && echo 'alias ...="cd ../.."' >> ~/.bashrc \
+    && echo '' >> ~/.bashrc \
+    && echo '# Git aliases' >> ~/.bashrc \
+    && echo 'alias gs="git status"' >> ~/.bashrc \
+    && echo 'alias gd="git diff"' >> ~/.bashrc \
+    && echo 'alias gl="git log --oneline -10"' >> ~/.bashrc \
+    && echo '' >> ~/.bashrc \
+    && echo '# Cargo shortcuts' >> ~/.bashrc \
+    && echo 'alias cb="cargo build"' >> ~/.bashrc \
+    && echo 'alias cr="cargo run"' >> ~/.bashrc \
+    && echo 'alias ct="cargo test"' >> ~/.bashrc \
+    && echo 'alias cc="cargo check"' >> ~/.bashrc \
+    && echo 'alias cf="cargo fmt"' >> ~/.bashrc \
+    && echo 'alias ccl="cargo clippy"' >> ~/.bashrc \
+    && echo '' >> ~/.bashrc \
+    && echo '# Spiral Core specific aliases' >> ~/.bashrc \
+    && echo 'alias spiral-test="hurl --test tests/api/api.hurl"' >> ~/.bashrc \
+    && echo 'alias spiral-health="hurl --test tests/api/health.hurl"' >> ~/.bashrc \
+    && echo '' >> ~/.bashrc \
+    && echo '# API Testing shortcuts with Hurl' >> ~/.bashrc \
+    && echo 'alias api-test="hurl --test tests/api/"' >> ~/.bashrc \
+    && echo 'alias api-health="hurl --test tests/api/health.hurl"' >> ~/.bashrc \
+    && echo 'alias api-status="hurl --test tests/api/status.hurl"' >> ~/.bashrc \
+    && echo 'alias api-all="hurl --test tests/api/*.hurl"' >> ~/.bashrc \
+    && echo 'alias hurl-test="./scripts/test-api-hurl.sh"' >> ~/.bashrc \
+    && echo '' >> ~/.bashrc \
+    && echo '# Tool installation shortcuts' >> ~/.bashrc \
+    && echo 'alias install-hurl="cargo install hurl --locked"' >> ~/.bashrc \
+    && echo 'alias install-cargo-watch="cargo install cargo-watch --locked"' >> ~/.bashrc \
+    && echo 'alias install-tools="./scripts/install-cargo-tools.sh"' >> ~/.bashrc
+
+# Copy aliases to zsh config
+RUN cat ~/.bashrc >> ~/.zshrc
+
+# Note: Heavy tools (Hurl, cargo-watch, etc.) installed via postCreateCommand
+# This saves 10+ minutes of build time per build

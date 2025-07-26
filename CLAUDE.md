@@ -2,6 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🚨 IMPORTANT: Documentation-First Development
+
+**BEFORE starting ANY task, ALWAYS:**
+
+1. **Read this CLAUDE.md file completely** to understand project context
+2. **Check relevant modular documentation** listed in the "Modular Documentation Architecture" section
+3. **Follow established patterns** from existing code and documented conventions
+4. **Verify naming conventions** match the established CLAUDE-* pattern for docs
+5. **Apply colocation patterns** from [COLOCATION_PATTERNS.md](docs/COLOCATION_PATTERNS.md)
+
+**Key Documentation to Reference:**
+
+- **Coding Standards**: [CODING_STANDARDS.md](docs/CODING_STANDARDS.md)
+- **Colocation Patterns**: [COLOCATION_PATTERNS.md](docs/COLOCATION_PATTERNS.md)
+- **Architecture Decisions**: This file and module-specific guides
+
 ## Project Overview
 
 **Spiral Core** is a Rust-based AI agent orchestration system built by Anti Spiral Interactive. The system creates specialized AI agents that collaborate through Claude Code integration to build tools and manage complex workflows. The architecture emphasizes simplicity, compile-time safety, and efficient resource management for deployment on 8GB VPS or Apple Silicon hardware.
@@ -84,46 +100,59 @@ The Spiral Core system follows strict architectural principles to ensure maintai
 - **DRY Principle**: Don't Repeat Yourself - single source of truth for all knowledge  
 - **SID Naming**: Short, Intuitive, Descriptive naming conventions
 
-For detailed implementation guidance and examples, see [Coding Standards](docs/CLAUDE-core-coding-standards.md).
+For detailed implementation guidance and examples, see [Coding Standards](docs/CODING_STANDARDS.md).
 
 ## Modular Documentation Architecture
 
 This CLAUDE.md file serves as the orchestrator for specialized documentation modules. For detailed implementation guidance, refer to the modular documentation:
 
 ### Core System Modules
-- **[Coding Standards](docs/CLAUDE-core-coding-standards.md)** - SOLID, DRY, and SID principles with Rust-specific patterns
+
+- **[Coding Standards](docs/CODING_STANDARDS.md)** - SOLID, DRY, and SID principles with Rust-specific patterns
+- **[Colocation Patterns](docs/COLOCATION_PATTERNS.md)** - Code organization, test colocation, and modular structure patterns
+- **[Task Checklist](docs/TASK_CHECKLIST.md)** - Pre-task documentation review and execution guidelines
+- **[Markdown Standards](docs/MARKDOWN_STANDARDS.md)** - Documentation formatting and style guidelines
+- **[Development Practices](docs/DEVELOPMENT_PRACTICES.md)** - Package management practices and prohibited commands
+- **[Security Policy](docs/SECURITY_POLICY.md)** - Security hardening measures and vulnerability reporting
 
 ### Agent System Modules  
-- **[Developer Agent](docs/CLAUDE-agents-developer.md)** - Code generation, language detection, and Claude Code integration
-- **[Project Manager Agent](docs/CLAUDE-agents-pm.md)** - Strategic analysis and coordination patterns
+
+- **[Developer Agent](src/agents/docs/AGENTS_DEVELOPER.md)** - Code generation, language detection, and Claude Code integration
+- **[Project Manager Agent](src/agents/docs/AGENTS_PM.md)** - Strategic analysis and coordination patterns
 
 ### Integration Modules
-- **[Discord Integration](docs/CLAUDE-integrations-discord.md)** - Conversational agent mentions and Discord bot patterns
-- **[GitHub Integration](docs/CLAUDE-integrations-github.md)** - Automated repository management and PR creation  
-- **[Claude Code Integration](docs/CLAUDE-integrations-claude-code.md)** - Primary intelligence engine patterns
+
+- **[Discord Integration](src/integrations/docs/INTEGRATIONS_DISCORD.md)** - Conversational agent mentions and Discord bot patterns
+- **[GitHub Integration](src/integrations/docs/INTEGRATIONS_GITHUB.md)** - Automated repository management and PR creation  
+- **[Claude Code Integration](src/integrations/docs/INTEGRATIONS_CLAUDE_CODE.md)** - Primary intelligence engine patterns
 
 ### Implementation Modules
-- **[Phase 1 Implementation](docs/CLAUDE-implementation-phase1.md)** - Foundation setup and core systems
+
+- **[Phase 1 Implementation](src/implementation/docs/IMPLEMENTATION_PHASE1.md)** - Foundation setup and core systems
 
 ## Implementation Roadmap Summary
 
 ### Phase 1: Foundation (Critical Priority)
+
 1. **Discord Bot Integration** - Primary user interface with conversational agent mentions
 2. **Developer Agent** - Autonomous code generation with language detection
 3. **Claude Code Client** - Primary intelligence engine integration
 4. **Minimal HTTP API** - Agent communication endpoints
 
 ### Phase 2: Enhanced Coordination (High Priority)  
+
 1. **Project Manager Agent** - Strategic analysis and task coordination
 2. **GitHub Integration** - Automated repository management
 3. **Agent Status Monitoring** - Resource management and performance tracking
 
 ### Phase 3: Advanced Features (Medium Priority)
+
 1. **QA Agent** - Code review and validation
 2. **Enhanced Discord Commands** - Task queuing and agent assignment
 3. **Database Persistence** - Agent state and task history
 
 ### Phase 4: Tool Building System (Lower Priority)
+
 1. **Human Approval Workflows** - Tool request management
 2. **Custom Tool Creation** - Dynamic capability expansion
 3. **Self-Improvement Mechanisms** - Agent learning and adaptation

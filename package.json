@@ -5,12 +5,14 @@
   "main": "index.js",
   "scripts": {
     "install-tools": "npm install",
-    "watch-docs": "./claude-docs-coordinator.sh start-watcher",
-    "stop-watch": "./claude-docs-coordinator.sh stop-watcher",
-    "validate-docs": "./claude-docs-coordinator.sh manual 'validation' 'claude-code --prompt \"Validate all CLAUDE*.md files for consistency\"'",
-    "status": "./claude-docs-coordinator.sh status",
     "dev": "echo 'Spiral Core development environment ready'",
-    "test": "echo 'No tests configured yet'"
+    "test": "echo 'No tests configured yet'",
+    "prepare": "husky",
+    "lint:md": "markdownlint --config .markdownlint.json '**/*.md' --ignore 'node_modules/**'",
+    "lint:md:fix": "markdownlint --config .markdownlint.json --fix '**/*.md' --ignore 'node_modules/**'",
+    "format:md": "npm run lint:md:fix",
+    "validate:docs": "npm run lint:md && npx tsx scripts/validate-docs.ts",
+    "test:docs": "npx tsx scripts/validate-docs.ts"
   },
   "keywords": [
     "ai",
@@ -23,10 +25,11 @@
   "author": "Spiral Core Team",
   "license": "MIT",
   "devDependencies": {
-    "chokidar": "^4.0.3",
-    "chokidar-cli": "^3.0.0",
-    "concurrently": "^9.2.0",
-    "nodemon": "^3.0.2"
+    "husky": "^9.1.7",
+    "lint-staged": "^16.1.2",
+    "markdownlint-cli": "^0.45.0",
+    "tsx": "^4.20.0",
+    "@types/node": "^22.9.0"
   },
   "engines": {
     "node": ">=22.0.0",
@@ -39,5 +42,10 @@
   "bugs": {
     "url": "https://github.com/your-org/spiral-core/issues"
   },
-  "homepage": "https://github.com/your-org/spiral-core#readme"
+  "homepage": "https://github.com/your-org/spiral-core#readme",
+  "lint-staged": {
+    "*.md": [
+      "markdownlint --config .markdownlint.json --fix"
+    ]
+  }
 }

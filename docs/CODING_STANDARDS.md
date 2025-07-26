@@ -344,7 +344,7 @@ pub struct ConversationId(String);
 pub fn get_agent_by_id(id: AgentId) -> Option<Box<dyn Agent>> { /* */ }
 ```
 
-### Error Handling
+### Advanced Error Handling
 
 ```rust
 // ✅ Good - Comprehensive error types with context
@@ -446,6 +446,6 @@ These standards are enforced through:
 
 ## Related Documentation
 
-- See [Developer Agent](CLAUDE-agents-developer.md) for agent-specific applications
-- See [Discord Integration](CLAUDE-integrations-discord.md) for Discord-specific patterns
-- See [Implementation Guide](CLAUDE-implementation-phase1.md) for practical application
+- See [Developer Agent](../src/agents/docs/AGENTS_DEVELOPER.md) for agent-specific applications
+- See [Discord Integration](../src/integrations/docs/INTEGRATIONS_DISCORD.md) for Discord-specific patterns
+- See [Implementation Guide](../src/implementation/docs/IMPLEMENTATION_PHASE1.md) for practical application

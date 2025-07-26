@@ -1,94 +1,183 @@
-# Spiral Core
+# Spiral Core Agent Orchestration System
 
-AI agent orchestration system with Claude Code integration and automated documentation management.
+A Rust-based AI agent orchestration system built by Anti Spiral Interactive. The system creates specialized AI agents that collaborate through Claude Code integration to build tools and manage complex workflows.
+
+## Quick Links
+
+📋 **[Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md)** - System design and component relationships  
+🏗️ **[Development Setup](docs/DEVELOPMENT_PRACTICES.md)** - Local development and container setup  
+🔧 **[Coding Standards](docs/CODING_STANDARDS.md)** - SOLID, DRY, SID principles and best practices  
+🚀 **[Phase 1 Implementation](src/implementation/docs/IMPLEMENTATION_PHASE1.md)** - Current development phase  
+
+## Architecture Overview
+
+Spiral Core uses Claude Code as the primary intelligence engine, reducing complexity while maintaining sophisticated functionality:
+
+- **Rust Backend**: Agent orchestration with Claude Code integration
+- **Discord Bot Service**: Conversational agent mentions (@SpiralDev, @SpiralPM)
+- **HTTP API**: RESTful endpoints for agent communication
+- **Specialized Agents**: Developer, Project Manager, QA (planned)
 
 ## Quick Start
 
-### Prerequisites
-- **Rust** (for core system)
-- **Node.js 22+ LTS** (for documentation tooling)
-- **Claude Code** CLI installed
+### Development Container (Recommended)
 
-### Installation
+1. **Prerequisites:** Docker Desktop + VS Code with Dev Containers extension
+2. **Open in container:** `code .` → "Dev Containers: Reopen in Container"
+3. **Configure:** Update `.env` with your Claude API key
+4. **Run:** `spiral-start` or `./test-api.sh`
 
-1. **Install Node.js dependencies:**
-   ```bash
-   npm install
-   ```
+See [.devcontainer/DEVCONTAINER-GUIDE.md](.devcontainer/DEVCONTAINER-GUIDE.md) for complete setup.
 
-2. **Install Rust dependencies:**
-   ```bash
-   cargo build
-   ```
+### Local Development
 
-### Documentation Management
+**Prerequisites:**
 
-The project uses an automated documentation coordination system to maintain consistency across all CLAUDE*.md files.
+- Rust 1.70+ with Cargo
+- Claude API key from Anthropic
+- Discord bot token (optional)
 
-#### Available Commands
+### Installation & Build
 
 ```bash
-# Start automated documentation watcher
-npm run watch-docs
-# or directly:
-./claude-docs-coordinator.sh start-watcher
+# Clone and build
+git clone <repository-url>
+cd spiral-core
+cargo build --release
 
-# Stop the watcher
-npm run stop-watch
+# Configure environment (copy .env.example to .env)
+CLAUDE_API_KEY=sk-ant-api03-your-api-key-here
+DISCORD_TOKEN=your-discord-bot-token  # optional
 
-# Check coordinator status
-npm run status
-
-# Manually validate documentation
-npm run validate-docs
-
-# Emergency cleanup
-./claude-docs-coordinator.sh cleanup
+# Run
+cargo run --bin spiral-core
 ```
 
-#### How It Works
+See [Development Practices](docs/DEVELOPMENT_PRACTICES.md) for complete environment setup.
 
-1. **File Watcher**: Monitors all `CLAUDE*.md` files for changes
-2. **Feedback Loop Prevention**: 5-minute cooldown + read-only validation
-3. **Process Coordination**: File locking prevents conflicts
-4. **Automatic Analysis**: Detects inconsistencies across documentation files
+## Usage
+
+### Discord Integration
+
+Conversational agent mentions for natural interaction:
+
+```
+@SpiralDev create a Python FastAPI todo application
+@SpiralPM what's the best architecture for this microservice?
+```
+
+### HTTP API
+
+RESTful endpoints for programmatic access:
+
+```bash
+# Submit task
+curl -X POST http://localhost:3000/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"agent_type": "SoftwareDeveloper", "content": "Create hello world in Rust"}'
+
+# System status
+curl -H "x-api-key: your-api-key" http://localhost:3000/system/status
+```
+
+See [API Reference](src/api/API_REFERENCE.md) for complete endpoint documentation.
+
+### Current Agents
+
+- **SpiralDev**: Autonomous code generation with language detection  
+- **SpiralPM**: Strategic analysis and task coordination _(planned)_  
+- **SpiralQA**: Code review and validation _(planned)_
+
+See [Agent Documentation](src/agents/docs/) for implementation details.
+
+## Development
 
 ### Project Structure
 
 ```
-spiral-core/
-├── CLAUDE.md                           # Main documentation orchestrator
-├── docs/                               # Modular documentation
-│   ├── CLAUDE-agents-developer.md      # Developer agent implementation
-│   ├── CLAUDE-agents-pm.md             # Project manager agent
-│   ├── CLAUDE-core-coding-standards.md # Coding standards (SOLID/DRY/SID)
-│   ├── CLAUDE-integrations-*.md        # Integration patterns
-│   └── CLAUDE-implementation-*.md      # Implementation guides
-├── claude-docs-coordinator.sh          # Documentation coordination system
-├── package.json                        # Node.js dependencies
-└── target/                             # Rust build artifacts
+src/
+├── main.rs              # Main orchestration binary
+├── agents/              # Agent implementations and docs
+├── integrations/        # Claude Code, Discord, GitHub integration docs
+├── implementation/      # Phase-based implementation guides
+├── claude_code.rs       # Claude Code API client
+├── discord.rs           # Discord bot integration
+├── api.rs               # HTTP API server
+└── bin/discord_bot.rs   # Discord bot binary
 ```
 
-### Development Workflow
+### Running Tests
 
-1. **Make changes** to any CLAUDE*.md file
-2. **Automatic validation** runs within 10 seconds
-3. **Review reports** for any inconsistencies detected
-4. **Manual fixes** can be made using coordinator's manual mode
-5. **Process coordination** ensures no conflicts
+```bash
+cargo test                    # All tests
+cargo test --test integration # Integration tests only
+RUST_LOG=debug cargo test    # With debug logging
+```
 
-### Troubleshooting
+### Development Guidelines
 
-- **Watcher not starting**: Check if chokidar is installed (`npm install`)
-- **Feedback loops**: The system has built-in prevention, but check cooldown status
-- **Lock conflicts**: Use `./claude-docs-coordinator.sh cleanup` for emergency reset
-- **Process conflicts**: Check status with `./claude-docs-coordinator.sh status`
+The project follows strict architectural principles documented in [Coding Standards](docs/CODING_STANDARDS.md):
 
-## Architecture
+- **SOLID Principles**: Single responsibility, open-closed, etc.
+- **DRY Principle**: Single source of truth for all knowledge
+- **SID Naming**: Short, Intuitive, Descriptive conventions
 
-This is a hybrid Rust/Node.js project:
-- **Rust**: Core AI agent orchestration system
-- **Node.js**: Documentation tooling and file watching
-- **Claude Code**: AI intelligence engine integration
+## System Architecture
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed system design.
+### Key Benefits
+
+- **Resource Efficient**: ~2.1GB RAM vs 8GB+ for local LLM approaches
+- **Claude Code Integration**: Access to latest AI capabilities via API
+- **Apple Silicon Optimized**: Native compilation without GPU complexity
+- **Simplified Deployment**: No local model management or CUDA dependencies
+
+### System Requirements
+
+- **Memory**: ~2.1GB RAM  
+- **CPU**: 2+ cores recommended  
+- **Network**: Stable internet for Claude API calls
+
+See [Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md) for complete system design.
+
+## Troubleshooting
+
+Common issues and solutions:
+
+1. **Claude API Errors**: Verify API key and rate limits
+2. **Discord Connection**: Check bot token and permissions  
+3. **Compilation**: Ensure Rust 1.70+ and dependencies
+
+Debug mode: `RUST_LOG=debug cargo run`
+
+See [Development Practices](docs/DEVELOPMENT_PRACTICES.md) for detailed troubleshooting.
+
+## Documentation Structure
+
+As the project grows, we're transitioning to a wiki-style documentation model:
+
+```
+docs/                           # Core project documentation
+├── ARCHITECTURE_*.md          # System architecture guides
+├── CODING_STANDARDS.md        # Development standards
+└── DEVELOPMENT_PRACTICES.md   # Setup and workflow guides
+
+src/                           # Implementation-specific docs
+├── agents/docs/              # Agent implementation guides
+├── integrations/docs/        # Integration patterns and examples
+└── implementation/docs/      # Phase-based implementation plans
+```
+
+## Contributing
+
+1. Follow [Coding Standards](docs/CODING_STANDARDS.md) and architectural principles
+2. Ensure all tests pass before submitting PRs  
+3. Update relevant documentation for changes
+4. See [Development Practices](docs/DEVELOPMENT_PRACTICES.md) for workflow
+
+## License
+
+MIT License - see LICENSE file for details.
+
+---
+
+💡 **Moving to Wiki Model**: As documentation grows, we're transitioning to a modular, wiki-style approach. Links above will eventually point to dedicated wiki pages for better organization and searchability.

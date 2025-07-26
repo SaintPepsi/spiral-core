@@ -1,0 +1,8 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+# Format markdown files on commit
+npx lint-staged
+
+# Run tests (when available)
+# npm test
