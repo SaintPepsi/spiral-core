@@ -44,7 +44,8 @@
         "quicktype.quicktype",
         "pflannery.vscode-versionlens",
         "DavidAnson.vscode-markdownlint",
-        "JacobPfeifer.pfeifer-hurl"
+        "JacobPfeifer.pfeifer-hurl",
+        "sumeet221b.hurler"
       ],
       "settings": {
         "rust-analyzer.checkOnSave.command": "clippy",

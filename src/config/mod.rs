@@ -12,15 +12,13 @@ pub struct Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClaudeCodeConfig {
-    pub api_key: String,
-    pub base_url: String,
-    pub model: String,
-    pub max_tokens: u32,
-    pub temperature: f32,
-    pub language_detection_tokens: u32,
-    pub language_detection_temperature: f32,
-    pub task_analysis_tokens: u32,
-    pub task_analysis_temperature: f32,
+    pub claude_binary_path: Option<String>,
+    pub working_directory: Option<String>,
+    pub timeout_seconds: u64,
+    pub permission_mode: String,
+    pub allowed_tools: Vec<String>,
+    pub workspace_cleanup_after_hours: u64,
+    pub max_workspace_size_mb: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,56 +45,37 @@ impl Config {
             Err(e) => tracing::warn!("Could not load .env file: {}", e),
         }
 
-        // SECURITY: Validate Claude API key is provided
-        let claude_api_key = env::var("CLAUDE_API_KEY").map_err(|_| {
-            SpiralError::ConfigurationError(
-                "CLAUDE_API_KEY environment variable is required".to_string(),
-            )
-        })?;
-
-        if claude_api_key.trim().is_empty() {
-            return Err(SpiralError::ConfigurationError(
-                "CLAUDE_API_KEY cannot be empty".to_string(),
-            ));
-        }
-
-        // SECURITY: Basic Claude API key format validation
-        if !claude_api_key.starts_with("sk-") || claude_api_key.len() < 40 {
-            return Err(SpiralError::ConfigurationError(
-                "CLAUDE_API_KEY appears to be invalid (should start with 'sk-' and be at least 40 characters)".to_string()
-            ));
-        }
-
         let claude_code = ClaudeCodeConfig {
-            api_key: claude_api_key,
-            base_url: env::var("CLAUDE_BASE_URL")
-                .unwrap_or_else(|_| "https://api.anthropic.com".to_string()),
-            model: env::var("CLAUDE_MODEL")
-                .unwrap_or_else(|_| "claude-3-5-sonnet-20241022".to_string()),
-            max_tokens: env::var("CLAUDE_MAX_TOKENS")
-                .unwrap_or_else(|_| "4096".to_string())
+            claude_binary_path: env::var("CLAUDE_BINARY_PATH").ok(),
+            working_directory: env::var("CLAUDE_WORKING_DIR").ok(),
+            timeout_seconds: env::var("CLAUDE_TIMEOUT_SECONDS")
+                .unwrap_or_else(|_| "300".to_string())
                 .parse()
-                .unwrap_or(4096),
-            temperature: env::var("CLAUDE_TEMPERATURE")
-                .unwrap_or_else(|_| "0.7".to_string())
+                .unwrap_or(300),
+            permission_mode: env::var("CLAUDE_PERMISSION_MODE").unwrap_or_else(|_| {
+                // Use more permissive mode in development environments
+                if cfg!(debug_assertions) {
+                    "bypassPermissions".to_string()
+                } else {
+                    "acceptEdits".to_string()
+                }
+            }),
+            allowed_tools: env::var("CLAUDE_ALLOWED_TOOLS")
+                .unwrap_or_else(|_| {
+                    "Edit,Write,Read,Bash,MultiEdit,Glob,Grep,TodoWrite,NotebookEdit,WebFetch"
+                        .to_string()
+                })
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect(),
+            workspace_cleanup_after_hours: env::var("CLAUDE_WORKSPACE_CLEANUP_HOURS")
+                .unwrap_or_else(|_| "24".to_string())
                 .parse()
-                .unwrap_or(0.7),
-            language_detection_tokens: env::var("CLAUDE_LANGUAGE_DETECTION_TOKENS")
+                .unwrap_or(24),
+            max_workspace_size_mb: env::var("CLAUDE_MAX_WORKSPACE_SIZE_MB")
                 .unwrap_or_else(|_| "100".to_string())
                 .parse()
                 .unwrap_or(100),
-            language_detection_temperature: env::var("CLAUDE_LANGUAGE_DETECTION_TEMPERATURE")
-                .unwrap_or_else(|_| "0.1".to_string())
-                .parse()
-                .unwrap_or(0.1),
-            task_analysis_tokens: env::var("CLAUDE_TASK_ANALYSIS_TOKENS")
-                .unwrap_or_else(|_| "1000".to_string())
-                .parse()
-                .unwrap_or(1000),
-            task_analysis_temperature: env::var("CLAUDE_TASK_ANALYSIS_TEMPERATURE")
-                .unwrap_or_else(|_| "0.3".to_string())
-                .parse()
-                .unwrap_or(0.3),
         };
 
         // SECURITY: Validate Discord token is provided

@@ -286,7 +286,6 @@ fn test_language_detection_integration() {
 
 /// 🏗️ TEST HELPERS: Utility functions for test setup
 /// INLINE REASONING: Common test setup patterns extracted to reduce duplication
-
 fn create_test_config() -> ClaudeCodeConfig {
     ClaudeCodeConfig {
         base_url: "https://api.anthropic.com/v1".to_string(),

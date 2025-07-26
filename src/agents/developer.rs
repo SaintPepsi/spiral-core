@@ -51,7 +51,7 @@ impl SoftwareDeveloperAgent {
             || has_project_context
             || content_has_indicators
         {
-            info!("Using local language detection: {}", local_detected);
+            info!("Using local language detection: {local_detected}");
             return Ok(local_detected);
         }
 
@@ -82,10 +82,10 @@ impl SoftwareDeveloperAgent {
             .await?;
 
         if detected.is_empty() {
-            info!("Using fallback language: {}", local_detected);
+            info!("Using fallback language: {local_detected}");
             Ok(local_detected)
         } else {
-            info!("Claude Code detected language: {}", detected);
+            info!("Claude Code detected language: {detected}");
             Ok(detected)
         }
     }
@@ -122,6 +122,7 @@ impl SoftwareDeveloperAgent {
             context,
             existing_code,
             requirements,
+            session_id: Some(task.id.clone()), // Use task ID as session ID for continuity
         })
     }
 

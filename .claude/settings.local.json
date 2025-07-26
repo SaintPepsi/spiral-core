@@ -50,7 +50,11 @@
       "Bash(scripts/test-api-hurl.sh:*)",
       "Bash(cat:*)",
       "Bash(./scripts/verify-spiral-core.sh:*)",
-      "Bash(source:*)"
+      "Bash(source:*)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(timeout:*)",
+      "Bash(rustc:*)",
+      "Bash(git add:*)"
     ],
     "deny": [
       "Bash(npm install -g:*)",

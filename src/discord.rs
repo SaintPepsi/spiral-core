@@ -53,7 +53,7 @@ impl DiscordBot {
 
         info!("Discord bot connected, starting event loop");
         if let Err(why) = client.start().await {
-            error!("Discord client error: {:?}", why);
+            error!("Discord client error: {why:?}");
             return Err(SpiralError::Discord(Box::new(why)));
         }
 

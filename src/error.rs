@@ -34,9 +34,6 @@ pub enum SpiralError {
     #[error("Validation error: {0}")]
     Validation(String),
 
-    #[error("Validation error: {0}")]
-    ValidationError(String),
-
     #[error("Internal error: {0}")]
     Internal(#[from] anyhow::Error),
 }
