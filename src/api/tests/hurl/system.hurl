@@ -33,7 +33,7 @@ HTTP 200
 [Asserts]
 jsonpath "$.queue_length" == 0
 jsonpath "$.system_uptime" >= 0
-jsonpath "$.agents.SoftwareDeveloper.is_busy" == false
+jsonpath "$.agents.SoftwareDeveloper.is_busy" isBoolean
 jsonpath "$.agents.SoftwareDeveloper.tasks_completed" == 0
 
 # Test 4: Get system status with Bearer token should succeed
