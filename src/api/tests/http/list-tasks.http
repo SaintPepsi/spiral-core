@@ -1,0 +1,3 @@
+GET {{$dotenv BASE_URL}}/system/status
+x-api-key: {{$dotenv API_KEY}}
+

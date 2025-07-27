@@ -10,7 +10,7 @@ use tracing::{error, info, warn, Level};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // 📊 STARTUP PHASE 1: Initialize logging
-    tracing_subscriber::fmt().with_max_level(Level::INFO).init();
+    tracing_subscriber::fmt().with_max_level(Level::DEBUG).init();
 
     info!("Starting Spiral Core Agent Orchestration System");
     info!("Version: {}", env!("CARGO_PKG_VERSION"));

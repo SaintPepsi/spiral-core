@@ -54,7 +54,8 @@
       "WebFetch(domain:docs.anthropic.com)",
       "Bash(timeout:*)",
       "Bash(rustc:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(./scripts/kill-server.sh:*)"
     ],
     "deny": [
       "Bash(npm install -g:*)",

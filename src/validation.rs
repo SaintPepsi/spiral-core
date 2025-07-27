@@ -30,7 +30,7 @@ pub const MAX_CONTEXT_VALUE_LENGTH: usize = 1000;
 /// Security: Blocks control chars, unicode exploits, binary data
 /// Alternative: Blocklist (rejected: whack-a-mole security), Plain text only (rejected: too restrictive)
 static SAFE_TASK_CONTENT_REGEX: &str =
-    r"^[a-zA-Z0-9\s\.,!?:;()\[\]{}\-_+=@#$%^&*|\\/<>'`~\n\r\t]+$";
+    r#"^[a-zA-Z0-9\s\.,!?:;()\[\]{}\-_+=@#$%^&*|\\/<>'`"~\n\r\t]+$"#;
 
 /// 🚨 DANGEROUS PATTERNS: Known attack vectors and exploitation attempts
 /// SECURITY PHILOSOPHY: Multi-layer defense with pattern recognition

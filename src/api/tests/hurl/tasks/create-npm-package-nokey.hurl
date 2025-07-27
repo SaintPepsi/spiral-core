@@ -1,7 +1,6 @@
-# source .env && hurl --variable API_KEY="$API_KEY" --variable BASE_URL="$BASE_URL"  src/api/tests/hurl/tasks/create-npm-package.hurl
+# source .env && hurl --variable API_KEY="$API_KEY" --variable BASE_URL="$BASE_URL"  src/api/tests/hurl/tasks/create-npm-package-nokey.hurl
 
 POST {{BASE_URL}}/tasks
-x-api-key: {{API_KEY}}
 Content-Type: application/json
 
 {

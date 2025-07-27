@@ -177,7 +177,15 @@ impl ClaudeCodeCliClient {
         // Why: Balances context preservation with clean slate operations
         // Alternative: Always new sessions (rejected: loses valuable context)
         if let Some(sid) = session_id {
-            command.args(["--resume", sid]);  // Explicit session continuation
+            // Only use --resume if this is NOT a new session
+            // A new session means no existing conversation to resume
+            if !is_new_session {
+                command.args(["--resume", sid]);  // Explicit session continuation
+                debug!("Resuming existing session: {}", sid);
+            } else {
+                // New session with ID - start fresh conversation
+                debug!("Starting new session with ID: {}", sid);
+            }
         } else if is_new_session {
             // For new sessions, don't add continue/resume flags
             // 📝 REASONING: Clean slate prevents unexpected context interference
@@ -603,15 +611,17 @@ impl ClaudeCodeCliClient {
         prompt: &str,
         session_id: Option<&str>,
     ) -> Result<(ClaudeCodeCliResponse, PathBuf)> {
-        // Get workspace first
-        let (workspace, _is_new) = self.get_or_create_session_workspace(session_id).await?;
-
         // Try with configured permissions first
+        // Note: workspace will be created inside execute_claude_command_with_session
         match self
             .execute_claude_command_with_session(prompt, session_id)
             .await
         {
-            Ok(response) => Ok((response, workspace)),
+            Ok(response) => {
+                // Get workspace path for return value
+                let (workspace, _) = self.get_or_create_session_workspace(session_id).await?;
+                Ok((response, workspace))
+            },
             Err(e) => {
                 // If it failed due to permissions, try with more permissive mode
                 if e.to_string().contains("permission") || e.to_string().contains("access") {
@@ -638,6 +648,8 @@ impl ClaudeCodeCliClient {
                             session_id,
                         )
                         .await?;
+                    // Get workspace path for return value
+                    let (workspace, _) = self.get_or_create_session_workspace(session_id).await?;
                     Ok((response, workspace))
                 } else {
                     Err(e)
@@ -678,7 +690,15 @@ impl ClaudeCodeCliClient {
         // Why: Balances context preservation with clean slate operations
         // Alternative: Always new sessions (rejected: loses valuable context)
         if let Some(sid) = session_id {
-            command.args(["--resume", sid]);  // Explicit session continuation
+            // Only use --resume if this is NOT a new session
+            // A new session means no existing conversation to resume
+            if !is_new_session {
+                command.args(["--resume", sid]);  // Explicit session continuation
+                debug!("Resuming existing session: {}", sid);
+            } else {
+                // New session with ID - start fresh conversation
+                debug!("Starting new session with ID: {}", sid);
+            }
         } else if is_new_session {
             // For new sessions, don't add continue/resume flags
             // 📝 REASONING: Clean slate prevents unexpected context interference
@@ -913,7 +933,17 @@ impl ClaudeCodeCliClient {
             ));
         }
 
-        prompt.push_str("Provide the complete implementation with explanations.");
+        prompt.push_str(
+            "IMPORTANT: After implementing the code, you MUST:\n\
+             1. Verify that the code compiles without errors\n\
+             2. Run all tests and ensure they pass\n\
+             3. Fix any compilation errors or test failures\n\
+             4. If creating a package, verify it builds successfully\n\
+             5. Ensure type safety and no unused imports\n\n\
+             Use the available tools to compile, test, and validate your implementation. \
+             Do not consider the task complete until the code compiles cleanly and all tests pass.\n\n\
+             Provide the complete implementation with explanations."
+        );
         prompt
     }
 

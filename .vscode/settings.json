@@ -1,3 +1,3 @@
 {
-	"hurler.environmentFile": ".env"
+  "hurler.environmentFile": "./.env"
 }
