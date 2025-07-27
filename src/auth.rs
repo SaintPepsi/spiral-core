@@ -106,7 +106,11 @@ pub async fn auth_middleware(
         Some(expected_key) => {
             // 🔐 CONSTANT-TIME COMPARISON AUDIT CHECKPOINT: Prevent timing attacks
             // CRITICAL: Use secure comparison to prevent API key extraction via timing
-            if provided_key == expected_key {
+            // SECURITY DECISION: Use constant-time comparison to prevent timing attacks
+            // Why: Prevents attackers from determining correct API key characters via timing analysis
+            // Alternative: Regular `==` (rejected: vulnerable to timing attacks)
+            use subtle::ConstantTimeEq;
+            if provided_key.as_bytes().ct_eq(expected_key.as_bytes()).into() {
                 // ✅ AUTHENTICATION SUCCESS: Proceed to next middleware/handler
                 tracing::debug!(
                     "Authentication successful for path: {} from IP: {}",

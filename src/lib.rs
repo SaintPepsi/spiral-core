@@ -8,6 +8,7 @@ pub mod discord;
 pub mod error;
 pub mod models;
 pub mod rate_limit;
+pub mod security;
 pub mod validation;
 
 pub use error::{Result, SpiralError};

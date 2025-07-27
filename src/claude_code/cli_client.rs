@@ -1,4 +1,4 @@
-use crate::{config::ClaudeCodeConfig, Result, SpiralError};
+use crate::{config::ClaudeCodeConfig, validation::TaskContentValidator, Result, SpiralError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -9,13 +9,20 @@ use tokio::process::Command;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+/// 🤖 CLAUDE CODE CLI CLIENT: Primary interface to Claude Code intelligence engine
+/// ARCHITECTURE DECISION: CLI integration over API for enhanced security and tool access
+/// Why: CLI provides file system access, tool execution, and session management
+/// Alternative: Direct API (rejected: limited tool access, no workspace isolation)
+/// Audit: Verify subprocess security in execute_claude_command methods
 #[derive(Debug, Clone)]
 pub struct ClaudeCodeCliClient {
     config: ClaudeCodeConfig,
     claude_binary: String,
+    validator: TaskContentValidator,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct ClaudeCodeCliResponse {
     #[serde(rename = "type")]
     pub response_type: String,
@@ -31,6 +38,7 @@ pub struct ClaudeCodeCliResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct CliUsage {
     pub input_tokens: u32,
     pub cache_creation_input_tokens: Option<u32>,
@@ -76,33 +84,53 @@ pub struct FileModification {
 }
 
 impl ClaudeCodeCliClient {
-    pub fn new(config: ClaudeCodeConfig) -> Result<Self> {
+    pub async fn new(config: ClaudeCodeConfig) -> Result<Self> {
         let claude_binary = if let Some(path) = &config.claude_binary_path {
             path.clone()
         } else {
-            Self::find_claude_binary()?
+            Self::find_claude_binary().await?
         };
 
+        let validator = TaskContentValidator::new()?;
         Ok(Self {
             config,
             claude_binary,
+            validator,
         })
     }
 
-    /// Find Claude Code CLI binary in system PATH
-    fn find_claude_binary() -> Result<String> {
+
+    /// 🔍 BINARY DISCOVERY: Locate Claude Code CLI in system environment
+    /// DECISION: Search multiple standard locations for flexibility
+    /// Why: Different installation methods place binary in different locations
+    /// Alternative: Require explicit path (rejected: poor developer experience)
+    /// PERFORMANCE DECISION: Use tokio::process::Command for non-blocking operation
+    /// Why: Prevents blocking the async runtime during binary discovery
+    /// Alternative: spawn_blocking (considered: more overhead for simple command)
+    async fn find_claude_binary() -> Result<String> {
         // Try common locations for Claude Code
         let possible_paths = [
-            "claude",
-            "/usr/local/bin/claude",
-            "/home/vscode/.local/bin/claude",
+            "claude",                       // PATH search
+            "/usr/local/bin/claude",        // Homebrew/standard install
+            "/home/vscode/.local/bin/claude", // Dev container install
         ];
 
         for path in &possible_paths {
-            if let Ok(output) = std::process::Command::new(path).arg("--help").output() {
-                if output.status.success() {
+            // ✅ PERFORMANCE FIX: Use tokio::process::Command for async operation
+            // Why: Prevents blocking the async runtime during binary discovery
+            // AUDIT CHECKPOINT: Verify error handling maintains security posture
+            match tokio::process::Command::new(path).arg("--help").output().await {
+                Ok(output) if output.status.success() => {
                     info!("Found Claude Code binary at: {}", path);
                     return Ok(path.to_string());
+                }
+                Ok(_) => {
+                    // Binary exists but --help failed, continue searching
+                    debug!("Binary at {} exists but --help failed", path);
+                }
+                Err(_) => {
+                    // Binary not found at this path, continue searching
+                    debug!("No binary found at {}", path);
                 }
             }
         }
@@ -112,10 +140,6 @@ impl ClaudeCodeCliClient {
         ))
     }
 
-    /// Execute Claude Code CLI command with JSON output using session management
-    async fn execute_claude_command(&self, prompt: &str) -> Result<ClaudeCodeCliResponse> {
-        self.execute_claude_command_with_session(prompt, None).await
-    }
 
     /// Execute Claude Code CLI command with optional session ID for continuity
     async fn execute_claude_command_with_session(
@@ -123,7 +147,10 @@ impl ClaudeCodeCliClient {
         prompt: &str,
         session_id: Option<&str>,
     ) -> Result<ClaudeCodeCliResponse> {
-        // Create or get workspace for this session
+        // 🏗️ WORKSPACE ISOLATION DECISION: Each session gets isolated filesystem workspace
+        // Why: Prevents cross-contamination between tasks, enables safe file operations
+        // Alternative: Shared workspace (rejected: security risk, concurrent access issues)
+        // AUDIT CHECKPOINT: Verify workspace creation doesn't allow directory traversal
         let (workspace, is_new_session) = self.get_or_create_session_workspace(session_id).await?;
 
         debug!(
@@ -145,14 +172,19 @@ impl ClaudeCodeCliClient {
             .stderr(Stdio::piped())
             .current_dir(&workspace); // Always use session workspace
 
-        // Add session resume if session_id is provided
+        // 🔄 SESSION CONTINUITY STRATEGY: Smart session management for context preservation
+        // DECISION: Three-tier approach - explicit resume, new session, or continue
+        // Why: Balances context preservation with clean slate operations
+        // Alternative: Always new sessions (rejected: loses valuable context)
         if let Some(sid) = session_id {
-            command.args(["--resume", sid]);
+            command.args(["--resume", sid]);  // Explicit session continuation
         } else if is_new_session {
             // For new sessions, don't add continue/resume flags
+            // 📝 REASONING: Clean slate prevents unexpected context interference
         } else {
             // For existing workspace without specific session ID, continue most recent
             command.args(["--continue"]);
+            // ⚠️ RISK: May inherit unexpected context - monitor for side effects
         }
 
         // Add allowed tools if any are specified
@@ -169,7 +201,11 @@ impl ClaudeCodeCliClient {
             message: format!("Failed to spawn Claude Code process: {e}"),
         })?;
 
-        // Write prompt to stdin
+        // 📝 STDIN COMMUNICATION: Direct prompt injection to CLI process
+        // 🛡️ SECURITY AUDIT CHECKPOINT: Prompt injection vulnerability surface
+        // CRITICAL: Ensure prompts are validated upstream before reaching this point
+        // Risk: Malicious prompts could execute arbitrary commands via Claude Code
+        // Mitigation: Input validation in API layer, prompt sanitization
         if let Some(stdin) = child.stdin.as_mut() {
             stdin
                 .write_all(prompt.as_bytes())
@@ -222,51 +258,6 @@ impl ClaudeCodeCliClient {
         Ok(response)
     }
 
-    /// Create an isolated workspace directory for Claude Code execution
-    async fn create_isolated_workspace(&self) -> Result<PathBuf> {
-        // Always create workspaces as child directories of current working directory
-        // This ensures Claude Code security restrictions are satisfied
-        let current_dir = std::env::current_dir().map_err(|e| SpiralError::Agent {
-            message: format!("Failed to get current directory: {e}"),
-        })?;
-
-        let base_workspace_dir = if let Some(working_dir) = &self.config.working_directory {
-            // If working_dir is specified, use it but ensure it's relative or within current_dir
-            let working_path = PathBuf::from(working_dir);
-            if working_path.is_absolute() {
-                // For absolute paths, create workspace under current dir for security
-                current_dir.join("claude-workspaces")
-            } else {
-                // For relative paths, use them relative to current dir
-                current_dir.join(working_path).join("claude-workspaces")
-            }
-        } else {
-            // Default: create workspaces in current directory
-            current_dir.join("claude-workspaces")
-        };
-
-        // Create base workspace directory if it doesn't exist
-        if !base_workspace_dir.exists() {
-            fs::create_dir_all(&base_workspace_dir)
-                .await
-                .map_err(|e| SpiralError::Agent {
-                    message: format!("Failed to create workspace base directory: {e}"),
-                })?;
-        }
-
-        // Create unique workspace for this request
-        let workspace_id = Uuid::new_v4().to_string();
-        let workspace_path = base_workspace_dir.join(format!("workspace-{workspace_id}"));
-
-        fs::create_dir_all(&workspace_path)
-            .await
-            .map_err(|e| SpiralError::Agent {
-                message: format!("Failed to create isolated workspace: {}", e),
-            })?;
-
-        debug!("Created isolated workspace: {:?}", workspace_path);
-        Ok(workspace_path)
-    }
 
     /// Get or create a workspace for a specific session
     async fn get_or_create_session_workspace(
@@ -499,7 +490,11 @@ impl ClaudeCodeCliClient {
         })
     }
 
-    /// Check Claude Code response for limitation messages and suggest improvements
+    /// 🔎 LIMITATION DETECTION: Parse responses for known constraint patterns
+    /// DECISION: Proactive detection and guidance for common issues
+    /// Why: Improves developer experience by suggesting solutions
+    /// Alternative: Silent failures (rejected: frustrating debugging experience)
+    /// 🛡️ AUDIT CHECKPOINT: Monitor for security-related limitations
     fn check_for_limitations(&self, response: &ClaudeCodeCliResponse) -> Result<()> {
         let result_text = &response.result.to_lowercase();
 
@@ -620,7 +615,22 @@ impl ClaudeCodeCliClient {
             Err(e) => {
                 // If it failed due to permissions, try with more permissive mode
                 if e.to_string().contains("permission") || e.to_string().contains("access") {
-                    warn!("Initial execution failed due to permissions, trying with bypassPermissions mode");
+                    // 🔓 PERMISSION ESCALATION DECISION: Auto-retry with elevated permissions
+                    // 🛡️ SECURITY AUDIT CHECKPOINT: Permission bypass activation
+                    // Why: User experience - avoid manual retry for common permission issues  
+                    // Risk: May execute with higher privileges than intended
+                    // Mitigation: Log security event, monitor for abuse patterns
+                    // 🚨 SECURITY AUDIT LOG: Permission bypass activation
+                    // CRITICAL: This event must be monitored for abuse patterns
+                    // MITIGATION: Log all relevant context for security analysis
+                    warn!(
+                        "SECURITY EVENT: Permission bypass activated - reason: initial_execution_failed, prompt_length: {}, session_id: {:?}, timestamp: {}",
+                        prompt.len(),
+                        session_id.unwrap_or("none"),
+                        chrono::Utc::now().to_rfc3339()
+                    );
+                    warn!("Initial execution failed due to permissions, retrying with bypassPermissions mode");
+                    
                     let response = self
                         .execute_claude_command_with_permissions_and_session(
                             prompt,
@@ -636,15 +646,6 @@ impl ClaudeCodeCliClient {
         }
     }
 
-    /// Execute Claude Code with specific permission mode (for fallback scenarios)
-    async fn execute_claude_command_with_permissions(
-        &self,
-        prompt: &str,
-        permission_mode: &str,
-    ) -> Result<ClaudeCodeCliResponse> {
-        self.execute_claude_command_with_permissions_and_session(prompt, permission_mode, None)
-            .await
-    }
 
     /// Execute Claude Code with specific permission mode and session support
     async fn execute_claude_command_with_permissions_and_session(
@@ -672,14 +673,19 @@ impl ClaudeCodeCliClient {
             .stderr(Stdio::piped())
             .current_dir(&workspace); // Always use session workspace
 
-        // Add session resume if session_id is provided
+        // 🔄 SESSION CONTINUITY STRATEGY: Smart session management for context preservation
+        // DECISION: Three-tier approach - explicit resume, new session, or continue
+        // Why: Balances context preservation with clean slate operations
+        // Alternative: Always new sessions (rejected: loses valuable context)
         if let Some(sid) = session_id {
-            command.args(["--resume", sid]);
+            command.args(["--resume", sid]);  // Explicit session continuation
         } else if is_new_session {
             // For new sessions, don't add continue/resume flags
+            // 📝 REASONING: Clean slate prevents unexpected context interference
         } else {
             // For existing workspace without specific session ID, continue most recent
             command.args(["--continue"]);
+            // ⚠️ RISK: May inherit unexpected context - monitor for side effects
         }
 
         // Add allowed tools
@@ -696,7 +702,11 @@ impl ClaudeCodeCliClient {
             message: format!("Failed to spawn Claude Code process: {e}"),
         })?;
 
-        // Write prompt to stdin
+        // 📝 STDIN COMMUNICATION: Direct prompt injection to CLI process
+        // 🛡️ SECURITY AUDIT CHECKPOINT: Prompt injection vulnerability surface
+        // CRITICAL: Ensure prompts are validated upstream before reaching this point
+        // Risk: Malicious prompts could execute arbitrary commands via Claude Code
+        // Mitigation: Input validation in API layer, prompt sanitization
         if let Some(stdin) = child.stdin.as_mut() {
             stdin
                 .write_all(prompt.as_bytes())
@@ -765,15 +775,17 @@ impl ClaudeCodeCliClient {
     ) -> Result<CodeGenerationResult> {
         info!("Generating code for language: {}", request.language);
 
-        // Input validation
-        if request.description.len() > 10000 {
-            warn!(
-                "Code generation request exceeds safe length: {} chars",
-                request.description.len()
-            );
-            return Err(SpiralError::Validation(
-                "Request description too long".to_string(),
-            ));
+        // 🛡️ INPUT VALIDATION: Critical security boundary
+        // Validate description content for safety
+        let _sanitized_description = self.validator.validate_and_sanitize_task_content(&request.description)
+            .map_err(|e| SpiralError::Validation(format!("Invalid request content: {}", e)))?;
+        
+        // Validate context keys and values
+        for (key, value) in &request.context {
+            self.validator.validate_context_key(key)
+                .map_err(|e| SpiralError::Validation(format!("Invalid context key '{}': {}", key, e)))?;
+            let _sanitized_value = self.validator.validate_and_sanitize_context_value(value)
+                .map_err(|e| SpiralError::Validation(format!("Invalid context value for '{}': {}", key, e)))?;
         }
 
         // Build comprehensive prompt
@@ -917,10 +929,12 @@ impl ClaudeCodeCliClient {
         // Extract code blocks from the response
         let code = self.extract_code_block(result_text, &language);
 
-        // For now, Claude Code doesn't provide structured file operations in JSON
-        // So we extract them from the text response
-        let files_to_create = Vec::new(); // TODO: Parse from response text
-        let files_to_modify = Vec::new(); // TODO: Parse from response text
+        // ARCHITECTURE DECISION: Claude Code CLI returns unstructured text responses
+        // Why: Current CLI doesn't provide structured file operation metadata
+        // Alternative: Parse response text for file operations (future enhancement)
+        // Current: Return empty vectors until structured output is available
+        let files_to_create = Vec::new(); 
+        let files_to_modify = Vec::new();
 
         Ok(CodeGenerationResult {
             code,
@@ -1055,4 +1069,3 @@ pub struct WorkspaceStats {
     pub oldest_workspace_age_hours: u64,
 }
 
-// TODO: Add tests module when needed

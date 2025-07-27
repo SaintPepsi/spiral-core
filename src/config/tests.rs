@@ -117,7 +117,7 @@ fn test_config_validation_with_secure_api_key() {
     
     assert!(result.is_ok());
     let config = result.unwrap();
-    assert!(config.api.enable_auth); // Should always be true
+    // Authentication is always enabled // Should always be true
     assert_eq!(config.api.api_key, Some("secure-api-key-1234567890123456789012345678901234567890".to_string()));
     
     // Clean up
@@ -248,7 +248,7 @@ fn test_config_default_values() {
     // Check defaults
     assert_eq!(config.api.host, "127.0.0.1"); // Should default to localhost
     assert_eq!(config.api.port, 3000);
-    assert!(config.api.enable_auth); // Always true
+    // Authentication is always enabled // Always true
     assert_eq!(config.claude_code.base_url, "https://api.anthropic.com");
     assert_eq!(config.discord.command_prefix, "!spiral");
     
@@ -309,7 +309,7 @@ fn test_config_validation_full_config() {
     let config = result.unwrap();
     assert_eq!(config.api.host, "127.0.0.1");
     assert_eq!(config.api.port, 8080);
-    assert!(config.api.enable_auth);
+    // Authentication is always enabled
     assert_eq!(config.api.api_key, Some("test-api-key-1234567890123456789012345678901234567890".to_string()));
     assert_eq!(config.api.allowed_origins.len(), 2);
     

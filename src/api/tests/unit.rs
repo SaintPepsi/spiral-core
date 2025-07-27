@@ -28,7 +28,6 @@ fn create_test_config() -> Config {
             host: "127.0.0.1".to_string(),
             port: 0, // Use random port for testing
             api_key: Some("test-secret-key-1234567890123456789012345678901234567890".to_string()),
-            enable_auth: true,
             allowed_origins: vec!["http://localhost:3000".to_string()],
         },
     }

@@ -116,7 +116,6 @@ fn create_test_config() -> Config {
             host: "127.0.0.1".to_string(),
             port: 3000,
             api_key: Some("test-api-key".to_string()),
-            enable_auth: false,
             allowed_origins: vec!["http://localhost:3000".to_string()],
         },
     }

@@ -9,7 +9,7 @@ use governor::{
     state::{InMemoryState, NotKeyed},
     Quota, RateLimiter,
 };
-use std::{net::SocketAddr, num::NonZeroU32, sync::Arc, time::Duration};
+use std::{net::SocketAddr, num::NonZeroU32, sync::Arc};
 use tracing::warn;
 
 // SECURITY: Rate limiting configuration
@@ -51,24 +51,51 @@ pub async fn rate_limit_middleware(
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // Note: This is a simple global rate limiter
-    // For production, you'd want per-IP rate limiting with a distributed cache
-
+    // 🛡️ SECURITY DECISION: Global rate limiting with per-endpoint quotas
+    // Why: Prevents abuse while allowing legitimate usage patterns
+    // Alternative: Per-IP tracking (future enhancement: requires distributed state)
+    // AUDIT CHECKPOINT: Critical DoS protection - verify rate limits are enforced
+    
     let path = request.uri().path();
+    let method = request.method();
+    let client_ip = addr.ip();
 
-    // SECURITY: Log rate limit attempts for monitoring
-    if path.starts_with("/tasks") && request.method() == "POST" {
-        // Task creation gets more restrictive rate limiting
-        warn!(
-            "Rate limiting not fully implemented for task creation from IP: {}",
-            addr.ip()
-        );
+    // 🚨 CREATE RATE LIMITERS: Static instances for performance
+    // DECISION: Static limiters avoid repeated allocations per request
+    // Why: Better performance than creating limiters per request
+    // Alternative: Injected service state (future enhancement)
+    use std::sync::LazyLock;
+    static RATE_CONFIG: LazyLock<RateLimitConfig> = LazyLock::new(|| RateLimitConfig::new());
+
+    // 🎯 ENDPOINT-SPECIFIC RATE LIMITING: Different limits for different operations
+    // Why: Task creation is more resource-intensive than status checks
+    let limiter = if path.starts_with("/tasks") && method == "POST" {
+        // Task creation gets more restrictive rate limiting (10/min)
+        &RATE_CONFIG.task_limiter
+    } else {
+        // General API access (60/min)  
+        &RATE_CONFIG.general_limiter
+    };
+
+    // 🛡️ RATE LIMIT ENFORCEMENT: Check quota before processing request
+    // Why: Prevents resource exhaustion from abusive clients
+    match limiter.check() {
+        Ok(_) => {
+            // Request allowed - proceed normally
+            Ok(next.run(request).await)
+        }
+        Err(_) => {
+            // 🚨 RATE LIMIT EXCEEDED: Log security event and reject request
+            // AUDIT CHECKPOINT: Ensure all rate limit violations are logged
+            warn!(
+                "Rate limit exceeded for {} {} from IP: {} - request denied",
+                method, path, client_ip
+            );
+            
+            // Return 429 Too Many Requests with appropriate headers
+            Err(StatusCode::TOO_MANY_REQUESTS)
+        }
     }
-
-    // For now, we'll implement a basic delay to prevent abuse
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
-    Ok(next.run(request).await)
 }
 
 // SECURITY: IP-based rate limiting helper

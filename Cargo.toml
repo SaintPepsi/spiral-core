@@ -29,6 +29,8 @@ validator = { version = "0.16", features = ["derive"] }
 html-escape = "0.2"
 url = "2.4"
 governor = "0.6"
+subtle = "2.5"
+rand = "0.8"
 
 # Discord integration
 serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model"] }
@@ -39,6 +41,8 @@ tokio-test = "0.4"
 mockito = "1.0"
 tower = { version = "0.4", features = ["util"] }
 serial_test = "3.0"
+futures = "0.3"
+tempfile = "3.0"
 
 [[bin]]
 name = "spiral-core"

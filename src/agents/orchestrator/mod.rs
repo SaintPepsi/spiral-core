@@ -19,6 +19,7 @@ pub struct AgentOrchestrator {
     task_storage: Arc<Mutex<HashMap<String, Task>>>,
     task_results: Arc<Mutex<HashMap<String, TaskResult>>>,
     start_time: Arc<std::time::Instant>,
+    claude_client: Arc<ClaudeCodeClient>,
 }
 
 impl AgentOrchestrator {
@@ -29,7 +30,7 @@ impl AgentOrchestrator {
         // Why: Centralizes API management, rate limiting, and response handling across agents
         // Alternative: Individual clients per agent (rejected: increases complexity, API overhead)
         // Audit: Check claude_code.rs:45-60 for client initialization patterns
-        let claude_client = ClaudeCodeClient::new(config.claude_code.clone())?;
+        let claude_client = ClaudeCodeClient::new(config.claude_code.clone()).await?;
 
         // 🔧 ARCHITECTURE DECISION: HashMap for agent registry with AgentType enum keys
         // Why: Type-safe agent lookup, prevents duplicate registrations, O(1) access
@@ -63,6 +64,7 @@ impl AgentOrchestrator {
             task_storage: Arc::new(Mutex::new(HashMap::new())),
             task_results: Arc::new(Mutex::new(HashMap::new())),
             start_time: Arc::new(std::time::Instant::now()),
+            claude_client: Arc::new(claude_client),
         })
     }
 
@@ -452,4 +454,52 @@ impl AgentOrchestrator {
         info!("Agent Orchestrator shutdown complete");
         Ok(())
     }
+
+    /// 🔧 CLAUDE CLIENT ACCESS: Provide access to Claude Code client for shutdown cleanup
+    /// DECISION: Return Result to handle case where client might be unavailable
+    /// Why: Defensive programming for graceful degradation during shutdown
+    pub fn get_claude_client(&self) -> Result<&ClaudeCodeClient> {
+        Ok(&self.claude_client)
+    }
+
+    /// 📊 SYSTEM STATUS: Get current system state for monitoring and shutdown
+    /// DECISION: Return simple struct rather than complex API response type
+    /// Why: Keeps orchestrator independent of API layer concerns
+    pub async fn get_system_status(&self) -> SystemStatus {
+        let agent_statuses = self.agent_statuses.read().await;
+        let task_queue = self.task_queue.lock().await;
+        
+        let agents: std::collections::HashMap<AgentType, SimpleAgentStatus> = agent_statuses
+            .iter()
+            .map(|(agent_type, status)| {
+                (agent_type.clone(), SimpleAgentStatus {
+                    is_busy: status.is_busy,
+                    tasks_completed: status.tasks_completed,
+                    tasks_failed: status.tasks_failed,
+                })
+            })
+            .collect();
+
+        SystemStatus {
+            agents,
+            queue_length: task_queue.len(),
+            system_uptime: self.start_time.elapsed().as_secs_f64(),
+        }
+    }
+}
+
+/// 📊 SYSTEM STATUS TYPES: Simple status information for internal use
+/// DECISION: Separate from API response types for loose coupling
+#[derive(Debug, Clone)]
+pub struct SystemStatus {
+    pub agents: std::collections::HashMap<AgentType, SimpleAgentStatus>,
+    pub queue_length: usize,
+    pub system_uptime: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SimpleAgentStatus {
+    pub is_busy: bool,
+    pub tasks_completed: u64,
+    pub tasks_failed: u64,
 }

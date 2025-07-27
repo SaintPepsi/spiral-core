@@ -72,11 +72,11 @@ async fn test_task_queue_limits() {
 #[tokio::test]
 async fn test_auth_config_loading() {
     let config_with_auth = create_test_config_with_auth();
-    assert!(config_with_auth.api.enable_auth);
+    // Authentication is always enabled
     assert!(config_with_auth.api.api_key.is_some());
     
     let config_without_auth = create_test_config_without_auth();
-    assert!(!config_without_auth.api.enable_auth);
+    // Authentication is always enabled
     assert!(config_without_auth.api.api_key.is_none());
 }
 
@@ -133,7 +133,7 @@ async fn test_config_validation() {
     assert!(!config.api.host.is_empty());
     assert!(config.api.port > 0);
     assert!(config.api.api_key.is_some());
-    assert!(config.api.enable_auth);
+    // Authentication is always enabled
     
     // Validate Discord config
     assert!(!config.discord.token.is_empty());
@@ -163,7 +163,6 @@ fn create_test_config_with_auth() -> Config {
             host: "127.0.0.1".to_string(),
             port: 3000,
             api_key: Some("test-auth-key-12345".to_string()),
-            enable_auth: true,
             allowed_origins: vec!["http://localhost:3000".to_string()],
         },
     }
@@ -191,7 +190,6 @@ fn create_test_config_without_auth() -> Config {
             host: "127.0.0.1".to_string(),
             port: 3000,
             api_key: None,
-            enable_auth: false,
             allowed_origins: vec!["http://localhost:3000".to_string()],
         },
     }

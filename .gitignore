@@ -30,10 +30,12 @@ yarn-error.log*
 # Project specific
 /generated_workspaces/
 /workspaces/
+/test-workspaces/
 *.log
 .env
 .env.backup
 .env.local
+.spiral-api-key
 
 # Claude docs coordination temp files
 /tmp/claude-docs.lock
