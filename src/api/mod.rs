@@ -86,6 +86,24 @@ pub struct ErrorResponse {
     pub details: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WorkspaceStatusResponse {
+    pub workspace_id: String,
+    pub session_id: Option<String>,
+    pub created_at: String,
+    pub size_bytes: u64,
+    pub file_count: usize,
+    pub last_modified: String,
+    pub status: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AllWorkspacesStatusResponse {
+    pub workspaces: Vec<WorkspaceStatusResponse>,
+    pub total_count: usize,
+    pub total_size_bytes: u64,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct TaskQueryParams {
     pub limit: Option<usize>,
@@ -156,6 +174,7 @@ impl ApiServer {
             .route("/agents", get(get_all_agent_statuses))
             .route("/agents/:agent_type", get(get_agent_status))
             .route("/system/status", get(get_system_status))
+            .route("/workspaces", get(get_all_workspaces_status))
             .layer(
                 ServiceBuilder::new()
                     .layer(middleware::from_fn(rate_limit_middleware)) // SECURITY: Rate limiting
@@ -428,4 +447,174 @@ async fn get_system_status(State(api_server): State<ApiServer>) -> Json<SystemSt
         queue_length,
         system_uptime,
     })
+}
+
+async fn get_all_workspaces_status(
+    State(api_server): State<ApiServer>,
+) -> std::result::Result<Json<AllWorkspacesStatusResponse>, (StatusCode, Json<ErrorResponse>)> {
+    match scan_workspaces_directory(&api_server).await {
+        Ok(workspaces) => {
+            let total_count = workspaces.len();
+            let total_size_bytes = workspaces.iter().map(|w| w.size_bytes).sum();
+            
+            Ok(Json(AllWorkspacesStatusResponse {
+                workspaces,
+                total_count,
+                total_size_bytes,
+            }))
+        }
+        Err(e) => {
+            warn!("Failed to scan workspaces: {}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to scan workspaces".to_string(),
+                    details: None, // SECURITY: Don't expose internal error details
+                }),
+            ))
+        }
+    }
+}
+
+async fn scan_workspaces_directory(_api_server: &ApiServer) -> Result<Vec<WorkspaceStatusResponse>> {
+    use std::fs;
+    
+    // Get the current working directory and construct the workspaces path
+    let current_dir = std::env::current_dir().map_err(|e| SpiralError::Agent {
+        message: format!("Failed to get current directory: {e}"),
+    })?;
+    
+    let workspace_base_dir = current_dir.join("claude-workspaces");
+    
+    if !workspace_base_dir.exists() {
+        return Ok(Vec::new());
+    }
+    
+    let mut workspaces = Vec::new();
+    
+    let entries = fs::read_dir(&workspace_base_dir).map_err(|e| SpiralError::Agent {
+        message: format!("Failed to read workspaces directory: {e}"),
+    })?;
+    
+    for entry in entries {
+        let entry = entry.map_err(|e| SpiralError::Agent {
+            message: format!("Failed to read workspace entry: {e}"),
+        })?;
+        
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        
+        let workspace_name = path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        
+        // Extract session ID if this is a session workspace
+        let session_id = if workspace_name.starts_with("session-") {
+            Some(workspace_name.strip_prefix("session-").unwrap_or("unknown").to_string())
+        } else {
+            None
+        };
+        
+        // Get directory metadata
+        let metadata = entry.metadata().map_err(|e| SpiralError::Agent {
+            message: format!("Failed to get workspace metadata: {e}"),
+        })?;
+        
+        let created_at = metadata.created()
+            .map(|time| {
+                let datetime: chrono::DateTime<chrono::Utc> = time.into();
+                datetime.to_rfc3339()
+            })
+            .unwrap_or_else(|_| "unknown".to_string());
+        
+        let last_modified = metadata.modified()
+            .map(|time| {
+                let datetime: chrono::DateTime<chrono::Utc> = time.into();
+                datetime.to_rfc3339()
+            })
+            .unwrap_or_else(|_| "unknown".to_string());
+        
+        // Calculate directory size and file count
+        let (size_bytes, file_count) = calculate_directory_size(&path)?;
+        
+        // Determine status based on age and activity
+        let status = determine_workspace_status(&metadata, &path)?;
+        
+        workspaces.push(WorkspaceStatusResponse {
+            workspace_id: workspace_name,
+            session_id,
+            created_at,
+            size_bytes,
+            file_count,
+            last_modified,
+            status,
+        });
+    }
+    
+    // Sort by creation time (newest first)
+    workspaces.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    
+    Ok(workspaces)
+}
+
+fn calculate_directory_size(dir_path: &std::path::Path) -> Result<(u64, usize)> {
+    use std::fs;
+    
+    let mut total_size = 0u64;
+    let mut file_count = 0usize;
+    
+    fn visit_dir(dir: &std::path::Path, total_size: &mut u64, file_count: &mut usize) -> Result<()> {
+        let entries = fs::read_dir(dir).map_err(|e| SpiralError::Agent {
+            message: format!("Failed to read directory: {e}"),
+        })?;
+        
+        for entry in entries {
+            let entry = entry.map_err(|e| SpiralError::Agent {
+                message: format!("Failed to read entry: {e}"),
+            })?;
+            
+            let path = entry.path();
+            let metadata = entry.metadata().map_err(|e| SpiralError::Agent {
+                message: format!("Failed to get metadata: {e}"),
+            })?;
+            
+            if metadata.is_file() {
+                *total_size += metadata.len();
+                *file_count += 1;
+            } else if metadata.is_dir() {
+                visit_dir(&path, total_size, file_count)?;
+            }
+        }
+        
+        Ok(())
+    }
+    
+    visit_dir(dir_path, &mut total_size, &mut file_count)?;
+    Ok((total_size, file_count))
+}
+
+fn determine_workspace_status(metadata: &std::fs::Metadata, _path: &std::path::Path) -> Result<String> {
+    use std::time::SystemTime;
+    
+    let now = SystemTime::now();
+    let created = metadata.created().unwrap_or(now);
+    let modified = metadata.modified().unwrap_or(now);
+    
+    let age = now.duration_since(created).unwrap_or_default();
+    let last_activity = now.duration_since(modified).unwrap_or_default();
+    
+    let status = if last_activity.as_secs() < 300 { // 5 minutes
+        "active"
+    } else if last_activity.as_secs() < 3600 { // 1 hour
+        "recent"
+    } else if age.as_secs() < 86400 { // 24 hours
+        "idle"
+    } else {
+        "old"
+    };
+    
+    Ok(status.to_string())
 }
