@@ -1,5 +1,5 @@
 use crate::{
-    agents::{Agent, SoftwareDeveloperAgent},
+    agents::{Agent, AgentOrchestrator, SoftwareDeveloperAgent},
     claude_code::ClaudeCodeClient,
     models::{AgentType, Priority, Task},
     Result, SpiralError,
@@ -18,7 +18,7 @@ use serenity::{
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
-use tracing::{debug, error, info, warn};
+use tracing::{info, warn};
 
 /// Discord message length limit for safety
 const MAX_MESSAGE_LENGTH: usize = 4000;
@@ -31,8 +31,12 @@ use regex::Regex;
 /// Why: Simpler deployment, dynamic persona switching, maintains agent identity feel
 /// Alternative: Multiple Discord applications (rejected: deployment complexity)
 pub struct SpiralConstellationBot {
-    developer_agent: Arc<SoftwareDeveloperAgent>,
-    claude_client: Arc<ClaudeCodeClient>,
+    // Direct mode (standalone Discord bot)
+    developer_agent: Option<Arc<SoftwareDeveloperAgent>>,
+    claude_client: Option<Arc<ClaudeCodeClient>>,
+    // Orchestrator mode (full system integration)
+    orchestrator: Option<Arc<AgentOrchestrator>>,
+    // Common fields
     start_time: Instant,
     stats: Arc<Mutex<BotStats>>,
     mention_regex: Regex,
@@ -135,6 +139,7 @@ impl AgentPersona {
 }
 
 impl SpiralConstellationBot {
+    /// 🎯 DIRECT MODE: Create bot with direct agent access (standalone Discord bot)
     pub fn new(
         developer_agent: SoftwareDeveloperAgent,
         claude_client: ClaudeCodeClient,
@@ -146,8 +151,27 @@ impl SpiralConstellationBot {
         })?;
         
         Ok(Self {
-            developer_agent: Arc::new(developer_agent),
-            claude_client: Arc::new(claude_client),
+            developer_agent: Some(Arc::new(developer_agent)),
+            claude_client: Some(Arc::new(claude_client)),
+            orchestrator: None,
+            start_time: Instant::now(),
+            stats: Arc::new(Mutex::new(BotStats::default())),
+            mention_regex,
+        })
+    }
+
+    /// 🎛️ ORCHESTRATOR MODE: Create bot with orchestrator integration (full system)
+    pub fn new_with_orchestrator(orchestrator: Arc<AgentOrchestrator>) -> Result<Self> {
+        // Pattern matches: @SpiralDev, @SpiralPM, @SpiralQA, etc. (user mentions)
+        // Also matches role mentions: <@&role_id>
+        let mention_regex = Regex::new(r"@Spiral(\w+)|<@&(\d+)>").map_err(|e| SpiralError::Agent {
+            message: format!("Invalid mention regex: {e}"),
+        })?;
+        
+        Ok(Self {
+            developer_agent: None,
+            claude_client: None,
+            orchestrator: Some(orchestrator),
             start_time: Instant::now(),
             stats: Arc::new(Mutex::new(BotStats::default())),
             mention_regex,
@@ -638,7 +662,7 @@ impl EventHandler for ConstellationBotHandler {
         if msg.content.len() > MAX_MESSAGE_LENGTH {
             warn!("[SpiralConstellation] Message too long: {} chars from user {}", msg.content.len(), msg.author.id);
             if let Err(e) = msg.reply(&ctx.http, "❌ Message too long for processing. Please keep requests under 4000 characters.").await {
-                error!("[SpiralConstellation] Failed to send length warning: {}", e);
+                warn!("[SpiralConstellation] Failed to send length warning: {}", e);
             }
             return;
         }
@@ -664,7 +688,7 @@ impl EventHandler for ConstellationBotHandler {
         // Handle special commands first
         if let Some(command_response) = self.bot.handle_special_commands(&msg.content, &msg, &ctx).await {
             if let Err(e) = msg.reply(&ctx.http, command_response).await {
-                error!("[SpiralConstellation] Failed to send command response: {}", e);
+                warn!("[SpiralConstellation] Failed to send command response: {}", e);
             }
             return;
         }
@@ -674,7 +698,7 @@ impl EventHandler for ConstellationBotHandler {
             Some(agent) => agent,
             None => {
                 if let Err(e) = msg.reply(&ctx.http, "❓ I'm not sure which agent you'd like to talk to. Try mentioning @SpiralDev, @SpiralPM, or @SpiralQA, or use a role mention!").await {
-                    error!("[SpiralConstellation] Failed to send clarification: {}", e);
+                    warn!("[SpiralConstellation] Failed to send clarification: {}", e);
                 }
                 return;
             }
@@ -686,7 +710,7 @@ impl EventHandler for ConstellationBotHandler {
         if cleaned_content.is_empty() {
             let response = format!("{} **{}**\n{}", persona.emoji, persona.name, persona.greeting);
             if let Err(e) = msg.reply(&ctx.http, response).await {
-                error!("[SpiralConstellation] Failed to send greeting: {}", e);
+                warn!("[SpiralConstellation] Failed to send greeting: {}", e);
             }
             return;
         }
@@ -711,7 +735,7 @@ impl EventHandler for ConstellationBotHandler {
         );
         
         if let Err(e) = msg.reply(&ctx.http, working_response).await {
-            error!("[SpiralConstellation] Failed to send working message: {}", e);
+            warn!("[SpiralConstellation] Failed to send working message: {}", e);
             return;
         }
         
@@ -719,19 +743,41 @@ impl EventHandler for ConstellationBotHandler {
         let task = self.bot.create_task_with_persona(&cleaned_content, agent_type.clone(), context);
         let task_id = task.id.clone();
         
-        debug!("[SpiralConstellation] Created {} task: {}", persona.name, task_id);
+        info!("[SpiralConstellation] Created {} task: {}", persona.name, task_id);
         
-        // Execute based on agent type (currently only developer is implemented)
+        // Execute based on agent type - choose execution mode based on bot configuration
         let result = match agent_type {
             AgentType::SoftwareDeveloper => {
-                // Add timeout to prevent hanging when Claude Code system is unavailable
-                let execute_future = self.bot.developer_agent.execute(task);
-                let timeout_duration = std::time::Duration::from_secs(30); // 30 second timeout
-                
-                match tokio::time::timeout(timeout_duration, execute_future).await {
-                    Ok(execute_result) => match execute_result {
-                        Ok(result) => {
-                            info!("[SpiralConstellation] {} task {} completed", persona.name, task_id);
+                // Choose execution mode: direct agent or orchestrator
+                if let Some(orchestrator) = &self.bot.orchestrator {
+                    // 🎛️ ORCHESTRATOR MODE: Use full system with task queuing and management
+                    info!("[SpiralConstellation] Using orchestrator mode for task execution");
+                    let task_id = match orchestrator.submit_task(task).await {
+                        Ok(id) => id,
+                        Err(e) => {
+                            warn!("[SpiralConstellation] Failed to submit task to orchestrator: {}", e);
+                            let error_message = self.bot.format_helpful_error_message(&e, &persona);
+                            if let Err(reply_err) = msg.reply(&ctx.http, error_message).await {
+                                warn!("[SpiralConstellation] Failed to send error message: {}", reply_err);
+                            }
+                            return;
+                        }
+                    };
+                    
+                    // Wait for task completion with timeout
+                    let timeout_duration = std::time::Duration::from_secs(60); // Longer timeout for orchestrator
+                    let poll_future = async {
+                        loop {
+                            if let Some(result) = orchestrator.get_task_result(&task_id).await {
+                                return Ok(result);
+                            }
+                            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                        }
+                    };
+                    
+                    match tokio::time::timeout(timeout_duration, poll_future).await {
+                        Ok(Ok(result)) => {
+                            info!("[SpiralConstellation] {} task {} completed via orchestrator", persona.name, task_id);
                             
                             // Update success stats
                             {
@@ -742,8 +788,57 @@ impl EventHandler for ConstellationBotHandler {
                             
                             self.bot.format_persona_response(&agent_type, &result)
                         }
-                        Err(e) => {
-                            warn!("[SpiralConstellation] {} task {} failed: {}", persona.name, task_id, e);
+                        Ok(Err(e)) => {
+                            warn!("[SpiralConstellation] {} task {} failed via orchestrator: {}", persona.name, task_id, e);
+                            let error_message = self.bot.format_helpful_error_message(&e, &persona);
+                            error_message
+                        }
+                        Err(_timeout) => {
+                            warn!("[SpiralConstellation] {} task {} timed out via orchestrator", persona.name, task_id);
+                            let timeout_error = crate::SpiralError::Agent {
+                                message: "Orchestrator task timed out - system may be overloaded".to_string(),
+                            };
+                            let error_message = self.bot.format_helpful_error_message(&timeout_error, &persona);
+                            error_message
+                        }
+                    }
+                } else if let Some(developer_agent) = &self.bot.developer_agent {
+                    // 🎯 DIRECT MODE: Use standalone agent execution
+                    info!("[SpiralConstellation] Using direct mode for task execution");
+                    let execute_future = developer_agent.execute(task);
+                    let timeout_duration = std::time::Duration::from_secs(30); // 30 second timeout
+                
+                    match tokio::time::timeout(timeout_duration, execute_future).await {
+                        Ok(execute_result) => match execute_result {
+                            Ok(result) => {
+                                info!("[SpiralConstellation] {} task {} completed", persona.name, task_id);
+                                
+                                // Update success stats
+                                {
+                                    let mut stats = self.bot.stats.lock().await;
+                                    stats.dev_tasks_completed += 1;
+                                    stats.current_persona = None;
+                                }
+                                
+                                self.bot.format_persona_response(&agent_type, &result)
+                            }
+                            Err(e) => {
+                                warn!("[SpiralConstellation] {} task {} failed: {}", persona.name, task_id, e);
+                                
+                                // Update failure stats
+                                {
+                                    let mut stats = self.bot.stats.lock().await;
+                                    stats.total_tasks_failed += 1;
+                                    stats.current_persona = None;
+                                }
+                                
+                                // Provide helpful error messages based on error type
+                                let error_message = self.bot.format_helpful_error_message(&e, &persona);
+                                error_message
+                            }
+                        },
+                        Err(_timeout) => {
+                            warn!("[SpiralConstellation] {} task {} timed out after 30 seconds", persona.name, task_id);
                             
                             // Update failure stats
                             {
@@ -752,29 +847,22 @@ impl EventHandler for ConstellationBotHandler {
                                 stats.current_persona = None;
                             }
                             
-                            // Provide helpful error messages based on error type
-                            let error_message = self.bot.format_helpful_error_message(&e, &persona);
+                            // Create a timeout error
+                            let timeout_error = crate::SpiralError::Agent {
+                                message: "Task execution timed out - Claude Code system may be unavailable".to_string(),
+                            };
+                            let error_message = self.bot.format_helpful_error_message(&timeout_error, &persona);
                             error_message
                         }
-                    },
-                    Err(_timeout) => {
-                        warn!("[SpiralConstellation] {} task {} timed out after 30 seconds", persona.name, task_id);
-                        
-                        // Update failure stats
-                        {
-                            let mut stats = self.bot.stats.lock().await;
-                            stats.total_tasks_failed += 1;
-                            stats.current_persona = None;
-                        }
-                        
-                        // Create a timeout error
-                        let timeout_error = crate::SpiralError::Agent {
-                            message: "Task execution timed out - Claude Code system may be unavailable".to_string(),
+                    }
+                } else {
+                        // Neither orchestrator nor direct agent available
+                        let config_error = crate::SpiralError::Agent {
+                            message: "Bot not properly configured - no execution method available".to_string(),
                         };
-                        let error_message = self.bot.format_helpful_error_message(&timeout_error, &persona);
+                        let error_message = self.bot.format_helpful_error_message(&config_error, &persona);
                         error_message
                     }
-                }
             }
             _ => {
                 // For other agent types (not yet implemented)
@@ -798,7 +886,7 @@ impl EventHandler for ConstellationBotHandler {
         
         // Send the response
         if let Err(e) = msg.reply(&ctx.http, result).await {
-            error!("[SpiralConstellation] Failed to send result: {}", e);
+            warn!("[SpiralConstellation] Failed to send result: {}", e);
         }
     }
     

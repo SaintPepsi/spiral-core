@@ -1,4 +1,5 @@
-use spiral_core::{agents::AgentOrchestrator, api::ApiServer, claude_code::ClaudeCodeClient, config::Config, security};
+use spiral_core::{agents::AgentOrchestrator, api::ApiServer, config::Config, security};
+use spiral_core::discord::startup::start_discord_with_orchestrator;
 use std::sync::Arc;
 use tokio::signal;
 use tracing::{error, info, warn, Level};
@@ -47,12 +48,12 @@ async fn main() -> anyhow::Result<()> {
 
     // 🤖 STARTUP PHASE 4.5: Initialize Discord integration (optional)
     let discord_handle = if !config.discord.token.is_empty() {
-        info!("Starting Discord integration...");
-        let claude_client = ClaudeCodeClient::new(config.claude_code.clone()).await?;
+        info!("Starting Discord integration with orchestrator...");
         let config_clone = config.clone();
+        let orchestrator_clone = orchestrator.clone();
         
         Some(tokio::spawn(async move {
-            if let Err(e) = spiral_core::discord::start_discord_bots(config_clone, claude_client).await {
+            if let Err(e) = start_discord_with_orchestrator(config_clone, orchestrator_clone).await {
                 error!("Discord integration failed: {}", e);
             }
         }))

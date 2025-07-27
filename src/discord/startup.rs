@@ -1,11 +1,12 @@
 use super::spiral_constellation_bot::{SpiralConstellationBot, SpiralConstellationBotRunner};
 use crate::{
-    agents::SoftwareDeveloperAgent,
+    agents::{AgentOrchestrator, SoftwareDeveloperAgent},
     claude_code::ClaudeCodeClient,
     config::Config,
     Result, SpiralError,
 };
-use tracing::{info, warn};
+use std::sync::Arc;
+use tracing::info;
 
 /// 🌌 SPIRAL DISCORD STARTUP: Initialize and launch SpiralConstellation bot
 /// ARCHITECTURE DECISION: Single bot with dynamic persona switching
@@ -94,7 +95,7 @@ impl SpiralDiscordStartup {
     }
 }
 
-/// 🎯 CONVENIENCE FUNCTION: Quick start for Discord integration
+/// 🎯 CONVENIENCE FUNCTION: Quick start for Discord integration (standalone mode)
 pub async fn start_discord_bots(config: Config, claude_client: ClaudeCodeClient) -> Result<()> {
     let startup = SpiralDiscordStartup::new(config, claude_client);
 
@@ -103,5 +104,30 @@ pub async fn start_discord_bots(config: Config, claude_client: ClaudeCodeClient)
 
     // Start Discord integration
     startup.start_discord_integration().await
+}
+
+/// 🎛️ ORCHESTRATOR INTEGRATION: Start Discord with full orchestration capabilities
+pub async fn start_discord_with_orchestrator(config: Config, orchestrator: Arc<AgentOrchestrator>) -> Result<()> {
+    if config.discord.token.is_empty() {
+        info!("Discord token not provided - Discord integration disabled");
+        return Ok(());
+    }
+
+    info!("🌌 Starting SpiralConstellation bot with orchestrator integration");
+
+    // Create constellation bot with orchestrator
+    let constellation_bot = SpiralConstellationBot::new_with_orchestrator(orchestrator)?;
+
+    info!("SpiralConstellation bot initialized with orchestrator:");
+    info!("  🚀 SpiralDev - Software development & coding");
+    info!("  📋 SpiralPM - Project management & coordination");
+    info!("  🔍 SpiralQA - Quality assurance & testing");
+    info!("  🎯 SpiralDecide - Decision making & analysis");
+    info!("  ✨ SpiralCreate - Creative solutions & innovation");
+    info!("  🧘 SpiralCoach - Process optimization & guidance");
+
+    // Create and run bot
+    let bot_runner = SpiralConstellationBotRunner::new(constellation_bot, config.discord.token);
+    bot_runner.run().await
 }
 
