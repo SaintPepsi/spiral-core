@@ -55,7 +55,14 @@
       "Bash(timeout:*)",
       "Bash(rustc:*)",
       "Bash(git add:*)",
-      "Bash(./scripts/kill-server.sh:*)"
+      "Bash(./scripts/kill-server.sh:*)",
+      "FileEdit(path:**/*.rs)",
+      "FileEdit(path:**/Cargo.toml)",
+      "FileEdit(path:**/Cargo.lock)",
+      "FileEdit(path:**/*.md)",
+      "FileRead(path:**/*.rs)",
+      "FileRead(path:**/Cargo.toml)",
+      "FileRead(path:**/Cargo.lock)"
     ],
     "deny": [
       "Bash(npm install -g:*)",

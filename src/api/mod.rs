@@ -92,6 +92,7 @@ pub struct WorkspaceStatusResponse {
     pub session_id: Option<String>,
     pub created_at: String,
     pub size_bytes: u64,
+    pub size_human: String,
     pub file_count: usize,
     pub last_modified: String,
     pub status: String,
@@ -102,6 +103,7 @@ pub struct AllWorkspacesStatusResponse {
     pub workspaces: Vec<WorkspaceStatusResponse>,
     pub total_count: usize,
     pub total_size_bytes: u64,
+    pub total_size_human: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -461,6 +463,7 @@ async fn get_all_workspaces_status(
                 workspaces,
                 total_count,
                 total_size_bytes,
+                total_size_human: format_bytes_human_readable(total_size_bytes),
             }))
         }
         Err(e) => {
@@ -548,6 +551,7 @@ async fn scan_workspaces_directory(_api_server: &ApiServer) -> Result<Vec<Worksp
             session_id,
             created_at,
             size_bytes,
+            size_human: format_bytes_human_readable(size_bytes),
             file_count,
             last_modified,
             status,
@@ -617,4 +621,27 @@ fn determine_workspace_status(metadata: &std::fs::Metadata, _path: &std::path::P
     };
     
     Ok(status.to_string())
+}
+
+fn format_bytes_human_readable(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+    const THRESHOLD: u64 = 1024;
+    
+    if bytes == 0 {
+        return "0 B".to_string();
+    }
+    
+    let mut size = bytes as f64;
+    let mut unit_index = 0;
+    
+    while size >= THRESHOLD as f64 && unit_index < UNITS.len() - 1 {
+        size /= THRESHOLD as f64;
+        unit_index += 1;
+    }
+    
+    if unit_index == 0 {
+        format!("{} {}", bytes, UNITS[unit_index])
+    } else {
+        format!("{:.1} {}", size, UNITS[unit_index])
+    }
 }

@@ -1,0 +1,3 @@
+GET {{$dotenv BASE_URL}}/workspaces
+x-api-key: {{$dotenv API_KEY}}
+
