@@ -10,6 +10,9 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing::{debug, error, info, warn};
 
+mod atomic_state;
+use atomic_state::AtomicTaskStateManager;
+
 #[derive(Clone)]
 pub struct AgentOrchestrator {
     agents: Arc<RwLock<HashMap<AgentType, Box<dyn Agent>>>>,
@@ -20,6 +23,7 @@ pub struct AgentOrchestrator {
     task_results: Arc<Mutex<HashMap<String, TaskResult>>>,
     start_time: Arc<std::time::Instant>,
     claude_client: Arc<ClaudeCodeClient>,
+    atomic_state: Arc<AtomicTaskStateManager>,
 }
 
 impl AgentOrchestrator {
@@ -56,15 +60,27 @@ impl AgentOrchestrator {
         // Why: Multiple tasks can read agent registry simultaneously, but task queue needs serialization
         // Alternative: Single global mutex (rejected: unnecessary blocking of concurrent reads)
         // Audit: Verify no deadlock potential in execute_task method around lines 245-270
+        
+        let task_storage = Arc::new(Mutex::new(HashMap::new()));
+        let task_results = Arc::new(Mutex::new(HashMap::new()));
+        let agent_statuses_arc = Arc::new(RwLock::new(statuses));
+        
+        let atomic_state = Arc::new(AtomicTaskStateManager::new(
+            task_storage.clone(),
+            task_results.clone(),
+            agent_statuses_arc.clone(),
+        ));
+        
         Ok(Self {
             agents: Arc::new(RwLock::new(agents)),
-            agent_statuses: Arc::new(RwLock::new(statuses)),
+            agent_statuses: agent_statuses_arc,
             task_queue: Arc::new(Mutex::new(Vec::new())),
             result_sender: Arc::new(Mutex::new(None)),
-            task_storage: Arc::new(Mutex::new(HashMap::new())),
-            task_results: Arc::new(Mutex::new(HashMap::new())),
+            task_storage,
+            task_results,
             start_time: Arc::new(std::time::Instant::now()),
             claude_client: Arc::new(claude_client),
+            atomic_state,
         })
     }
 
@@ -320,26 +336,12 @@ impl AgentOrchestrator {
                         });
                     }
 
-                    // 📊 STATE TRANSITION: Pending → InProgress
-                    // Why: Enables external monitoring and prevents duplicate execution
-                    task.status = TaskStatus::InProgress;
-                    task.updated_at = chrono::Utc::now();
-
-                    // 💾 PERSISTENT STATE UPDATE: Sync in-memory state with tracking storage
-                    // Why: External status APIs need to reflect current execution state
-                    {
-                        let mut storage = self.task_storage.lock().await;
-                        storage.insert(task.id.clone(), task.clone());
-                    }
-
-                    // 📈 AGENT PERFORMANCE TRACKING: Update agent metrics for capacity planning
-                    // Why: Enables load balancing decisions and performance monitoring
-                    // Audit: Verify metrics accuracy in agent status implementation
-                    {
-                        let mut statuses = self.agent_statuses.write().await;
-                        if let Some(status) = statuses.get_mut(&task.agent_type) {
-                            status.start_task(task.id.clone());
-                        }
+                    // 📊 ATOMIC STATE TRANSITION: Pending → InProgress
+                    // Why: Prevents race conditions and ensures consistent state across all systems
+                    // Alternative: Multiple separate updates (rejected: potential for inconsistent state)
+                    if let Err(e) = self.atomic_state.start_task_atomic(&mut task).await {
+                        warn!("Failed to start task atomically: {}", e);
+                        return Err(e);
                     }
 
                     // ⏱️ EXECUTION TIMING: Critical for performance analysis and SLA monitoring
@@ -348,34 +350,16 @@ impl AgentOrchestrator {
                     let result = agent.execute(task.clone()).await;
                     let execution_time = start_time.elapsed().as_secs_f64();
 
-                    // 🎯 RESULT PROCESSING: Success and failure paths with comprehensive state management
+                    // 🎯 RESULT PROCESSING: Success and failure paths with atomic state management
                     match result {
                         Ok(task_result) => {
-                            // ✅ SUCCESS PATH: Update all tracking systems for completed task
-                            // Audit: Verify no race conditions between these state updates
-
-                            // 💾 TASK STATUS UPDATE: Mark completion in primary storage
-                            {
-                                let mut storage = self.task_storage.lock().await;
-                                if let Some(stored_task) = storage.get_mut(&task.id) {
-                                    stored_task.status = TaskStatus::Completed;
-                                    stored_task.updated_at = chrono::Utc::now();
-                                }
-                            }
-
-                            // 📋 RESULT STORAGE: Persist output for external retrieval
-                            // Why: Enables async result fetching for long-running tasks
-                            {
-                                let mut results = self.task_results.lock().await;
-                                results.insert(task.id.clone(), task_result.clone());
-                            }
-
-                            // 📊 AGENT METRICS UPDATE: Record successful completion for performance tracking
-                            {
-                                let mut statuses = self.agent_statuses.write().await;
-                                if let Some(status) = statuses.get_mut(&task.agent_type) {
-                                    status.complete_task(execution_time);
-                                }
+                            // ✅ SUCCESS PATH: Atomically update all tracking systems
+                            // Why: Ensures consistent state even if process crashes mid-update
+                            if let Err(e) = self.atomic_state.complete_task_atomic(&task.id, task_result.clone(), execution_time).await {
+                                error!("Failed to complete task atomically: {}", e);
+                                // Attempt cleanup to prevent zombie task
+                                self.atomic_state.cleanup_task_state(&task.id).await;
+                                return Err(e);
                             }
 
                             // 📢 RESULT BROADCASTING: Notify interested subscribers
@@ -394,25 +378,12 @@ impl AgentOrchestrator {
                             Ok(())
                         }
                         Err(e) => {
-                            // ❌ FAILURE PATH: Comprehensive error state management
-                            // Audit: Ensure failure state is consistent across all tracking systems
-
-                            // 💾 TASK STATUS UPDATE: Mark failure in primary storage
-                            {
-                                let mut storage = self.task_storage.lock().await;
-                                if let Some(stored_task) = storage.get_mut(&task.id) {
-                                    stored_task.status = TaskStatus::Failed;
-                                    stored_task.updated_at = chrono::Utc::now();
-                                }
-                            }
-
-                            // 📊 AGENT METRICS UPDATE: Record failure for reliability tracking
-                            // Why: Enables identification of problematic agents or task types
-                            {
-                                let mut statuses = self.agent_statuses.write().await;
-                                if let Some(status) = statuses.get_mut(&task.agent_type) {
-                                    status.fail_task();
-                                }
+                            // ❌ FAILURE PATH: Atomic error state management
+                            // Why: Prevents partial state updates on failure
+                            if let Err(atomic_err) = self.atomic_state.fail_task_atomic(&task.id, &e, execution_time).await {
+                                error!("Failed to update task failure state atomically: {}", atomic_err);
+                                // Attempt cleanup to prevent zombie task
+                                self.atomic_state.cleanup_task_state(&task.id).await;
                             }
 
                             error!("Task {} failed: {}", task.id, e);

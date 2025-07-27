@@ -145,10 +145,24 @@ impl SoftwareDeveloperAgent {
             .map(|f| f.path.clone())
             .collect();
 
-        let output = format!(
-            "Generated {} code:\n\n{}\n\nExplanation:\n{}",
-            code_result.language, code_result.code, code_result.explanation
-        );
+        // Format output based on the type of request
+        let output = if task.content.starts_with("INFORMATION QUERY:") {
+            // For information queries, just show the explanation/result
+            if !code_result.explanation.trim().is_empty() {
+                code_result.explanation.clone()
+            } else {
+                code_result.code.clone()
+            }
+        } else if !code_result.code.trim().is_empty() && code_result.code != "No code generated" {
+            // For actual code generation, use the traditional format
+            format!(
+                "Generated {} code:\n\n{}\n\nExplanation:\n{}",
+                code_result.language, code_result.code, code_result.explanation
+            )
+        } else {
+            // For other requests (analysis, etc.), just show explanation
+            code_result.explanation.clone()
+        };
 
         // 📈 AGENT-SPECIFIC METADATA: Development-focused metrics
         let mut metadata = HashMap::new();

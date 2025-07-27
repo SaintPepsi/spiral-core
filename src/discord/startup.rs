@@ -46,7 +46,7 @@ impl SpiralDiscordStartup {
         let constellation_bot = SpiralConstellationBot::new(
             developer_agent,
             self.claude_client.clone(),
-        )?;
+        ).await?;
 
         info!("SpiralConstellation bot initialized with personas:");
         info!("  🚀 SpiralDev - Software Developer");
@@ -116,7 +116,7 @@ pub async fn start_discord_with_orchestrator(config: Config, orchestrator: Arc<A
     info!("🌌 Starting SpiralConstellation bot with orchestrator integration");
 
     // Create constellation bot with orchestrator
-    let constellation_bot = SpiralConstellationBot::new_with_orchestrator(orchestrator)?;
+    let constellation_bot = SpiralConstellationBot::new_with_orchestrator(orchestrator).await?;
 
     info!("SpiralConstellation bot initialized with orchestrator:");
     info!("  🚀 SpiralDev - Software development & coding");

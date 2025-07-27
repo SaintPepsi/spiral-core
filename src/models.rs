@@ -22,6 +22,7 @@ pub enum AgentType {
     DecisionMaker,
     CreativeInnovator,
     ProcessCoach,
+    SpiralKing,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
@@ -32,7 +33,7 @@ pub enum Priority {
     Critical,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum TaskStatus {
     Pending,
     InProgress,
@@ -112,6 +113,7 @@ impl FromStr for AgentType {
             "DecisionMaker" => Ok(AgentType::DecisionMaker),
             "CreativeInnovator" => Ok(AgentType::CreativeInnovator),
             "ProcessCoach" => Ok(AgentType::ProcessCoach),
+            "SpiralKing" => Ok(AgentType::SpiralKing),
             _ => Err(format!("Unknown agent type: {s}")),
         }
     }
@@ -126,6 +128,7 @@ impl AgentType {
             "decision" | "decide" => Some(AgentType::DecisionMaker),
             "creative" | "innovate" => Some(AgentType::CreativeInnovator),
             "coach" | "process" => Some(AgentType::ProcessCoach),
+            "king" | "spiralking" | "lordgenome" => Some(AgentType::SpiralKing),
             _ => None,
         }
     }
@@ -156,6 +159,25 @@ impl AgentType {
                 required_tools: vec![
                     "claude_code_client".to_string(),
                     "github_client".to_string(),
+                ],
+            },
+            AgentType::SpiralKing => AgentCapability {
+                name: "The Immortal Spiral King".to_string(),
+                description: "Comprehensive code review with deep architectural analysis and long-term system stability assessment from a millennial perspective".to_string(),
+                supported_languages: vec![
+                    "rust".to_string(),
+                    "python".to_string(),
+                    "javascript".to_string(),
+                    "typescript".to_string(),
+                    "go".to_string(),
+                    "java".to_string(),
+                    "c".to_string(),
+                    "cpp".to_string(),
+                ],
+                required_tools: vec![
+                    "claude_code_client".to_string(),
+                    "static_analysis".to_string(),
+                    "architectural_review".to_string(),
                 ],
             },
             _ => AgentCapability {

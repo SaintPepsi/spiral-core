@@ -1,5 +1,6 @@
 mod cli_client;
 mod command_builder;
+pub mod circuit_breaker;
 
 pub use cli_client::{
     ClaudeCodeCliClient as ClaudeCodeClient, CodeGenerationRequest, CodeGenerationResult,

@@ -1,8 +1,14 @@
-use crate::{config::ClaudeCodeConfig, validation::TaskContentValidator, Result, SpiralError};
+use crate::{
+    claude_code::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig},
+    config::ClaudeCodeConfig, 
+    validation::TaskContentValidator, 
+    Result, SpiralError
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::Arc;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
@@ -19,6 +25,7 @@ pub struct ClaudeCodeCliClient {
     config: ClaudeCodeConfig,
     claude_binary: String,
     validator: TaskContentValidator,
+    circuit_breaker: Arc<CircuitBreaker>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,10 +99,15 @@ impl ClaudeCodeCliClient {
         };
 
         let validator = TaskContentValidator::new()?;
+        
+        // Initialize circuit breaker with default config
+        let circuit_breaker = Arc::new(CircuitBreaker::new(CircuitBreakerConfig::default()));
+        
         Ok(Self {
             config,
             claude_binary,
             validator,
+            circuit_breaker,
         })
     }
 
@@ -147,6 +159,13 @@ impl ClaudeCodeCliClient {
         prompt: &str,
         session_id: Option<&str>,
     ) -> Result<ClaudeCodeCliResponse> {
+        // Check circuit breaker before making request
+        if !self.circuit_breaker.should_allow_request().await {
+            warn!("Circuit breaker is open - Claude Code service is unavailable");
+            return Err(SpiralError::Agent {
+                message: "Claude Code service is temporarily unavailable due to repeated failures".to_string(),
+            });
+        }
         // 🏗️ WORKSPACE ISOLATION DECISION: Each session gets isolated filesystem workspace
         // Why: Prevents cross-contamination between tasks, enables safe file operations
         // Alternative: Shared workspace (rejected: security risk, concurrent access issues)
@@ -237,6 +256,10 @@ impl ClaudeCodeCliClient {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             warn!("Claude Code process failed: {stderr}");
+            
+            // Record failure in circuit breaker
+            self.circuit_breaker.record_failure().await;
+            
             return Err(SpiralError::Agent {
                 message: format!("Claude Code execution failed: {stderr}"),
             });
@@ -246,14 +269,27 @@ impl ClaudeCodeCliClient {
         debug!("Claude Code raw output: {}", stdout);
 
         // Parse JSON response
-        let response = serde_json::from_str::<ClaudeCodeCliResponse>(&stdout).map_err(|e| {
-            SpiralError::Agent {
-                message: format!("Failed to parse Claude Code response: {e} - Output: {stdout}"),
+        let response = match serde_json::from_str::<ClaudeCodeCliResponse>(&stdout) {
+            Ok(resp) => resp,
+            Err(e) => {
+                // Record failure in circuit breaker for parse errors
+                self.circuit_breaker.record_failure().await;
+                
+                return Err(SpiralError::Agent {
+                    message: format!("Failed to parse Claude Code response: {e} - Output: {stdout}"),
+                });
             }
-        })?;
+        };
 
         // Check for limitation messages and log them for improvement
-        self.check_for_limitations(&response)?;
+        if let Err(e) = self.check_for_limitations(&response) {
+            // Record failure if we hit limitations
+            self.circuit_breaker.record_failure().await;
+            return Err(e);
+        }
+
+        // Record success in circuit breaker
+        self.circuit_breaker.record_success().await;
 
         // Note: We intentionally don't clean up the workspace immediately
         // to allow for inspection of generated files if needed.
@@ -1079,6 +1115,11 @@ impl ClaudeCodeCliClient {
         }
 
         "Implement using best practices and modular design".to_string()
+    }
+    
+    /// Get circuit breaker status and metrics
+    pub async fn get_circuit_breaker_metrics(&self) -> crate::claude_code::circuit_breaker::CircuitBreakerMetrics {
+        self.circuit_breaker.get_metrics().await
     }
 }
 

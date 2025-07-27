@@ -22,7 +22,7 @@ async fn main() -> Result<()> {
     let developer_agent = SoftwareDeveloperAgent::new(claude_client.clone());
     
     // Create constellation bot
-    let constellation_bot = SpiralConstellationBot::new(developer_agent, claude_client)?;
+    let constellation_bot = SpiralConstellationBot::new(developer_agent, claude_client).await?;
     
     // Create bot runner
     let bot_runner = SpiralConstellationBotRunner::new(constellation_bot, config.discord.token.clone());
