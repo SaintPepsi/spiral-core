@@ -157,7 +157,7 @@ fn create_test_config_with_auth() -> Config {
         discord: DiscordConfig {
             token: "test-discord-token".to_string(),
             command_prefix: "!spiral".to_string(),
-            agent_mention_pattern: r"@(\w+)agent".to_string(),
+            agent_mention_pattern: r"@Spiral(\w+)".to_string(),
         },
         api: ApiConfig {
             host: "127.0.0.1".to_string(),
@@ -184,7 +184,7 @@ fn create_test_config_without_auth() -> Config {
         discord: DiscordConfig {
             token: "test-discord-token".to_string(),
             command_prefix: "!spiral".to_string(),
-            agent_mention_pattern: r"@(\w+)agent".to_string(),
+            agent_mention_pattern: r"@Spiral(\w+)".to_string(),
         },
         api: ApiConfig {
             host: "127.0.0.1".to_string(),

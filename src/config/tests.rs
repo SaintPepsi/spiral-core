@@ -300,7 +300,7 @@ fn test_config_validation_full_config() {
     
     env::set_var("DISCORD_TOKEN", "test-discord-token-12345678901234567890123456789012345678901234567890");
     env::set_var("DISCORD_PREFIX", "!test");
-    env::set_var("AGENT_MENTION_PATTERN", r"@(\w+)bot");
+    env::set_var("AGENT_MENTION_PATTERN", r"@Spiral(\w+)");
     
     // Test should succeed with all valid values
     let result = create_test_config_with_env();

@@ -104,7 +104,7 @@ impl Config {
             token: discord_token,
             command_prefix: env::var("DISCORD_PREFIX").unwrap_or_else(|_| "!spiral".to_string()),
             agent_mention_pattern: env::var("AGENT_MENTION_PATTERN")
-                .unwrap_or_else(|_| r"@(\w+)agent".to_string()),
+                .unwrap_or_else(|_| r"@Spiral(\w+)".to_string()),
         };
 
         // 🔐 SECURE API KEY LOADING: Environment variable or generated secure key

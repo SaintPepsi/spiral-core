@@ -86,6 +86,7 @@ This guide walks you through setting up the Spiral Core Discord bot for your ser
 
    - **General Permissions**:
      - ✅ `View Channels` - See channels to respond in
+     - ✅ `Manage Roles` - Create and assign agent roles
 
 4. **Generate Invite URL**
    - Copy the generated URL at the bottom
@@ -131,7 +132,7 @@ This guide walks you through setting up the Spiral Core Discord bot for your ser
    DISCORD_ALLOWED_CHANNELS=123456789012345678,987654321098765432
 
    # Agent mention pattern (regex)
-   AGENT_MENTION_PATTERN=@(\w+)agent
+   AGENT_MENTION_PATTERN=@Spiral(\w+)
    ```
 
 ## Step 7: Start the Bot
@@ -156,36 +157,67 @@ This guide walks you through setting up the Spiral Core Discord bot for your ser
 
 ## Step 8: Test Bot Functionality
 
-1. **Basic Mention Test**
+1. **Set Up Agent Roles (Recommended)**
 
    ```
-   @developeragent create a hello world function in Rust
+   !spiral setup roles
    ```
 
-2. **Agent Types Available**
+   This creates mentionable Discord roles for each agent persona:
 
-   - `@developeragent` - Code generation and development tasks
-   - `@projectmanageragent` - Project coordination and analysis
-   - `@qaagent` - Quality assurance and testing
-   - `@decisionmakeragent` - Priority scoring and conflict resolution
-   - `@creativeinnovatoragent` - Alternative approaches and innovation
-   - `@processcoachagent` - Performance optimization
+   - 🚀 **SpiralDev** (Green) - Software Developer
+   - 📋 **SpiralPM** (Blue) - Project Manager
+   - 🔍 **SpiralQA** (Orange) - Quality Assurance
+   - 🎯 **SpiralDecide** (Purple) - Decision Maker
+   - ✨ **SpiralCreate** (Pink) - Creative Innovator
+   - 🧘 **SpiralCoach** (Cyan) - Process Coach
 
-3. **Expected Response**
-   - Bot should respond with generated code or analysis
+2. **Join Agent Roles**
+
+   ```
+   !spiral join SpiralDev
+   !spiral join SpiralPM
+   ```
+
+   Users can assign themselves agent roles to be mentionable in discussions.
+
+3. **Interaction Methods**
+
+   **Text Mentions:**
+
+   ```
+   @SpiralDev create a hello world function in Rust
+   @SpiralPM what's the project status?
+   ```
+
+   **Role Mentions:**
+
+   ```
+   <@&role_id> help with code review
+   ```
+
+   **Help Command:**
+
+   ```
+   !spiral help
+   ```
+
+4. **Expected Response**
+   - Bot responds with agent personality and appropriate expertise
+   - Each agent has unique emojis, greetings, and response styles
    - Response time: ~2-5 seconds depending on complexity
-   - Bot will show typing indicator while processing
+   - Bot shows typing indicator while processing
 
 ## Configuration Options
 
 ### Environment Variables
 
-| Variable                   | Required | Default       | Description                             |
-| -------------------------- | -------- | ------------- | --------------------------------------- |
-| `DISCORD_TOKEN`            | ✅ Yes   | -             | Bot token from Discord Developer Portal |
-| `DISCORD_GUILD_ID`         | ❌ No    | -             | Server ID for server-specific features  |
-| `DISCORD_ALLOWED_CHANNELS` | ❌ No    | All channels  | Comma-separated channel IDs             |
-| `AGENT_MENTION_PATTERN`    | ❌ No    | `@(\w+)agent` | Regex pattern for agent mentions        |
+| Variable                   | Required | Default        | Description                             |
+| -------------------------- | -------- | -------------- | --------------------------------------- |
+| `DISCORD_TOKEN`            | ✅ Yes   | -              | Bot token from Discord Developer Portal |
+| `DISCORD_GUILD_ID`         | ❌ No    | -              | Server ID for server-specific features  |
+| `DISCORD_ALLOWED_CHANNELS` | ❌ No    | All channels   | Comma-separated channel IDs             |
+| `AGENT_MENTION_PATTERN`    | ❌ No    | `@Spiral(\w+)` | Regex pattern for agent mentions        |
 
 ### Bot Permissions Summary
 
@@ -195,6 +227,7 @@ This guide walks you through setting up the Spiral Core Discord bot for your ser
 - Send Messages
 - Send Messages in Threads
 - Read Message History
+- Manage Roles (for Discord role features)
 
 **Recommended Permissions:**
 
@@ -237,12 +270,36 @@ This guide walks you through setting up the Spiral Core Discord bot for your ser
 
    ```bash
    # Test mention format
-   @developeragent help
+   @SpiralDev help
+
+   # Or use commands
+   !spiral help
+   !spiral setup roles
    ```
 
 3. **Check API Connection**
    - Ensure Spiral Core API is running
    - Verify API_KEY is configured correctly
+
+### Role Management Issues
+
+1. **"Failed to create roles" Error**
+
+   - Ensure bot has "Manage Roles" permission
+   - Bot must have higher role hierarchy than roles it creates
+   - Check server role limits (max 250 roles per server)
+
+2. **Role Assignment Failures**
+
+   - Verify bot can manage the target role
+   - Check if user already has the role
+   - Ensure role exists before assignment
+
+3. **Role Mentions Not Working**
+
+   - Verify roles are set as mentionable
+   - Check role permissions in target channels
+   - Ensure role IDs are correct in mention format
 
 ### Common Error Messages
 
@@ -281,7 +338,7 @@ DISCORD_ALLOWED_CHANNELS=channel_id_1,channel_id_2
 
 ```bash
 # Custom mention pattern
-AGENT_MENTION_PATTERN="!(\w+)"  # Use ! instead of @
+AGENT_MENTION_PATTERN="!Spiral(\w+)"  # Use ! instead of @
 ```
 
 ## Security Considerations

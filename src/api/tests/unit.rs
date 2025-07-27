@@ -22,7 +22,7 @@ fn create_test_config() -> Config {
         discord: DiscordConfig {
             token: "test-discord-token-12345678901234567890123456789012345678901234567890".to_string(),
             command_prefix: "!spiral".to_string(),
-            agent_mention_pattern: r"@(\w+)agent".to_string(),
+            agent_mention_pattern: r"@Spiral(\w+)".to_string(),
         },
         api: ApiConfig {
             host: "127.0.0.1".to_string(),

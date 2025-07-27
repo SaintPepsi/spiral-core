@@ -62,7 +62,8 @@
       "FileEdit(path:**/*.md)",
       "FileRead(path:**/*.rs)",
       "FileRead(path:**/Cargo.toml)",
-      "FileRead(path:**/Cargo.lock)"
+      "FileRead(path:**/Cargo.lock)",
+      "Bash(sed:*)"
     ],
     "deny": [
       "Bash(npm install -g:*)",

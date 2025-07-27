@@ -1,4 +1,4 @@
-use spiral_core::{agents::AgentOrchestrator, api::ApiServer, config::Config, security};
+use spiral_core::{agents::AgentOrchestrator, api::ApiServer, claude_code::ClaudeCodeClient, config::Config, security};
 use std::sync::Arc;
 use tokio::signal;
 use tracing::{error, info, warn, Level};
@@ -45,6 +45,22 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    // 🤖 STARTUP PHASE 4.5: Initialize Discord integration (optional)
+    let discord_handle = if !config.discord.token.is_empty() {
+        info!("Starting Discord integration...");
+        let claude_client = ClaudeCodeClient::new(config.claude_code.clone()).await?;
+        let config_clone = config.clone();
+        
+        Some(tokio::spawn(async move {
+            if let Err(e) = spiral_core::discord::start_discord_bots(config_clone, claude_client).await {
+                error!("Discord integration failed: {}", e);
+            }
+        }))
+    } else {
+        info!("Discord token not provided - Discord integration disabled");
+        None
+    };
+
     info!("Initializing API server...");
     let api_server = match ApiServer::new(config.clone(), orchestrator.clone()) {
         Ok(server) => {
@@ -75,6 +91,18 @@ async fn main() -> anyhow::Result<()> {
                 error!("API server failed: {}", e);
             }
             info!("API server stopped");
+        }
+        _result = async {
+            if let Some(handle) = discord_handle {
+                handle.await.unwrap_or_else(|e| {
+                    error!("Discord task panicked: {}", e);
+                });
+            } else {
+                // If no Discord integration, just wait forever
+                std::future::pending::<()>().await;
+            }
+        } => {
+            info!("Discord integration stopped");
         }
         _ = shutdown_signal => {
             info!("Shutdown signal received, initiating graceful shutdown...");
