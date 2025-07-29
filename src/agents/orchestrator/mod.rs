@@ -60,17 +60,17 @@ impl AgentOrchestrator {
         // Why: Multiple tasks can read agent registry simultaneously, but task queue needs serialization
         // Alternative: Single global mutex (rejected: unnecessary blocking of concurrent reads)
         // Audit: Verify no deadlock potential in execute_task method around lines 245-270
-        
+
         let task_storage = Arc::new(Mutex::new(HashMap::new()));
         let task_results = Arc::new(Mutex::new(HashMap::new()));
         let agent_statuses_arc = Arc::new(RwLock::new(statuses));
-        
+
         let atomic_state = Arc::new(AtomicTaskStateManager::new(
             task_storage.clone(),
             task_results.clone(),
             agent_statuses_arc.clone(),
         ));
-        
+
         Ok(Self {
             agents: Arc::new(RwLock::new(agents)),
             agent_statuses: agent_statuses_arc,
@@ -355,7 +355,11 @@ impl AgentOrchestrator {
                         Ok(task_result) => {
                             // ✅ SUCCESS PATH: Atomically update all tracking systems
                             // Why: Ensures consistent state even if process crashes mid-update
-                            if let Err(e) = self.atomic_state.complete_task_atomic(&task.id, task_result.clone(), execution_time).await {
+                            if let Err(e) = self
+                                .atomic_state
+                                .complete_task_atomic(&task.id, task_result.clone(), execution_time)
+                                .await
+                            {
                                 error!("Failed to complete task atomically: {}", e);
                                 // Attempt cleanup to prevent zombie task
                                 self.atomic_state.cleanup_task_state(&task.id).await;
@@ -380,8 +384,15 @@ impl AgentOrchestrator {
                         Err(e) => {
                             // ❌ FAILURE PATH: Atomic error state management
                             // Why: Prevents partial state updates on failure
-                            if let Err(atomic_err) = self.atomic_state.fail_task_atomic(&task.id, &e, execution_time).await {
-                                error!("Failed to update task failure state atomically: {}", atomic_err);
+                            if let Err(atomic_err) = self
+                                .atomic_state
+                                .fail_task_atomic(&task.id, &e, execution_time)
+                                .await
+                            {
+                                error!(
+                                    "Failed to update task failure state atomically: {}",
+                                    atomic_err
+                                );
                                 // Attempt cleanup to prevent zombie task
                                 self.atomic_state.cleanup_task_state(&task.id).await;
                             }
@@ -439,15 +450,18 @@ impl AgentOrchestrator {
     pub async fn get_system_status(&self) -> SystemStatus {
         let agent_statuses = self.agent_statuses.read().await;
         let task_queue = self.task_queue.lock().await;
-        
+
         let agents: std::collections::HashMap<AgentType, SimpleAgentStatus> = agent_statuses
             .iter()
             .map(|(agent_type, status)| {
-                (agent_type.clone(), SimpleAgentStatus {
-                    is_busy: status.is_busy,
-                    tasks_completed: status.tasks_completed,
-                    tasks_failed: status.tasks_failed,
-                })
+                (
+                    agent_type.clone(),
+                    SimpleAgentStatus {
+                        is_busy: status.is_busy,
+                        tasks_completed: status.tasks_completed,
+                        tasks_failed: status.tasks_failed,
+                    },
+                )
             })
             .collect();
 

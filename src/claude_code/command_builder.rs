@@ -35,9 +35,9 @@ pub struct ClaudeCommandBuilder {
 /// 📊 OUTPUT FORMAT: How Claude Code returns results
 #[derive(Debug, Clone, PartialEq)]
 pub enum OutputFormat {
-    Json,      // Machine-readable JSON format
-    Text,      // Human-readable text format
-    Markdown,  // Rich markdown format
+    Json,     // Machine-readable JSON format
+    Text,     // Human-readable text format
+    Markdown, // Rich markdown format
 }
 
 /// 🔒 PERMISSION MODE: Security level for Claude Code operations
@@ -45,17 +45,17 @@ pub enum OutputFormat {
 /// Why: Prevents typos and invalid permission modes
 #[derive(Debug, Clone, PartialEq)]
 pub enum PermissionMode {
-    Standard,           // Default permissions
-    BypassPermissions,  // Elevated permissions (use with caution)
-    Restricted,         // Limited permissions for untrusted input
+    Standard,          // Default permissions
+    BypassPermissions, // Elevated permissions (use with caution)
+    Restricted,        // Limited permissions for untrusted input
 }
 
 /// 🔄 SESSION MODE: How to handle conversation context
 #[derive(Debug, Clone, PartialEq)]
 pub enum SessionMode {
-    NewSession,              // Start fresh
-    Resume(String),          // Resume specific session ID
-    Continue,                // Continue most recent session
+    NewSession,     // Start fresh
+    Resume(String), // Resume specific session ID
+    Continue,       // Continue most recent session
 }
 
 impl ClaudeCommandBuilder {
@@ -65,7 +65,7 @@ impl ClaudeCommandBuilder {
     pub fn new(binary_path: impl Into<String>) -> Self {
         Self {
             binary_path: binary_path.into(),
-            output_format: OutputFormat::Json,  // Default to JSON for parsing
+            output_format: OutputFormat::Json, // Default to JSON for parsing
             permission_mode: PermissionMode::Standard,
             session_mode: SessionMode::NewSession,
             allowed_tools: Vec::new(),
@@ -186,18 +186,24 @@ impl ClaudeCommandBuilder {
         command.arg("--print");
 
         // Output format
-        command.args(["--output-format", match self.output_format {
-            OutputFormat::Json => "json",
-            OutputFormat::Text => "text",
-            OutputFormat::Markdown => "markdown",
-        }]);
+        command.args([
+            "--output-format",
+            match self.output_format {
+                OutputFormat::Json => "json",
+                OutputFormat::Text => "text",
+                OutputFormat::Markdown => "markdown",
+            },
+        ]);
 
         // Permission mode
-        command.args(["--permission-mode", match self.permission_mode {
-            PermissionMode::Standard => "default",
-            PermissionMode::BypassPermissions => "bypassPermissions",
-            PermissionMode::Restricted => "restricted",
-        }]);
+        command.args([
+            "--permission-mode",
+            match self.permission_mode {
+                PermissionMode::Standard => "default",
+                PermissionMode::BypassPermissions => "bypassPermissions",
+                PermissionMode::Restricted => "restricted",
+            },
+        ]);
 
         // Session handling
         match self.session_mode {
@@ -280,7 +286,7 @@ impl From<&str> for PermissionMode {
             "standard" | "default" => PermissionMode::Standard,
             "bypasspermissions" | "bypass" => PermissionMode::BypassPermissions,
             "restricted" => PermissionMode::Restricted,
-            _ => PermissionMode::Standard,  // Default to standard
+            _ => PermissionMode::Standard, // Default to standard
         }
     }
 }
@@ -305,7 +311,7 @@ mod tests {
         let output_format = builder.output_format.clone();
         let permission_mode = builder.permission_mode.clone();
         let _command = builder.build();
-        
+
         // Can't easily test Command directly, but we can verify builder state
         assert_eq!(output_format, OutputFormat::Json);
         assert_eq!(permission_mode, PermissionMode::Standard);
@@ -313,10 +319,12 @@ mod tests {
 
     #[test]
     fn test_session_configuration() {
-        let builder = ClaudeCommandBuilder::new("/usr/bin/claude")
-            .with_session_id("test-123");
+        let builder = ClaudeCommandBuilder::new("/usr/bin/claude").with_session_id("test-123");
 
-        assert_eq!(builder.session_mode, SessionMode::Resume("test-123".to_string()));
+        assert_eq!(
+            builder.session_mode,
+            SessionMode::Resume("test-123".to_string())
+        );
     }
 
     #[test]
@@ -339,16 +347,21 @@ mod tests {
         assert!(invalid.validate().is_err());
 
         // Invalid: empty session ID
-        let invalid = ClaudeCommandBuilder::new("/usr/bin/claude")
-            .with_session_id("");
+        let invalid = ClaudeCommandBuilder::new("/usr/bin/claude").with_session_id("");
         assert!(invalid.validate().is_err());
     }
 
     #[test]
     fn test_permission_mode_conversion() {
         assert_eq!(PermissionMode::from("standard"), PermissionMode::Standard);
-        assert_eq!(PermissionMode::from("bypass"), PermissionMode::BypassPermissions);
-        assert_eq!(PermissionMode::from("RESTRICTED"), PermissionMode::Restricted);
+        assert_eq!(
+            PermissionMode::from("bypass"),
+            PermissionMode::BypassPermissions
+        );
+        assert_eq!(
+            PermissionMode::from("RESTRICTED"),
+            PermissionMode::Restricted
+        );
         assert_eq!(PermissionMode::from("unknown"), PermissionMode::Standard);
     }
 }

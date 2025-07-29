@@ -60,17 +60,20 @@ CLAUDE_ALLOWED_TOOLS=Edit,Write,Read,Bash,MultiEdit,Glob,Grep,TodoWrite,Notebook
 The system monitors Claude Code responses for common limitation patterns:
 
 ### Permission Issues
+
 - "need permission" → Check `--permission-mode` setting
 - "cannot write" → Verify `Write,Edit,MultiEdit` in allowed tools
 - "cannot read" → Verify `Read,Glob,Grep` in allowed tools
 - "access denied" → Check working directory permissions
 
 ### Resource Issues
+
 - "timeout" → Increase `CLAUDE_TIMEOUT_SECONDS`
 - "rate limit" → Implement backoff strategy
 - "quota exceeded" → Monitor API usage
 
 ### Tool Issues
+
 - "command not found" → Verify tool availability in PATH
 - "invalid tool" → Check `--allowedTools` configuration
 
@@ -85,12 +88,14 @@ The system automatically attempts fallback when permission issues are detected:
 ## Best Practices
 
 ### Development Environment
+
 ```bash
 CLAUDE_PERMISSION_MODE=bypassPermissions
 CLAUDE_ALLOWED_TOOLS=Edit,Write,Read,Bash,MultiEdit,Glob,Grep,TodoWrite,WebFetch
 ```
 
 ### Production Environment
+
 ```bash
 CLAUDE_PERMISSION_MODE=acceptEdits
 CLAUDE_ALLOWED_TOOLS=Edit,Write,Read,MultiEdit,Glob,Grep
@@ -98,6 +103,7 @@ CLAUDE_WORKING_DIR=/app/workspace
 ```
 
 ### Sandboxed Environment
+
 ```bash
 CLAUDE_PERMISSION_MODE=bypassPermissions
 CLAUDE_ALLOWED_TOOLS=Edit,Write,Read,Bash,MultiEdit,Glob,Grep,TodoWrite,NotebookEdit,WebFetch
@@ -118,6 +124,7 @@ The system logs detailed information about:
 ### Running API Tests
 
 1. **Start the server with Claude Code configuration:**
+
 ```bash
 # Copy environment file for testing
 cp .env.hurl .env
@@ -127,6 +134,7 @@ cargo run --bin spiral-core
 ```
 
 2. **Run Claude Code integration tests:**
+
 ```bash
 # Test the Claude Code integration specifically
 hurl --test src/api/tests/hurl/claude-code-integration.hurl --variables-file .env.hurl
@@ -136,6 +144,7 @@ hurl --test src/api/tests/hurl/*.hurl --variables-file .env.hurl
 ```
 
 3. **Manual testing:**
+
 ```bash
 # Test simple code generation
 curl -X POST http://localhost:3000/tasks \
@@ -161,6 +170,7 @@ curl -X POST http://localhost:3000/tasks/{TASK_ID}/analyze \
 ### Session Management & Workspace Inspection
 
 Check generated workspaces and sessions:
+
 ```bash
 # View all workspaces (from your project root)
 ls -la ./claude-workspaces/
@@ -225,11 +235,13 @@ This ensures Claude Code continues in the same workspace with full context of pr
 ### Debug Mode
 
 Enable detailed logging:
+
 ```bash
 RUST_LOG=spiral_core::claude_code=debug cargo run --bin spiral-core
 ```
 
 This provides:
+
 - Full Claude Code command execution details
 - Raw JSON responses
 - Limitation detection analysis

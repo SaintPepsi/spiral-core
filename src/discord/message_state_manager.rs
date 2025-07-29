@@ -1,8 +1,8 @@
+use serenity::model::id::{ChannelId, MessageId};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
-use serenity::model::id::{ChannelId, MessageId};
 use tracing::{debug, info, warn};
 
 /// Represents a message update that should be applied
@@ -37,12 +37,12 @@ impl PendingMessage {
             retry_count: 0,
         }
     }
-    
+
     /// Check if this message has timed out
     pub fn is_timed_out(&self, timeout: Duration) -> bool {
         self.created_at.elapsed() > timeout
     }
-    
+
     /// Check if ready for retry
     pub fn ready_for_retry(&self, retry_interval: Duration) -> bool {
         match self.last_update_attempt {
@@ -98,7 +98,7 @@ impl MessageStateManager {
             recovery_stats: Arc::new(Mutex::new(RecoveryStats::default())),
         }
     }
-    
+
     /// Register a new message for state tracking
     pub async fn register_message(
         &self,
@@ -109,10 +109,10 @@ impl MessageStateManager {
         let mut messages = self.pending_messages.write().await;
         let pending = PendingMessage::new(message_id, channel_id, initial_content);
         messages.insert(message_id, pending);
-        
+
         debug!("Registered message {} for state tracking", message_id);
     }
-    
+
     /// Add an expected update to a message
     pub async fn add_expected_update(&self, message_id: MessageId, update: MessageUpdate) {
         let mut messages = self.pending_messages.write().await;
@@ -121,7 +121,7 @@ impl MessageStateManager {
             debug!("Added expected update for message {}", message_id);
         }
     }
-    
+
     /// Mark a message update as successful
     pub async fn mark_update_successful(&self, message_id: MessageId, new_content: Option<String>) {
         let mut messages = self.pending_messages.write().await;
@@ -134,7 +134,7 @@ impl MessageStateManager {
                 pending.expected_updates.remove(0);
             }
             pending.retry_count = 0; // Reset retry count on success
-            
+
             // If no more updates expected, remove from tracking
             if pending.expected_updates.is_empty() {
                 messages.remove(&message_id);
@@ -144,45 +144,47 @@ impl MessageStateManager {
             }
         }
     }
-    
+
     /// Mark a message update as failed
     pub async fn mark_update_failed(&self, message_id: MessageId) {
         let mut messages = self.pending_messages.write().await;
         if let Some(pending) = messages.get_mut(&message_id) {
             pending.retry_count += 1;
             pending.last_update_attempt = Some(Instant::now());
-            
+
             if pending.retry_count >= self.config.max_retries {
                 warn!("Message {} exceeded max retries, abandoning", message_id);
                 messages.remove(&message_id);
                 let mut stats = self.recovery_stats.lock().await;
                 stats.failed_recoveries += 1;
             } else {
-                debug!("Message {} update failed, will retry ({}/{})", 
-                    message_id, pending.retry_count, self.config.max_retries);
+                debug!(
+                    "Message {} update failed, will retry ({}/{})",
+                    message_id, pending.retry_count, self.config.max_retries
+                );
             }
         }
     }
-    
+
     /// Get messages that need retry
     pub async fn get_messages_for_retry(&self) -> Vec<PendingMessage> {
         let messages = self.pending_messages.read().await;
         messages
             .values()
             .filter(|msg| {
-                !msg.expected_updates.is_empty() &&
-                msg.ready_for_retry(self.config.retry_interval) &&
-                !msg.is_timed_out(self.config.message_timeout)
+                !msg.expected_updates.is_empty()
+                    && msg.ready_for_retry(self.config.retry_interval)
+                    && !msg.is_timed_out(self.config.message_timeout)
             })
             .cloned()
             .collect()
     }
-    
+
     /// Clean up expired messages
     pub async fn cleanup_expired_messages(&self) {
         let mut messages = self.pending_messages.write().await;
         let mut expired_count = 0;
-        
+
         messages.retain(|id, msg| {
             if msg.is_timed_out(self.config.message_timeout) {
                 warn!("Message {} timed out, removing from tracking", id);
@@ -192,19 +194,19 @@ impl MessageStateManager {
                 true
             }
         });
-        
+
         if expired_count > 0 {
             let mut stats = self.recovery_stats.lock().await;
             stats.timed_out_messages += expired_count;
             info!("Cleaned up {} expired messages", expired_count);
         }
     }
-    
+
     /// Get recovery statistics
     pub async fn get_stats(&self) -> MessageRecoveryStats {
         let stats = self.recovery_stats.lock().await;
         let pending_count = self.pending_messages.read().await.len();
-        
+
         MessageRecoveryStats {
             pending_messages: pending_count as u64,
             successful_recoveries: stats.successful_recoveries,
@@ -212,11 +214,11 @@ impl MessageStateManager {
             timed_out_messages: stats.timed_out_messages,
         }
     }
-    
+
     /// Start background cleanup task
     pub fn start_cleanup_task(self: Arc<Self>) {
         let cleanup_interval = self.config.cleanup_interval;
-        
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(cleanup_interval);
             loop {

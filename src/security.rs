@@ -1,7 +1,6 @@
 /// 🔐 SECURITY MODULE: Cryptographically secure operations
 /// CRITICAL: All security-sensitive operations centralized here for audit
 /// Purpose: API key generation, secure random generation, security constants
-
 use crate::SpiralError;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use std::fs;
@@ -39,23 +38,27 @@ pub fn generate_secure_api_key() -> String {
 /// Alternative: World-readable (rejected: security risk), no persistence (rejected: not practical)
 pub fn save_api_key_to_file(api_key: &str) -> Result<(), SpiralError> {
     info!("Saving API key to secure file: {}", API_KEY_FILE);
-    
+
     // Write the API key to file
-    fs::write(API_KEY_FILE, api_key)
-        .map_err(|e| SpiralError::ConfigurationError(format!("Failed to write API key file: {}", e)))?;
-    
+    fs::write(API_KEY_FILE, api_key).map_err(|e| {
+        SpiralError::ConfigurationError(format!("Failed to write API key file: {}", e))
+    })?;
+
     // Set restrictive permissions (owner read/write only)
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let mut perms = fs::metadata(API_KEY_FILE)
-            .map_err(|e| SpiralError::ConfigurationError(format!("Failed to get file metadata: {}", e)))?
+            .map_err(|e| {
+                SpiralError::ConfigurationError(format!("Failed to get file metadata: {}", e))
+            })?
             .permissions();
         perms.set_mode(0o600); // Owner read/write only
-        fs::set_permissions(API_KEY_FILE, perms)
-            .map_err(|e| SpiralError::ConfigurationError(format!("Failed to set file permissions: {}", e)))?;
+        fs::set_permissions(API_KEY_FILE, perms).map_err(|e| {
+            SpiralError::ConfigurationError(format!("Failed to set file permissions: {}", e))
+        })?;
     }
-    
+
     info!("API key saved successfully with secure permissions");
     Ok(())
 }
@@ -68,27 +71,32 @@ pub fn load_api_key_from_file() -> Result<Option<String>, SpiralError> {
     if !Path::new(API_KEY_FILE).exists() {
         return Ok(None);
     }
-    
-    let api_key = fs::read_to_string(API_KEY_FILE)
-        .map_err(|e| SpiralError::ConfigurationError(format!("Failed to read API key file: {}", e)))?;
-    
+
+    let api_key = fs::read_to_string(API_KEY_FILE).map_err(|e| {
+        SpiralError::ConfigurationError(format!("Failed to read API key file: {}", e))
+    })?;
+
     let api_key = api_key.trim().to_string();
-    
+
     // Validate the loaded key
     if api_key.len() != API_KEY_LENGTH {
-        warn!("Loaded API key has incorrect length: {} (expected {})", api_key.len(), API_KEY_LENGTH);
+        warn!(
+            "Loaded API key has incorrect length: {} (expected {})",
+            api_key.len(),
+            API_KEY_LENGTH
+        );
         return Err(SpiralError::ConfigurationError(
-            "Invalid API key format in file".to_string()
+            "Invalid API key format in file".to_string(),
         ));
     }
-    
+
     if !api_key.chars().all(|c| c.is_alphanumeric()) {
         warn!("Loaded API key contains invalid characters");
         return Err(SpiralError::ConfigurationError(
-            "Invalid API key format in file".to_string()
+            "Invalid API key format in file".to_string(),
         ));
     }
-    
+
     info!("API key loaded successfully from file");
     Ok(Some(api_key))
 }
@@ -99,7 +107,7 @@ pub fn load_api_key_from_file() -> Result<Option<String>, SpiralError> {
 /// Alternative: Always generate (rejected: ignores user config)
 pub fn ensure_api_key_exists(existing_api_key: Option<&str>) -> Result<String, SpiralError> {
     info!("Ensuring secure API key exists...");
-    
+
     // If config already has an API key (from env var), validate and use it
     if let Some(key) = existing_api_key {
         if !key.trim().is_empty() {
@@ -107,7 +115,7 @@ pub fn ensure_api_key_exists(existing_api_key: Option<&str>) -> Result<String, S
             return Ok(key.to_string());
         }
     }
-    
+
     // No config key, try to load existing file-based key
     match load_api_key_from_file()? {
         Some(existing_key) => {
@@ -134,39 +142,60 @@ mod tests {
     fn test_api_key_generation() {
         let key1 = generate_secure_api_key();
         let key2 = generate_secure_api_key();
-        
+
         // Length validation
-        assert_eq!(key1.len(), API_KEY_LENGTH, "API key should have correct length");
-        assert_eq!(key2.len(), API_KEY_LENGTH, "API key should have correct length");
-        
+        assert_eq!(
+            key1.len(),
+            API_KEY_LENGTH,
+            "API key should have correct length"
+        );
+        assert_eq!(
+            key2.len(),
+            API_KEY_LENGTH,
+            "API key should have correct length"
+        );
+
         // Uniqueness validation (probabilistic)
         assert_ne!(key1, key2, "Generated keys should be unique");
-        
+
         // Character set validation
-        assert!(key1.chars().all(|c| c.is_alphanumeric()), "API key should only contain alphanumeric characters");
-        assert!(key2.chars().all(|c| c.is_alphanumeric()), "API key should only contain alphanumeric characters");
-        
+        assert!(
+            key1.chars().all(|c| c.is_alphanumeric()),
+            "API key should only contain alphanumeric characters"
+        );
+        assert!(
+            key2.chars().all(|c| c.is_alphanumeric()),
+            "API key should only contain alphanumeric characters"
+        );
+
         // Entropy validation (basic)
         let unique_chars: std::collections::HashSet<char> = key1.chars().collect();
-        assert!(unique_chars.len() >= 20, "API key should have reasonable character diversity");
+        assert!(
+            unique_chars.len() >= 20,
+            "API key should have reasonable character diversity"
+        );
     }
-    
+
     /// 💾 FILE PERSISTENCE TEST: Verify secure storage and loading
     #[test]
     fn test_api_key_file_operations() {
         let temp_dir = tempfile::TempDir::new().expect("Failed to create temp directory");
         let test_file = temp_dir.path().join("test-api-key");
-        
+
         // Test key generation and saving
         let original_key = generate_secure_api_key();
-        
+
         // Save in temp location for testing
         fs::write(&test_file, &original_key).expect("Failed to write test key");
-        
+
         // Load and verify
         let loaded_key = fs::read_to_string(&test_file).expect("Failed to read test key");
-        assert_eq!(original_key, loaded_key.trim(), "Loaded key should match saved key");
-        
+        assert_eq!(
+            original_key,
+            loaded_key.trim(),
+            "Loaded key should match saved key"
+        );
+
         // Verify file permissions on Unix systems
         #[cfg(unix)]
         {
@@ -174,7 +203,7 @@ mod tests {
             // This test focuses on the core functionality
         }
     }
-    
+
     /// 🔄 INITIALIZATION FLOW TEST: Verify complete key management
     #[test]
     fn test_key_initialization_flow() {
@@ -182,49 +211,55 @@ mod tests {
         let valid_key = generate_secure_api_key();
         assert_eq!(valid_key.len(), API_KEY_LENGTH);
         assert!(valid_key.chars().all(|c| c.is_alphanumeric()));
-        
+
         // Test invalid key detection
         let invalid_keys = vec![
             "too_short".to_string(),
-            "a".repeat(API_KEY_LENGTH + 1), // too long
-            "a".repeat(API_KEY_LENGTH - 1), // too short by 1
+            "a".repeat(API_KEY_LENGTH + 1),              // too long
+            "a".repeat(API_KEY_LENGTH - 1),              // too short by 1
             "invalid-char!".repeat(API_KEY_LENGTH / 13), // special characters
         ];
-        
+
         for invalid_key in invalid_keys {
-            if invalid_key.len() != API_KEY_LENGTH || !invalid_key.chars().all(|c| c.is_alphanumeric()) {
+            if invalid_key.len() != API_KEY_LENGTH
+                || !invalid_key.chars().all(|c| c.is_alphanumeric())
+            {
                 // This simulates the validation logic
                 assert!(true, "Invalid key correctly identified: {}", &invalid_key);
             }
         }
     }
-    
+
     /// ⚡ PERFORMANCE TEST: Ensure key generation is fast
     #[test]
     fn test_key_generation_performance() {
         let start = std::time::Instant::now();
-        
+
         // Generate multiple keys to test performance
         for _ in 0..100 {
             let _key = generate_secure_api_key();
         }
-        
+
         let duration = start.elapsed();
-        assert!(duration.as_millis() < 100, "Key generation should be fast: took {}ms", duration.as_millis());
+        assert!(
+            duration.as_millis() < 100,
+            "Key generation should be fast: took {}ms",
+            duration.as_millis()
+        );
     }
-    
+
     /// 🎲 RANDOMNESS TEST: Basic entropy validation
     #[test]
     fn test_key_randomness() {
         let mut keys = std::collections::HashSet::new();
-        
+
         // Generate multiple keys and check for duplicates
         for _ in 0..50 {
             let key = generate_secure_api_key();
             assert!(!keys.contains(&key), "Generated key should be unique");
             keys.insert(key);
         }
-        
+
         assert_eq!(keys.len(), 50, "All generated keys should be unique");
     }
 }

@@ -6,9 +6,9 @@ use tracing::{debug, info, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CircuitState {
-    Closed,     // Normal operation
-    Open,       // Failing, reject all requests
-    HalfOpen,   // Testing if service recovered
+    Closed,   // Normal operation
+    Open,     // Failing, reject all requests
+    HalfOpen, // Testing if service recovered
 }
 
 /// Circuit breaker configuration
@@ -65,9 +65,9 @@ impl CircuitBreaker {
     /// Check if request should be allowed
     pub async fn should_allow_request(&self) -> bool {
         self.total_requests.fetch_add(1, Ordering::Relaxed);
-        
+
         let current_state = *self.state.read().await;
-        
+
         match current_state {
             CircuitState::Closed => true,
             CircuitState::Open => {
@@ -91,12 +91,15 @@ impl CircuitBreaker {
     /// Record successful request
     pub async fn record_success(&self) {
         let current_state = *self.state.read().await;
-        
+
         match current_state {
             CircuitState::HalfOpen => {
                 let count = self.success_count.fetch_add(1, Ordering::Relaxed) + 1;
-                debug!("Circuit breaker success count: {}/{}", count, self.config.success_threshold);
-                
+                debug!(
+                    "Circuit breaker success count: {}/{}",
+                    count, self.config.success_threshold
+                );
+
                 if count >= self.config.success_threshold {
                     self.transition_to_closed().await;
                 }
@@ -115,23 +118,26 @@ impl CircuitBreaker {
     /// Record failed request
     pub async fn record_failure(&self) {
         self.total_failures.fetch_add(1, Ordering::Relaxed);
-        
+
         let current_state = *self.state.read().await;
-        
+
         match current_state {
             CircuitState::Closed => {
                 // Check if failures are within time window
                 let mut last_failure = self.last_failure_time.write().await;
                 let now = Instant::now();
-                
+
                 if let Some(last_time) = *last_failure {
                     if now.duration_since(last_time) > self.config.failure_window {
                         // Reset counter if outside window
                         self.failure_count.store(1, Ordering::Relaxed);
                     } else {
                         let count = self.failure_count.fetch_add(1, Ordering::Relaxed) + 1;
-                        debug!("Circuit breaker failure count: {}/{}", count, self.config.failure_threshold);
-                        
+                        debug!(
+                            "Circuit breaker failure count: {}/{}",
+                            count, self.config.failure_threshold
+                        );
+
                         if count >= self.config.failure_threshold {
                             self.transition_to_open().await;
                         }
@@ -139,7 +145,7 @@ impl CircuitBreaker {
                 } else {
                     self.failure_count.store(1, Ordering::Relaxed);
                 }
-                
+
                 *last_failure = Some(now);
             }
             CircuitState::HalfOpen => {
@@ -159,12 +165,12 @@ impl CircuitBreaker {
         let mut state = self.state.write().await;
         let previous_state = *state;
         *state = CircuitState::Open;
-        
+
         let mut last_change = self.last_state_change.write().await;
         *last_change = Instant::now();
-        
+
         self.success_count.store(0, Ordering::Relaxed);
-        
+
         warn!(
             "Circuit breaker opened (was {:?}). Total requests: {}, Total failures: {}",
             previous_state,
@@ -177,13 +183,13 @@ impl CircuitBreaker {
     async fn transition_to_half_open(&self) {
         let mut state = self.state.write().await;
         *state = CircuitState::HalfOpen;
-        
+
         let mut last_change = self.last_state_change.write().await;
         *last_change = Instant::now();
-        
+
         self.success_count.store(0, Ordering::Relaxed);
         self.failure_count.store(0, Ordering::Relaxed);
-        
+
         info!("Circuit breaker transitioned to half-open");
     }
 
@@ -192,13 +198,13 @@ impl CircuitBreaker {
         let mut state = self.state.write().await;
         let previous_state = *state;
         *state = CircuitState::Closed;
-        
+
         let mut last_change = self.last_state_change.write().await;
         *last_change = Instant::now();
-        
+
         self.failure_count.store(0, Ordering::Relaxed);
         self.success_count.store(0, Ordering::Relaxed);
-        
+
         info!(
             "Circuit breaker closed (was {:?}). Service recovered.",
             previous_state

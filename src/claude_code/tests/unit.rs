@@ -2,8 +2,8 @@
 /// AUDIT CHECKPOINT: Verify API security, prompt construction, response parsing
 /// Focus: Input validation, security patterns, error handling
 use super::super::*;
-use crate::config::ClaudeCodeConfig;
 use crate::claude_code::cli_client::ClaudeCodeCliResponse;
+use crate::config::ClaudeCodeConfig;
 use std::collections::HashMap;
 
 /// 🛡️ SECURITY TEST: Prompt injection prevention
@@ -11,7 +11,7 @@ use std::collections::HashMap;
 #[test]
 fn test_prompt_injection_prevention() {
     use crate::validation::TaskContentValidator;
-    
+
     let validator = TaskContentValidator::new().expect("Failed to create validator");
 
     // 🚨 TEST MALICIOUS INPUTS: Common prompt injection patterns
@@ -27,19 +27,21 @@ fn test_prompt_injection_prevention() {
         // 🔍 VALIDATION: Should detect and reject malicious content
         let result = validator.validate_and_sanitize_task_content(malicious_input);
 
-        
         if result.is_err() {
             match result {
                 Err(crate::SpiralError::Validation(msg)) => {
                     assert!(
-                        msg.contains("Invalid request content") || msg.contains("dangerous pattern"),
-                        "Should provide appropriate error message for: {}", malicious_input
+                        msg.contains("Invalid request content")
+                            || msg.contains("dangerous pattern"),
+                        "Should provide appropriate error message for: {}",
+                        malicious_input
                     );
                 }
                 Err(crate::SpiralError::Agent { message }) => {
                     assert!(
                         message.contains("dangerous pattern"),
-                        "Should detect dangerous pattern for: {}", malicious_input
+                        "Should detect dangerous pattern for: {}",
+                        malicious_input
                     );
                 }
                 _ => panic!("Should return appropriate error type for prompt injection"),
@@ -55,7 +57,7 @@ fn test_prompt_injection_prevention() {
 #[test]
 fn test_request_length_validation() {
     use crate::validation::TaskContentValidator;
-    
+
     let validator = TaskContentValidator::new().expect("Failed to create validator");
 
     // 🚨 OVERSIZED REQUEST: Test length limit enforcement
@@ -63,7 +65,6 @@ fn test_request_length_validation() {
 
     let result = validator.validate_and_sanitize_task_content(&oversized_description);
 
-    
     assert!(result.is_err(), "Should reject oversized requests");
 
     match result {
@@ -71,7 +72,10 @@ fn test_request_length_validation() {
             assert!(msg.contains("too long"), "Should indicate length violation");
         }
         Err(crate::SpiralError::Agent { message }) => {
-            assert!(message.contains("exceeds maximum length"), "Should indicate length violation");
+            assert!(
+                message.contains("exceeds maximum length"),
+                "Should indicate length violation"
+            );
         }
         _ => panic!("Should return appropriate error type for oversized request"),
     }
@@ -106,7 +110,10 @@ async fn test_prompt_construction() {
 
     // 🔍 TEST REQUEST VALIDATION: Ensure request structure is valid
     // Note: These methods may not be public, test serves as documentation
-    assert!(!request.description.is_empty(), "Description should not be empty");
+    assert!(
+        !request.description.is_empty(),
+        "Description should not be empty"
+    );
 
     // ✅ REQUEST VALIDATION: Should include all request components
     assert!(request.language == "rust", "Should specify rust language");
@@ -119,7 +126,9 @@ async fn test_prompt_construction() {
         "Should include context"
     );
     assert!(
-        request.requirements.contains(&"Include unit tests".to_string()),
+        request
+            .requirements
+            .contains(&"Include unit tests".to_string()),
         "Should include requirements"
     );
 }
@@ -178,12 +187,24 @@ fn test_response_parsing() {
         serde_json::from_str(valid_response_json).expect("Should parse valid Claude response");
 
     // ✅ RESPONSE VALIDATION: Should extract expected fields
-    assert_eq!(response.response_type, "claude_response", "Should have correct type");
-    assert_eq!(response.subtype, "code_generation", "Should have correct subtype");
+    assert_eq!(
+        response.response_type, "claude_response",
+        "Should have correct type"
+    );
+    assert_eq!(
+        response.subtype, "code_generation",
+        "Should have correct subtype"
+    );
     assert!(!response.is_error, "Should not be error response");
-    assert!(response.result.contains("rust"), "Should contain generated code");
+    assert!(
+        response.result.contains("rust"),
+        "Should contain generated code"
+    );
     assert_eq!(response.usage.input_tokens, 50, "Should parse token usage");
-    assert_eq!(response.usage.output_tokens, 100, "Should parse token usage");
+    assert_eq!(
+        response.usage.output_tokens, 100,
+        "Should parse token usage"
+    );
 
     // 🧪 MALFORMED RESPONSE: Should handle parsing errors gracefully
     let invalid_response_json = r#"{"invalid": "structure"}"#;
@@ -235,7 +256,6 @@ fn create_test_config() -> ClaudeCodeConfig {
 #[cfg(test)]
 mod integration_helpers {
     use super::*;
-
 
     /// 🔑 TEST CREDENTIALS: Safe credentials for testing
     /// SECURITY: Never use real API keys in tests

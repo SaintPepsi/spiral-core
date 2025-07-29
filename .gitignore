@@ -62,3 +62,6 @@ docker-build/
 *.dll
 *.so
 *.dylib
+
+
+test_logs

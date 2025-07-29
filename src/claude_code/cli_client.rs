@@ -1,8 +1,8 @@
 use crate::{
     claude_code::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig},
-    config::ClaudeCodeConfig, 
-    validation::TaskContentValidator, 
-    Result, SpiralError
+    config::ClaudeCodeConfig,
+    validation::TaskContentValidator,
+    Result, SpiralError,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -99,10 +99,10 @@ impl ClaudeCodeCliClient {
         };
 
         let validator = TaskContentValidator::new()?;
-        
+
         // Initialize circuit breaker with default config
         let circuit_breaker = Arc::new(CircuitBreaker::new(CircuitBreakerConfig::default()));
-        
+
         Ok(Self {
             config,
             claude_binary,
@@ -110,7 +110,6 @@ impl ClaudeCodeCliClient {
             circuit_breaker,
         })
     }
-
 
     /// 🔍 BINARY DISCOVERY: Locate Claude Code CLI in system environment
     /// DECISION: Search multiple standard locations for flexibility
@@ -122,8 +121,8 @@ impl ClaudeCodeCliClient {
     async fn find_claude_binary() -> Result<String> {
         // Try common locations for Claude Code
         let possible_paths = [
-            "claude",                       // PATH search
-            "/usr/local/bin/claude",        // Homebrew/standard install
+            "claude",                         // PATH search
+            "/usr/local/bin/claude",          // Homebrew/standard install
             "/home/vscode/.local/bin/claude", // Dev container install
         ];
 
@@ -131,7 +130,11 @@ impl ClaudeCodeCliClient {
             // ✅ PERFORMANCE FIX: Use tokio::process::Command for async operation
             // Why: Prevents blocking the async runtime during binary discovery
             // AUDIT CHECKPOINT: Verify error handling maintains security posture
-            match tokio::process::Command::new(path).arg("--help").output().await {
+            match tokio::process::Command::new(path)
+                .arg("--help")
+                .output()
+                .await
+            {
                 Ok(output) if output.status.success() => {
                     info!("Found Claude Code binary at: {}", path);
                     return Ok(path.to_string());
@@ -152,7 +155,6 @@ impl ClaudeCodeCliClient {
         ))
     }
 
-
     /// Execute Claude Code CLI command with optional session ID for continuity
     async fn execute_claude_command_with_session(
         &self,
@@ -163,7 +165,8 @@ impl ClaudeCodeCliClient {
         if !self.circuit_breaker.should_allow_request().await {
             warn!("Circuit breaker is open - Claude Code service is unavailable");
             return Err(SpiralError::Agent {
-                message: "Claude Code service is temporarily unavailable due to repeated failures".to_string(),
+                message: "Claude Code service is temporarily unavailable due to repeated failures"
+                    .to_string(),
             });
         }
         // 🏗️ WORKSPACE ISOLATION DECISION: Each session gets isolated filesystem workspace
@@ -199,7 +202,7 @@ impl ClaudeCodeCliClient {
             // Only use --resume if this is NOT a new session
             // A new session means no existing conversation to resume
             if !is_new_session {
-                command.args(["--resume", sid]);  // Explicit session continuation
+                command.args(["--resume", sid]); // Explicit session continuation
                 debug!("Resuming existing session: {}", sid);
             } else {
                 // New session with ID - start fresh conversation
@@ -256,10 +259,10 @@ impl ClaudeCodeCliClient {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             warn!("Claude Code process failed: {stderr}");
-            
+
             // Record failure in circuit breaker
             self.circuit_breaker.record_failure().await;
-            
+
             return Err(SpiralError::Agent {
                 message: format!("Claude Code execution failed: {stderr}"),
             });
@@ -274,9 +277,11 @@ impl ClaudeCodeCliClient {
             Err(e) => {
                 // Record failure in circuit breaker for parse errors
                 self.circuit_breaker.record_failure().await;
-                
+
                 return Err(SpiralError::Agent {
-                    message: format!("Failed to parse Claude Code response: {e} - Output: {stdout}"),
+                    message: format!(
+                        "Failed to parse Claude Code response: {e} - Output: {stdout}"
+                    ),
                 });
             }
         };
@@ -301,7 +306,6 @@ impl ClaudeCodeCliClient {
 
         Ok(response)
     }
-
 
     /// Get or create a workspace for a specific session
     async fn get_or_create_session_workspace(
@@ -657,13 +661,13 @@ impl ClaudeCodeCliClient {
                 // Get workspace path for return value
                 let (workspace, _) = self.get_or_create_session_workspace(session_id).await?;
                 Ok((response, workspace))
-            },
+            }
             Err(e) => {
                 // If it failed due to permissions, try with more permissive mode
                 if e.to_string().contains("permission") || e.to_string().contains("access") {
                     // 🔓 PERMISSION ESCALATION DECISION: Auto-retry with elevated permissions
                     // 🛡️ SECURITY AUDIT CHECKPOINT: Permission bypass activation
-                    // Why: User experience - avoid manual retry for common permission issues  
+                    // Why: User experience - avoid manual retry for common permission issues
                     // Risk: May execute with higher privileges than intended
                     // Mitigation: Log security event, monitor for abuse patterns
                     // 🚨 SECURITY AUDIT LOG: Permission bypass activation
@@ -676,7 +680,7 @@ impl ClaudeCodeCliClient {
                         chrono::Utc::now().to_rfc3339()
                     );
                     warn!("Initial execution failed due to permissions, retrying with bypassPermissions mode");
-                    
+
                     let response = self
                         .execute_claude_command_with_permissions_and_session(
                             prompt,
@@ -693,7 +697,6 @@ impl ClaudeCodeCliClient {
             }
         }
     }
-
 
     /// Execute Claude Code with specific permission mode and session support
     async fn execute_claude_command_with_permissions_and_session(
@@ -729,7 +732,7 @@ impl ClaudeCodeCliClient {
             // Only use --resume if this is NOT a new session
             // A new session means no existing conversation to resume
             if !is_new_session {
-                command.args(["--resume", sid]);  // Explicit session continuation
+                command.args(["--resume", sid]); // Explicit session continuation
                 debug!("Resuming existing session: {}", sid);
             } else {
                 // New session with ID - start fresh conversation
@@ -833,15 +836,22 @@ impl ClaudeCodeCliClient {
 
         // 🛡️ INPUT VALIDATION: Critical security boundary
         // Validate description content for safety
-        let _sanitized_description = self.validator.validate_and_sanitize_task_content(&request.description)
+        let _sanitized_description = self
+            .validator
+            .validate_and_sanitize_task_content(&request.description)
             .map_err(|e| SpiralError::Validation(format!("Invalid request content: {}", e)))?;
-        
+
         // Validate context keys and values
         for (key, value) in &request.context {
-            self.validator.validate_context_key(key)
-                .map_err(|e| SpiralError::Validation(format!("Invalid context key '{}': {}", key, e)))?;
-            let _sanitized_value = self.validator.validate_and_sanitize_context_value(value)
-                .map_err(|e| SpiralError::Validation(format!("Invalid context value for '{}': {}", key, e)))?;
+            self.validator.validate_context_key(key).map_err(|e| {
+                SpiralError::Validation(format!("Invalid context key '{}': {}", key, e))
+            })?;
+            let _sanitized_value = self
+                .validator
+                .validate_and_sanitize_context_value(value)
+                .map_err(|e| {
+                    SpiralError::Validation(format!("Invalid context value for '{}': {}", key, e))
+                })?;
         }
 
         // Build comprehensive prompt
@@ -999,7 +1009,7 @@ impl ClaudeCodeCliClient {
         // Why: Current CLI doesn't provide structured file operation metadata
         // Alternative: Parse response text for file operations (future enhancement)
         // Current: Return empty vectors until structured output is available
-        let files_to_create = Vec::new(); 
+        let files_to_create = Vec::new();
         let files_to_modify = Vec::new();
 
         Ok(CodeGenerationResult {
@@ -1116,9 +1126,11 @@ impl ClaudeCodeCliClient {
 
         "Implement using best practices and modular design".to_string()
     }
-    
+
     /// Get circuit breaker status and metrics
-    pub async fn get_circuit_breaker_metrics(&self) -> crate::claude_code::circuit_breaker::CircuitBreakerMetrics {
+    pub async fn get_circuit_breaker_metrics(
+        &self,
+    ) -> crate::claude_code::circuit_breaker::CircuitBreakerMetrics {
         self.circuit_breaker.get_metrics().await
     }
 }
@@ -1139,4 +1151,3 @@ pub struct WorkspaceStats {
     pub total_size_mb: u64,
     pub oldest_workspace_age_hours: u64,
 }
-

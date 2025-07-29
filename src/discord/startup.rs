@@ -41,33 +41,32 @@ impl SpiralDiscordStartup {
 
         // Create developer agent (currently the only implemented agent)
         let developer_agent = SoftwareDeveloperAgent::new(self.claude_client.clone());
-        
+
         // Create constellation bot with persona system
         let constellation_bot = SpiralConstellationBot::new(
             developer_agent,
             self.claude_client.clone(),
-        ).await?;
+            self.config.discord.clone(),
+        )
+        .await?;
 
         info!("SpiralConstellation bot initialized with personas:");
         info!("  🚀 SpiralDev - Software Developer");
-        info!("  📋 SpiralPM - Project Manager (coming soon)");  
+        info!("  📋 SpiralPM - Project Manager (coming soon)");
         info!("  🔍 SpiralQA - Quality Assurance (coming soon)");
         info!("  🎯 SpiralDecide - Decision Maker (coming soon)");
         info!("  ✨ SpiralCreate - Creative Innovator (coming soon)");
         info!("  🧘 SpiralCoach - Process Coach (coming soon)");
 
         // Create and run bot
-        let runner = SpiralConstellationBotRunner::new(
-            constellation_bot,
-            self.config.discord.token.clone(),
-        );
+        let runner =
+            SpiralConstellationBotRunner::new(constellation_bot, self.config.discord.token.clone());
 
         info!("🚀 Starting SpiralConstellation Discord bot...");
         runner.run().await?;
 
         Ok(())
     }
-
 
     /// 📊 VALIDATE DISCORD CONFIG: Check Discord configuration for issues
     pub fn validate_discord_config(&self) -> Result<()> {
@@ -107,7 +106,10 @@ pub async fn start_discord_bots(config: Config, claude_client: ClaudeCodeClient)
 }
 
 /// 🎛️ ORCHESTRATOR INTEGRATION: Start Discord with full orchestration capabilities
-pub async fn start_discord_with_orchestrator(config: Config, orchestrator: Arc<AgentOrchestrator>) -> Result<()> {
+pub async fn start_discord_with_orchestrator(
+    config: Config,
+    orchestrator: Arc<AgentOrchestrator>,
+) -> Result<()> {
     if config.discord.token.is_empty() {
         info!("Discord token not provided - Discord integration disabled");
         return Ok(());
@@ -116,7 +118,8 @@ pub async fn start_discord_with_orchestrator(config: Config, orchestrator: Arc<A
     info!("🌌 Starting SpiralConstellation bot with orchestrator integration");
 
     // Create constellation bot with orchestrator
-    let constellation_bot = SpiralConstellationBot::new_with_orchestrator(orchestrator).await?;
+    let constellation_bot =
+        SpiralConstellationBot::new_with_orchestrator(orchestrator, config.discord.clone()).await?;
 
     info!("SpiralConstellation bot initialized with orchestrator:");
     info!("  🚀 SpiralDev - Software development & coding");
@@ -130,4 +133,3 @@ pub async fn start_discord_with_orchestrator(config: Config, orchestrator: Arc<A
     let bot_runner = SpiralConstellationBotRunner::new(constellation_bot, config.discord.token);
     bot_runner.run().await
 }
-

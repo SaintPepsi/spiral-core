@@ -1,24 +1,25 @@
 use crate::{
     agents::{Agent, AgentOrchestrator, SoftwareDeveloperAgent},
     claude_code::ClaudeCodeClient,
-    discord::message_state_manager::{MessageStateManager, MessageStateConfig},
+    config::DiscordConfig,
+    discord::{
+        message_state_manager::{MessageStateConfig, MessageStateManager},
+        IntentClassifier, IntentResponse, IntentType, MessageSecurityValidator, RiskLevel,
+        SecureMessageHandler,
+    },
     models::{AgentType, Priority, Task},
     Result, SpiralError,
 };
 use serenity::{
     async_trait,
     model::{
-        channel::Message, 
-        gateway::Ready,
-        guild::Role,
-        id::GuildId,
-        permissions::Permissions,
+        channel::Message, gateway::Ready, guild::Role, id::GuildId, permissions::Permissions,
+        user::OnlineStatus,
     },
     prelude::*,
 };
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::Mutex;
 use tracing::{info, warn};
 
 /// Discord message length limit for safety
@@ -28,15 +29,19 @@ const MAX_OUTPUT_RESPONSE: usize = 1950; // Closer to Discord's 2000 char limit
 
 /// 🧠 USER INTENT: Classification of user request types
 #[derive(Debug, Clone, PartialEq)]
-enum UserIntent {
-    /// Information queries: "what projects exist?", "show me files", "list directories"
-    InformationQuery,
-    /// Development tasks: "create a game", "build an app", "implement feature"
-    Development,
-    /// Modification tasks: "fix this bug", "update the code", "improve performance"
-    Modification,
-    /// Analysis tasks: "review this code", "explain how this works", "analyze the structure"
-    Analysis,
+pub enum UserIntent {
+    /// Task requests: "create a feature", "fix this bug", "implement authentication"
+    TaskRequest,
+    /// Status queries: "what's the status?", "show me progress", "are you busy?"
+    StatusQuery,
+    /// Agent selection: "@dev create function", "@pm analyze requirements"
+    AgentSelection,
+    /// Help requests: "help", "how do I use this?", "what can you do?"
+    HelpRequest,
+    /// Greetings: "hello", "hi there", "good morning"
+    Greeting,
+    /// Unknown intents that don't match patterns
+    Unknown,
 }
 
 use regex::Regex;
@@ -52,19 +57,33 @@ pub struct SpiralConstellationBot {
     // Orchestrator mode (full system integration)
     orchestrator: Option<Arc<AgentOrchestrator>>,
     // Common fields
+    #[allow(dead_code)]
     start_time: Instant,
-    stats: Arc<Mutex<BotStats>>,
+    stats: Arc<tokio::sync::Mutex<BotStats>>,
     mention_regex: Regex,
     // Message handling
+    #[allow(dead_code)]
     message_state_manager: Arc<MessageStateManager>,
+    // Security components (🛡️ SECURITY ARCHITECTURE)
+    // Why: Multi-layer security validation to prevent malicious content, spam, and attacks
+    // Alternative: Single validation point (rejected: insufficient protection against sophisticated attacks)
+    // Audit: Monitor security_validation_failed_count metric for bypass attempts
+    security_validator: Arc<tokio::sync::Mutex<MessageSecurityValidator>>,
+    intent_classifier: Arc<IntentClassifier>,
+    secure_message_handler: Arc<SecureMessageHandler>,
+    // Configuration
+    discord_config: DiscordConfig,
 }
 
 #[derive(Debug, Clone, Default)]
 struct BotStats {
     dev_tasks_completed: u64,
+    #[allow(dead_code)]
     pm_tasks_completed: u64,
+    #[allow(dead_code)]
     qa_tasks_completed: u64,
     total_tasks_failed: u64,
+    #[allow(dead_code)]
     current_task_id: Option<String>,
     current_persona: Option<AgentType>,
 }
@@ -96,7 +115,7 @@ impl AgentPersona {
         error_style: "❌ Code generation failed:",
         personality_traits: &["technical", "precise", "solution-focused", "efficient"],
     };
-    
+
     pub const PROJECT_MANAGER: Self = Self {
         name: "SpiralPM",
         emoji: "📋",
@@ -111,7 +130,7 @@ impl AgentPersona {
         error_style: "⚠️ Analysis failed:",
         personality_traits: &["strategic", "organized", "comprehensive", "collaborative"],
     };
-    
+
     pub const QUALITY_ASSURANCE: Self = Self {
         name: "SpiralQA",
         emoji: "🔍",
@@ -124,9 +143,14 @@ impl AgentPersona {
         working_message: "🧪 Running quality checks...",
         completion_style: "✅ Quality review complete!",
         error_style: "🚨 Quality check failed:",
-        personality_traits: &["meticulous", "thorough", "safety-focused", "detail-oriented"],
+        personality_traits: &[
+            "meticulous",
+            "thorough",
+            "safety-focused",
+            "detail-oriented",
+        ],
     };
-    
+
     pub const DECISION_MAKER: Self = Self {
         name: "SpiralDecide",
         emoji: "🎯",
@@ -141,7 +165,7 @@ impl AgentPersona {
         error_style: "❓ Decision analysis failed:",
         personality_traits: &["analytical", "decisive", "logical", "balanced"],
     };
-    
+
     pub const CREATIVE_INNOVATOR: Self = Self {
         name: "SpiralCreate",
         emoji: "✨",
@@ -156,7 +180,7 @@ impl AgentPersona {
         error_style: "💥 Innovation failed:",
         personality_traits: &["creative", "innovative", "experimental", "visionary"],
     };
-    
+
     pub const PROCESS_COACH: Self = Self {
         name: "SpiralCoach",
         emoji: "🧘",
@@ -171,7 +195,7 @@ impl AgentPersona {
         error_style: "🔧 Process analysis failed:",
         personality_traits: &["supportive", "methodical", "improvement-focused", "wise"],
     };
-    
+
     pub const SPIRAL_KING: Self = Self {
         name: "The Immortal Spiral King",
         emoji: "👑",
@@ -186,7 +210,7 @@ impl AgentPersona {
         error_style: "🌀 Even the Spiral King cannot overcome the Anti-Spiral forces of:",
         personality_traits: &["ancient-wisdom", "architectural-mastery", "long-term-perspective", "comprehensive-analysis"],
     };
-    
+
     /// Get persona for agent type
     pub fn for_agent_type(agent_type: &AgentType) -> &'static Self {
         match agent_type {
@@ -199,7 +223,7 @@ impl AgentPersona {
             AgentType::SpiralKing => &AgentPersona::SPIRAL_KING,
         }
     }
-    
+
     /// Get a random greeting from the persona's greetings array
     pub fn random_greeting(&self) -> &'static str {
         use rand::seq::SliceRandom;
@@ -213,68 +237,97 @@ impl SpiralConstellationBot {
     pub async fn new(
         developer_agent: SoftwareDeveloperAgent,
         claude_client: ClaudeCodeClient,
+        discord_config: DiscordConfig,
     ) -> Result<Self> {
         // Pattern matches: @SpiralDev, @SpiralPM, @SpiralQA, etc. (user mentions)
         // Also matches role mentions: <@&role_id>
-        let mention_regex = Regex::new(r"@Spiral(\w+)|<@&(\d+)>").map_err(|e| SpiralError::Agent {
-            message: format!("Invalid mention regex: {e}"),
-        })?;
-        
+        let mention_regex =
+            Regex::new(r"@Spiral(\w+)|<@&(\d+)>").map_err(|e| SpiralError::Agent {
+                message: format!("Invalid mention regex: {e}"),
+            })?;
+
         // Initialize message state manager
-        let message_state_manager = Arc::new(MessageStateManager::new(MessageStateConfig::default()));
-        
+        let message_state_manager =
+            Arc::new(MessageStateManager::new(MessageStateConfig::default()));
+
+        // Initialize security components
+        let security_validator = Arc::new(tokio::sync::Mutex::new(MessageSecurityValidator::new()));
+        let intent_classifier = Arc::new(IntentClassifier::new());
+        let secure_message_handler = Arc::new(SecureMessageHandler::new());
+
         Ok(Self {
             developer_agent: Some(Arc::new(developer_agent)),
             claude_client: Some(Arc::new(claude_client)),
             orchestrator: None,
             start_time: Instant::now(),
-            stats: Arc::new(Mutex::new(BotStats::default())),
+            stats: Arc::new(tokio::sync::Mutex::new(BotStats::default())),
             mention_regex,
             message_state_manager,
+            security_validator,
+            intent_classifier,
+            secure_message_handler,
+            discord_config,
         })
     }
 
     /// 🎛️ ORCHESTRATOR MODE: Create bot with orchestrator integration (full system)
-    pub async fn new_with_orchestrator(orchestrator: Arc<AgentOrchestrator>) -> Result<Self> {
+    pub async fn new_with_orchestrator(
+        orchestrator: Arc<AgentOrchestrator>,
+        discord_config: DiscordConfig,
+    ) -> Result<Self> {
         // Pattern matches: @SpiralDev, @SpiralPM, @SpiralQA, etc. (user mentions)
         // Also matches role mentions: <@&role_id>
-        let mention_regex = Regex::new(r"@Spiral(\w+)|<@&(\d+)>").map_err(|e| SpiralError::Agent {
-            message: format!("Invalid mention regex: {e}"),
-        })?;
-        
+        let mention_regex =
+            Regex::new(r"@Spiral(\w+)|<@&(\d+)>").map_err(|e| SpiralError::Agent {
+                message: format!("Invalid mention regex: {e}"),
+            })?;
+
         // Initialize message state manager
-        let message_state_manager = Arc::new(MessageStateManager::new(MessageStateConfig::default()));
-        
+        let message_state_manager =
+            Arc::new(MessageStateManager::new(MessageStateConfig::default()));
+
         // Start background cleanup task for message state manager
         let cleanup_manager = message_state_manager.clone();
         cleanup_manager.start_cleanup_task();
-        
+
+        // Initialize security components
+        let security_validator = Arc::new(tokio::sync::Mutex::new(MessageSecurityValidator::new()));
+        let intent_classifier = Arc::new(IntentClassifier::new());
+        let secure_message_handler = Arc::new(SecureMessageHandler::new());
+
         Ok(Self {
             developer_agent: None,
             claude_client: None,
             orchestrator: Some(orchestrator),
             start_time: Instant::now(),
-            stats: Arc::new(Mutex::new(BotStats::default())),
+            stats: Arc::new(tokio::sync::Mutex::new(BotStats::default())),
             mention_regex,
             message_state_manager,
+            security_validator,
+            intent_classifier,
+            secure_message_handler,
+            discord_config,
         })
     }
 
     /// 🎭 ROLE MANAGEMENT: Create agent persona roles in Discord server
     pub async fn create_agent_roles(&self, ctx: &Context, guild_id: GuildId) -> Result<Vec<Role>> {
         let mut created_roles = Vec::new();
-        
-        info!("[SpiralConstellation] Creating agent persona roles in guild {}", guild_id);
-        
+
+        info!(
+            "[SpiralConstellation] Creating agent persona roles in guild {}",
+            guild_id
+        );
+
         let personas = [
-            (&AgentPersona::DEVELOPER, 0x00ff00), // Green
-            (&AgentPersona::PROJECT_MANAGER, 0x0066ff), // Blue  
-            (&AgentPersona::QUALITY_ASSURANCE, 0xff6600), // Orange
-            (&AgentPersona::DECISION_MAKER, 0x9900ff), // Purple
+            (&AgentPersona::DEVELOPER, 0x00ff00),          // Green
+            (&AgentPersona::PROJECT_MANAGER, 0x0066ff),    // Blue
+            (&AgentPersona::QUALITY_ASSURANCE, 0xff6600),  // Orange
+            (&AgentPersona::DECISION_MAKER, 0x9900ff),     // Purple
             (&AgentPersona::CREATIVE_INNOVATOR, 0xff0099), // Pink
-            (&AgentPersona::PROCESS_COACH, 0x00ffff), // Cyan
+            (&AgentPersona::PROCESS_COACH, 0x00ffff),      // Cyan
         ];
-        
+
         for (persona, color) in personas {
             let edit_role = serenity::builder::EditRole::default()
                 .name(persona.name)
@@ -282,29 +335,39 @@ impl SpiralConstellationBot {
                 .mentionable(true)
                 .hoist(false)
                 .permissions(Permissions::empty());
-            
+
             match guild_id.create_role(&ctx.http, edit_role).await {
                 Ok(role) => {
-                    info!("[SpiralConstellation] Created role: {} ({})", persona.name, role.id);
+                    info!(
+                        "[SpiralConstellation] Created role: {} ({})",
+                        persona.name, role.id
+                    );
                     created_roles.push(role);
                 }
                 Err(e) => {
-                    warn!("[SpiralConstellation] Failed to create role {}: {}", persona.name, e);
+                    warn!(
+                        "[SpiralConstellation] Failed to create role {}: {}",
+                        persona.name, e
+                    );
                 }
             }
         }
-        
+
         Ok(created_roles)
     }
 
     /// 🔍 ROLE DETECTION: Find agent role by name in guild
-    pub async fn find_agent_role(&self, ctx: &Context, guild_id: GuildId, persona_name: &str) -> Option<Role> {
+    pub async fn find_agent_role(
+        &self,
+        ctx: &Context,
+        guild_id: GuildId,
+        persona_name: &str,
+    ) -> Option<Role> {
         match guild_id.roles(&ctx.http).await {
-            Ok(roles) => {
-                roles.values()
-                    .find(|role| role.name == persona_name)
-                    .cloned()
-            }
+            Ok(roles) => roles
+                .values()
+                .find(|role| role.name == persona_name)
+                .cloned(),
             Err(e) => {
                 warn!("[SpiralConstellation] Failed to fetch roles: {}", e);
                 None
@@ -313,19 +376,34 @@ impl SpiralConstellationBot {
     }
 
     /// 🎯 ROLE ASSIGNMENT: Give user an agent persona role
-    pub async fn assign_agent_role(&self, ctx: &Context, guild_id: GuildId, user_id: serenity::model::id::UserId, persona_name: &str) -> Result<()> {
+    pub async fn assign_agent_role(
+        &self,
+        ctx: &Context,
+        guild_id: GuildId,
+        user_id: serenity::model::id::UserId,
+        persona_name: &str,
+    ) -> Result<()> {
         if let Some(role) = self.find_agent_role(ctx, guild_id, persona_name).await {
             match guild_id.member(&ctx.http, user_id).await {
                 Ok(member) => {
                     if let Err(e) = member.add_role(&ctx.http, role.id).await {
-                        warn!("[SpiralConstellation] Failed to assign role {} to user {}: {}", persona_name, user_id, e);
+                        warn!(
+                            "[SpiralConstellation] Failed to assign role {} to user {}: {}",
+                            persona_name, user_id, e
+                        );
                         return Err(SpiralError::Discord(Box::new(e)));
                     } else {
-                        info!("[SpiralConstellation] Assigned role {} to user {}", persona_name, user_id);
+                        info!(
+                            "[SpiralConstellation] Assigned role {} to user {}",
+                            persona_name, user_id
+                        );
                     }
                 }
                 Err(e) => {
-                    warn!("[SpiralConstellation] Failed to get member {}: {}", user_id, e);
+                    warn!(
+                        "[SpiralConstellation] Failed to get member {}: {}",
+                        user_id, e
+                    );
                     return Err(SpiralError::Discord(Box::new(e)));
                 }
             }
@@ -335,23 +413,34 @@ impl SpiralConstellationBot {
                 if let Some(new_role) = roles.iter().find(|r| r.name == persona_name) {
                     if let Ok(member) = guild_id.member(&ctx.http, user_id).await {
                         if let Err(e) = member.add_role(&ctx.http, new_role.id).await {
-                            warn!("[SpiralConstellation] Failed to assign new role {} to user {}: {}", persona_name, user_id, e);
+                            warn!(
+                                "[SpiralConstellation] Failed to assign new role {} to user {}: {}",
+                                persona_name, user_id, e
+                            );
                             return Err(SpiralError::Discord(Box::new(e)));
                         } else {
-                            info!("[SpiralConstellation] Created and assigned role {} to user {}", persona_name, user_id);
+                            info!(
+                                "[SpiralConstellation] Created and assigned role {} to user {}",
+                                persona_name, user_id
+                            );
                         }
                     }
                 }
             }
         }
-        
+
         Ok(())
     }
 
     /// 🎭 PERSONA DETECTION: Determine which agent persona to use based on mentions or role mentions
-    async fn detect_agent_persona(&self, content: &str, msg: &Message, ctx: &Context) -> Option<AgentType> {
+    async fn detect_agent_persona(
+        &self,
+        content: &str,
+        msg: &Message,
+        ctx: &Context,
+    ) -> Option<AgentType> {
         let content_lower = content.to_lowercase();
-        
+
         // First, check for role mentions in the message
         if let Some(guild_id) = msg.guild_id {
             for role_mention in &msg.mention_roles {
@@ -369,7 +458,7 @@ impl SpiralConstellationBot {
                 }
             }
         }
-        
+
         // Check for specific agent mentions in text (@SpiralDev, etc.)
         for capture in self.mention_regex.captures_iter(content) {
             if let Some(agent_suffix) = capture.get(1) {
@@ -379,20 +468,31 @@ impl SpiralConstellationBot {
                     "pm" | "manager" | "project" => return Some(AgentType::ProjectManager),
                     "qa" | "quality" | "test" => return Some(AgentType::QualityAssurance),
                     "decide" | "decision" => return Some(AgentType::DecisionMaker),
-                    "create" | "creative" | "innovate" => return Some(AgentType::CreativeInnovator),
+                    "create" | "creative" | "innovate" => {
+                        return Some(AgentType::CreativeInnovator)
+                    }
                     "coach" | "process" => return Some(AgentType::ProcessCoach),
                     "king" | "spiralking" | "lordgenome" => return Some(AgentType::SpiralKing),
                     _ => {}
                 }
             }
         }
-        
+
         // Fallback: detect based on content keywords
-        if content_lower.contains("code") || content_lower.contains("implement") || content_lower.contains("function") {
+        if content_lower.contains("code")
+            || content_lower.contains("implement")
+            || content_lower.contains("function")
+        {
             Some(AgentType::SoftwareDeveloper)
-        } else if content_lower.contains("status") || content_lower.contains("project") || content_lower.contains("timeline") {
+        } else if content_lower.contains("status")
+            || content_lower.contains("project")
+            || content_lower.contains("timeline")
+        {
             Some(AgentType::ProjectManager)
-        } else if content_lower.contains("test") || content_lower.contains("quality") || content_lower.contains("bug") {
+        } else if content_lower.contains("test")
+            || content_lower.contains("quality")
+            || content_lower.contains("bug")
+        {
             Some(AgentType::QualityAssurance)
         } else {
             // Default to developer agent if unclear
@@ -401,64 +501,96 @@ impl SpiralConstellationBot {
     }
 
     /// 🎯 TASK CREATION: Create task with agent persona context
-    fn create_task_with_persona(&self, content: &str, agent_type: AgentType, context: MessageContext, intent: UserIntent) -> Task {
+    fn create_task_with_persona(
+        &self,
+        content: &str,
+        agent_type: AgentType,
+        context: MessageContext,
+        intent: UserIntent,
+    ) -> Task {
         let persona = AgentPersona::for_agent_type(&agent_type);
-        
+
         // Enhance the description based on user intent
         let enhanced_description = match intent {
-            UserIntent::InformationQuery => {
+            UserIntent::StatusQuery => {
                 format!("INFORMATION QUERY: {}. Please provide a clear, informative response about the current state of the workspace/project. Focus on listing, showing, or describing what exists rather than creating new code.", content)
-            },
-            UserIntent::Development => {
+            }
+            UserIntent::TaskRequest => {
                 format!("DEVELOPMENT TASK: {}. Please implement, create, or build the requested functionality following best practices.", content)
-            },
-            UserIntent::Modification => {
-                format!("MODIFICATION TASK: {}. Please update, fix, or improve the existing code/project as requested.", content)
-            },
-            UserIntent::Analysis => {
-                format!("ANALYSIS TASK: {}. Please review, explain, or analyze the requested code/project providing insights and explanations.", content)
-            },
+            }
+            UserIntent::AgentSelection => {
+                format!("AGENT-SPECIFIC TASK: {}. Please execute this task with the selected agent's specific expertise and capabilities.", content)
+            }
+            UserIntent::HelpRequest => {
+                format!("HELP REQUEST: {}. Please provide helpful information about usage, capabilities, or guidance as requested.", content)
+            }
+            UserIntent::Greeting => {
+                format!(
+                    "GREETING: {}. Please respond appropriately to the user's greeting.",
+                    content
+                )
+            }
+            UserIntent::Unknown => {
+                format!("GENERAL REQUEST: {}. Please interpret and respond to this request appropriately.", content)
+            }
         };
-        
+
         let mut task = Task::new(agent_type, enhanced_description, Priority::Medium);
-        
+
         // Add Discord context
         task = task
-            .with_context("discord_channel_id".to_string(), context.channel_id.to_string())
-            .with_context("discord_message_id".to_string(), context.message_id.to_string())
-            .with_context("discord_author_id".to_string(), context.author_id.to_string())
+            .with_context(
+                "discord_channel_id".to_string(),
+                context.channel_id.to_string(),
+            )
+            .with_context(
+                "discord_message_id".to_string(),
+                context.message_id.to_string(),
+            )
+            .with_context(
+                "discord_author_id".to_string(),
+                context.author_id.to_string(),
+            )
             .with_context("agent_persona".to_string(), persona.name.to_string())
-            .with_context("persona_traits".to_string(), persona.personality_traits.join(","))
+            .with_context(
+                "persona_traits".to_string(),
+                persona.personality_traits.join(","),
+            )
             .with_context("user_intent".to_string(), format!("{:?}", intent));
-            
+
         if let Some(guild_id) = context.guild_id {
             task = task.with_context("discord_guild_id".to_string(), guild_id.to_string());
         }
-        
+
         task
     }
 
     /// 🎭 PERSONA RESPONSE: Format response in the agent's persona style
-    fn format_persona_response(&self, agent_type: &AgentType, result: &crate::models::TaskResult) -> String {
+    fn format_persona_response(
+        &self,
+        agent_type: &AgentType,
+        result: &crate::models::TaskResult,
+    ) -> String {
         let persona = AgentPersona::for_agent_type(agent_type);
-        
+
         match &result.result {
-            crate::models::TaskExecutionResult::Success { 
-                output, 
-                files_created, 
-                files_modified 
+            crate::models::TaskExecutionResult::Success {
+                output,
+                files_created,
+                files_modified,
             } => {
                 let mut response = String::new();
-                
+
                 // Persona-specific header
                 response.push_str(&format!("{} **{}**\n", persona.emoji, persona.name));
                 response.push_str(&format!("{}\n\n", persona.completion_style));
-                
+
                 // For SoftwareDeveloper, provide concise summary instead of full output
                 match agent_type {
                     AgentType::SoftwareDeveloper => {
                         // Extract key information and provide concise summary
-                        let summary = self.extract_dev_summary(output, files_created, files_modified);
+                        let summary =
+                            self.extract_dev_summary(output, files_created, files_modified);
                         response.push_str(&summary);
                     }
                     AgentType::ProjectManager => {
@@ -489,45 +621,58 @@ impl SpiralConstellationBot {
                         }
                     }
                 }
-                
-                // For non-dev agents, show file summaries 
+
+                // For non-dev agents, show file summaries
                 if *agent_type != AgentType::SoftwareDeveloper {
                     if !files_created.is_empty() {
-                        response.push_str(&format!("\n\n📁 **Files Created:** {}", files_created.len()));
+                        response.push_str(&format!(
+                            "\n\n📁 **Files Created:** {}",
+                            files_created.len()
+                        ));
                         for file in files_created.iter().take(3) {
                             response.push_str(&format!("\n• `{}`", file));
                         }
                         if files_created.len() > 3 {
-                            response.push_str(&format!("\n• ... and {} more", files_created.len() - 3));
+                            response
+                                .push_str(&format!("\n• ... and {} more", files_created.len() - 3));
                         }
                     }
-                    
+
                     if !files_modified.is_empty() {
-                        response.push_str(&format!("\n\n✏️ **Files Modified:** {}", files_modified.len()));
+                        response.push_str(&format!(
+                            "\n\n✏️ **Files Modified:** {}",
+                            files_modified.len()
+                        ));
                         for file in files_modified.iter().take(3) {
                             response.push_str(&format!("\n• `{}`", file));
                         }
                         if files_modified.len() > 3 {
-                            response.push_str(&format!("\n• ... and {} more", files_modified.len() - 3));
+                            response.push_str(&format!(
+                                "\n• ... and {} more",
+                                files_modified.len() - 3
+                            ));
                         }
                     }
                 }
-                
+
                 // Persona-specific footer
                 response.push_str(&format!("\n\n*—{} @ SpiralConstellation*", persona.name));
-                
+
                 response
             }
-            crate::models::TaskExecutionResult::Failure { error, partial_output } => {
+            crate::models::TaskExecutionResult::Failure {
+                error,
+                partial_output,
+            } => {
                 let mut response = String::new();
                 response.push_str(&format!("{} **{}**\n", persona.emoji, persona.name));
                 response.push_str(&format!("{} {}", persona.error_style, error));
-                
+
                 if let Some(partial) = partial_output {
                     response.push_str("\n\n**Partial Results:**\n");
                     response.push_str(partial);
                 }
-                
+
                 response.push_str(&format!("\n\n*—{} @ SpiralConstellation*", persona.name));
                 response
             }
@@ -540,147 +685,74 @@ impl SpiralConstellationBot {
         cleaned.trim().to_string()
     }
 
-    /// 🧠 INTENT CLASSIFICATION: Use Claude Code to determine the type of action requested
-    async fn classify_user_intent(&self, content: &str) -> UserIntent {
-        // If we have access to Claude Code client, use it for classification
-        if let Some(claude_client) = &self.claude_client {
-            let classification_prompt = format!(
-                "User is making this query: \"{}\"\n\n\
-                What is the intent? Choose EXACTLY ONE from these options:\n\
-                - InformationQuery: User wants to know/see/list what exists (\"what projects?\", \"show files\", \"list directories\", \"what's the status?\")\n\
-                - Development: User wants to create/build/implement something new (\"create a game\", \"build an app\", \"make a function\")\n\
-                - Modification: User wants to fix/update/change existing code (\"fix this bug\", \"update the code\", \"improve performance\")\n\
-                - Analysis: User wants explanation/review of existing code (\"explain this\", \"how does it work?\", \"review the code\")\n\n\
-                Respond with ONLY the intent name (e.g., \"InformationQuery\"). No other text.", 
-                content
-            );
-
-            // Use Claude Code for classification via generate_code with a simple request
-            use crate::claude_code::CodeGenerationRequest;
-            use std::collections::HashMap;
-            
-            let request = CodeGenerationRequest {
-                language: "text".to_string(),
-                description: classification_prompt,
-                context: HashMap::new(),
-                existing_code: None,
-                requirements: vec![],
-                session_id: None,
-            };
-            
-            match claude_client.generate_code(request).await {
-                Ok(result) => {
-                    // Try explanation first, then code field
-                    let response_text = if !result.explanation.trim().is_empty() {
-                        result.explanation.trim()
-                    } else {
-                        result.code.trim()
-                    };
-                    
-                    info!("[SpiralConstellation] Claude classified intent as: '{}'", response_text);
-                    
-                    match response_text {
-                        "InformationQuery" => return UserIntent::InformationQuery,
-                        "Development" => return UserIntent::Development,
-                        "Modification" => return UserIntent::Modification,
-                        "Analysis" => return UserIntent::Analysis,
-                        _ => {
-                            warn!("[SpiralConstellation] Unknown intent classification: '{}', defaulting to Development", response_text);
-                        }
-                    }
-                }
-                Err(e) => {
-                    warn!("[SpiralConstellation] Failed to classify intent with Claude: {}, falling back to pattern matching", e);
-                }
-            }
-        }
-        
-        // Fallback: Simple pattern matching when Claude Code is unavailable
-        let content_lower = content.to_lowercase();
-        
-        // Information/query requests
-        if (content_lower.contains("what") || content_lower.starts_with("list") || 
-            content_lower.starts_with("show") || content_lower.starts_with("check")) &&
-           (content_lower.contains("projects") || content_lower.contains("files") || 
-            content_lower.contains("directories") || content_lower.contains("status") ||
-            content_lower.contains("exists")) {
-            return UserIntent::InformationQuery;
-        }
-        
-        // Development requests
-        if content_lower.contains("create") || content_lower.contains("build") ||
-           content_lower.contains("make") || content_lower.contains("implement") {
-            return UserIntent::Development;
-        }
-        
-        // Modification requests
-        if content_lower.contains("fix") || content_lower.contains("update") ||
-           content_lower.contains("modify") || content_lower.contains("improve") {
-            return UserIntent::Modification;
-        }
-        
-        // Analysis requests
-        if content_lower.contains("analyze") || content_lower.contains("review") ||
-           content_lower.contains("explain") || content_lower.contains("how does") {
-            return UserIntent::Analysis;
-        }
-        
-        // Default to development for ambiguous cases
-        UserIntent::Development
-    }
-    
     /// 📋 CONCISE DEV SUMMARY: Extract key information for developer responses
-    fn extract_dev_summary(&self, output: &str, files_created: &[String], files_modified: &[String]) -> String {
+    fn extract_dev_summary(
+        &self,
+        output: &str,
+        files_created: &[String],
+        files_modified: &[String],
+    ) -> String {
         // For information queries or short responses, return the full output
-        if output.len() <= MAX_OUTPUT_RESPONSE || 
-           output.to_lowercase().contains("current projects") ||
-           output.to_lowercase().contains("projects in") ||
-           output.to_lowercase().contains("workspace") ||
-           output.starts_with("Here") ||
-           !output.contains("Features:") {
-            
+        if output.len() <= MAX_OUTPUT_RESPONSE
+            || output.to_lowercase().contains("current projects")
+            || output.to_lowercase().contains("projects in")
+            || output.to_lowercase().contains("workspace")
+            || output.starts_with("Here")
+            || !output.contains("Features:")
+        {
             // For informational responses, just return with minimal formatting
             let clean_output = if output.len() > MAX_OUTPUT_RESPONSE {
-                format!("{}...\n\n*(Output truncated - showing first {} characters)*", 
-                       &output[..MAX_OUTPUT_RESPONSE-50], MAX_OUTPUT_RESPONSE-50)
+                format!(
+                    "{}...\n\n*(Output truncated - showing first {} characters)*",
+                    &output[..MAX_OUTPUT_RESPONSE - 50],
+                    MAX_OUTPUT_RESPONSE - 50
+                )
             } else {
                 output.to_string()
             };
-            
+
             return clean_output;
         }
-        
+
         let mut summary = String::new();
-        
+
         // Look for key project information in the output
         let lines: Vec<&str> = output.lines().collect();
         let mut found_key_features = false;
         let found_summary = false;
-        
+
         // Extract main summary/description (usually at the beginning)
         for line in &lines {
             let trimmed = line.trim();
-            if trimmed.is_empty() { continue; }
-            
+            if trimmed.is_empty() {
+                continue;
+            }
+
             // Skip architecture/technical details
-            if trimmed.to_lowercase().contains("architecture") || 
-               trimmed.to_lowercase().contains("solid principles") ||
-               trimmed.to_lowercase().contains("dry principle") ||
-               trimmed.to_lowercase().contains("sid naming") {
+            if trimmed.to_lowercase().contains("architecture")
+                || trimmed.to_lowercase().contains("solid principles")
+                || trimmed.to_lowercase().contains("dry principle")
+                || trimmed.to_lowercase().contains("sid naming")
+            {
                 break;
             }
-            
+
             // Look for key features or summary sections
-            if trimmed.starts_with("Key Features:") || 
-               trimmed.starts_with("Features:") ||
-               trimmed.starts_with("Summary") {
+            if trimmed.starts_with("Key Features:")
+                || trimmed.starts_with("Features:")
+                || trimmed.starts_with("Summary")
+            {
                 found_key_features = true;
                 summary.push_str(&format!("**{}**\n", trimmed));
                 continue;
             }
-            
+
             // Capture feature list items or summary content
-            if found_key_features && (trimmed.starts_with("•") || trimmed.starts_with("-") || trimmed.starts_with("*")) {
+            if found_key_features
+                && (trimmed.starts_with("•")
+                    || trimmed.starts_with("-")
+                    || trimmed.starts_with("*"))
+            {
                 summary.push_str(&format!("{}\n", trimmed));
             } else if found_key_features && !trimmed.is_empty() && !trimmed.contains(":") {
                 summary.push_str(&format!("{}\n", trimmed));
@@ -690,11 +762,11 @@ impl SpiralConstellationBot {
                 break;
             }
         }
-        
+
         // Add file information concisely
         if !files_created.is_empty() || !files_modified.is_empty() {
             summary.push_str("\n**📁 Files:**\n");
-            
+
             if !files_created.is_empty() {
                 summary.push_str(&format!("• Created: {} files\n", files_created.len()));
             }
@@ -702,38 +774,54 @@ impl SpiralConstellationBot {
                 summary.push_str(&format!("• Modified: {} files\n", files_modified.len()));
             }
         }
-        
+
         // Look for "How to Run" information
         for (i, line) in lines.iter().enumerate() {
-            if line.to_lowercase().contains("how to run") || line.to_lowercase().contains("to run:") {
+            if line.to_lowercase().contains("how to run") || line.to_lowercase().contains("to run:")
+            {
                 summary.push_str("\n**🚀 How to Run:**\n");
                 // Capture next few lines that look like instructions
                 for instruction_line in lines.iter().skip(i + 1).take(3) {
                     let trimmed = instruction_line.trim();
-                    if trimmed.is_empty() { break; }
-                    if trimmed.starts_with("•") || trimmed.starts_with("-") || 
-                       trimmed.starts_with("1.") || trimmed.starts_with("2.") ||
-                       trimmed.contains("npm") || trimmed.contains("cargo") || trimmed.contains("run") {
-                        summary.push_str(&format!("• {}\n", trimmed.trim_start_matches(&['•', '-', '1', '2', '.', ' '])));
+                    if trimmed.is_empty() {
+                        break;
+                    }
+                    if trimmed.starts_with("•")
+                        || trimmed.starts_with("-")
+                        || trimmed.starts_with("1.")
+                        || trimmed.starts_with("2.")
+                        || trimmed.contains("npm")
+                        || trimmed.contains("cargo")
+                        || trimmed.contains("run")
+                    {
+                        summary.push_str(&format!(
+                            "• {}\n",
+                            trimmed.trim_start_matches(&['•', '-', '1', '2', '.', ' '])
+                        ));
                     }
                 }
                 break;
             }
         }
-        
+
         // If summary is too short, add a basic completion message
         if summary.trim().is_empty() {
-            summary = "Task completed successfully! Check the files for implementation details.\n".to_string();
+            summary = "Task completed successfully! Check the files for implementation details.\n"
+                .to_string();
         }
-        
+
         summary
     }
 
     /// 💬 HELPFUL ERROR: Format user-friendly error messages with solutions
-    fn format_helpful_error_message(&self, error: &crate::SpiralError, persona: &AgentPersona) -> String {
+    fn format_helpful_error_message(
+        &self,
+        error: &crate::SpiralError,
+        persona: &AgentPersona,
+    ) -> String {
         let error_str = error.to_string();
         let error_lower = error_str.to_lowercase();
-        
+
         // Check for timeout specifically
         if error_lower.contains("timed out") || error_lower.contains("timeout") {
             return format!(
@@ -752,9 +840,11 @@ impl SpiralConstellationBot {
                 persona.emoji, persona.name, persona.name
             );
         }
-        
+
         // Check for common system connectivity issues
-        if error_lower.contains("claude") && (error_lower.contains("connection") || error_lower.contains("unavailable")) {
+        if error_lower.contains("claude")
+            && (error_lower.contains("connection") || error_lower.contains("unavailable"))
+        {
             return format!(
                 "{} **{}**\n🔌 **Claude Code System Unavailable**\n\n\
                 I can't connect to the Claude Code system right now. This usually means:\n\n\
@@ -769,9 +859,13 @@ impl SpiralConstellationBot {
                 persona.emoji, persona.name, persona.name
             );
         }
-        
+
         // Check for API key issues
-        if error_lower.contains("api") && (error_lower.contains("key") || error_lower.contains("auth") || error_lower.contains("unauthorized")) {
+        if error_lower.contains("api")
+            && (error_lower.contains("key")
+                || error_lower.contains("auth")
+                || error_lower.contains("unauthorized"))
+        {
             return format!(
                 "{} **{}**\n🔑 **API Authentication Issue**\n\n\
                 There's a problem with API authentication:\n\n\
@@ -784,9 +878,12 @@ impl SpiralConstellationBot {
                 persona.emoji, persona.name, persona.name
             );
         }
-        
+
         // Check for workspace/permission issues
-        if error_lower.contains("permission") || error_lower.contains("workspace") || error_lower.contains("directory") {
+        if error_lower.contains("permission")
+            || error_lower.contains("workspace")
+            || error_lower.contains("directory")
+        {
             return format!(
                 "{} **{}**\n📁 **Workspace Permission Issue**\n\n\
                 I'm having trouble accessing the workspace:\n\n\
@@ -798,7 +895,7 @@ impl SpiralConstellationBot {
                 persona.emoji, persona.name, persona.name
             );
         }
-        
+
         // Generic error with helpful context
         format!(
             "{} **{}**\n{} Something went wrong!\n\n\
@@ -814,20 +911,46 @@ impl SpiralConstellationBot {
         )
     }
 
+    /// 🔐 PERMISSION CHECK: Check if user is in authorized users list from config
+    fn is_authorized_user(&self, user_id: u64) -> bool {
+        self.discord_config.authorized_users.contains(&user_id)
+    }
+
     /// 🎮 COMMAND HANDLER: Handle special bot commands
-    async fn handle_special_commands(&self, content: &str, msg: &Message, ctx: &Context) -> Option<String> {
+    async fn handle_special_commands(
+        &self,
+        content: &str,
+        msg: &Message,
+        ctx: &Context,
+    ) -> Option<String> {
+        // Validate command input for security
+        let validation_result = self.secure_message_handler.validate_command_input(content);
+        if !validation_result.is_valid {
+            warn!(
+                "[SpiralConstellation] Command validation failed: {:?}",
+                validation_result.issues
+            );
+            return Some(format!(
+                "⚠️ Command blocked: {}",
+                validation_result.issues.join(", ")
+            ));
+        }
+
         let content_lower = content.to_lowercase();
-        
+
         // Role creation command
-        if content_lower.contains("!spiral setup roles") || content_lower.contains("!spiral create roles") {
+        if content_lower.contains("!spiral setup roles")
+            || content_lower.contains("!spiral create roles")
+        {
             if let Some(guild_id) = msg.guild_id {
                 match self.create_agent_roles(ctx, guild_id).await {
                     Ok(roles) => {
-                        let role_list = roles.iter()
+                        let role_list = roles
+                            .iter()
                             .map(|r| format!("• <@&{}> ({})", r.id, r.name))
                             .collect::<Vec<_>>()
                             .join("\n");
-                        
+
                         return Some(format!(
                             "🌌 **SpiralConstellation Setup Complete!**\n\n\
                             Created {} agent persona roles:\n{}\n\n\
@@ -849,10 +972,13 @@ impl SpiralConstellationBot {
                 return Some("❌ Role creation only works in servers, not DMs.".to_string());
             }
         }
-        
+
         // Role assignment command
         if content_lower.starts_with("!spiral join ") {
-            let role_name = content_lower.strip_prefix("!spiral join ").unwrap_or("").trim();
+            let role_name = content_lower
+                .strip_prefix("!spiral join ")
+                .unwrap_or("")
+                .trim();
             let persona_name = match role_name {
                 "dev" | "developer" => "SpiralDev",
                 "pm" | "manager" | "project" => "SpiralPM",
@@ -864,9 +990,12 @@ impl SpiralConstellationBot {
                 name if name.starts_with("spiral") => name,
                 _ => return Some(format!("❓ Unknown role: `{}`. Available: SpiralDev, SpiralPM, SpiralQA, SpiralDecide, SpiralCreate, SpiralCoach, SpiralKing", role_name))
             };
-            
+
             if let Some(guild_id) = msg.guild_id {
-                match self.assign_agent_role(ctx, guild_id, msg.author.id, persona_name).await {
+                match self
+                    .assign_agent_role(ctx, guild_id, msg.author.id, persona_name)
+                    .await
+                {
                     Ok(_) => {
                         let persona = match persona_name {
                             "SpiralDev" => &AgentPersona::DEVELOPER,
@@ -877,7 +1006,7 @@ impl SpiralConstellationBot {
                             "SpiralCoach" => &AgentPersona::PROCESS_COACH,
                             _ => &AgentPersona::DEVELOPER,
                         };
-                        
+
                         return Some(format!(
                             "{} **Welcome to {}!**\n\n\
                             You now have the {} role and can:\n\
@@ -888,7 +1017,8 @@ impl SpiralConstellationBot {
                             persona.emoji,
                             persona.name,
                             persona.name,
-                            self.find_agent_role(ctx, guild_id, persona_name).await
+                            self.find_agent_role(ctx, guild_id, persona_name)
+                                .await
                                 .map(|r| r.id.to_string())
                                 .unwrap_or_default(),
                             persona.name.to_lowercase(),
@@ -904,8 +1034,252 @@ impl SpiralConstellationBot {
                 return Some("❌ Role assignment only works in servers, not DMs.".to_string());
             }
         }
-        
-        
+
+        // Security stats command (authorized users only)
+        if content_lower.starts_with("!spiral security stats") {
+            // Check authorized user permission
+            if !self.is_authorized_user(msg.author.id.get()) {
+                return Some(
+                    "🚫 This command requires authorization. Contact an administrator.".to_string(),
+                );
+            }
+
+            let metrics = self.secure_message_handler.get_security_metrics();
+            let avg_confidence = self.secure_message_handler.get_average_confidence();
+
+            return Some(format!(
+                "🛡️ **Security Metrics**\n\n\
+                📊 **Message Statistics:**\n\
+                • Total Processed: {}\n\
+                • Messages Blocked: {}\n\
+                • Block Rate: {:.1}%\n\n\
+                🎯 **Intent Classification:**\n\
+                • Total Classifications: {}\n\
+                • Average Confidence: {:.2}\n\
+                • Low Confidence Count: {}\n\
+                • Help Requests: {}\n\
+                • Code Generation: {}\n\
+                • File Operations: {}\n\
+                • System Commands: {}\n\
+                • Admin Actions: {}\n\
+                • Chat Responses: {}\n\
+                • Unknown Intents: {}\n\
+                • Malicious Intents: {}\n\n\
+                ⚠️ **Threat Detection:**\n\
+                • Malicious Attempts: {}\n\
+                • XSS Attempts: {}\n\
+                • Injection Attempts: {}\n\
+                • Spam Detected: {}\n\
+                • Rate Limited: {}\n\n\
+                *Last reset: Never* (use `!spiral security reset` to reset)",
+                metrics.messages_processed,
+                metrics.messages_blocked,
+                if metrics.messages_processed > 0 {
+                    (metrics.messages_blocked as f64 / metrics.messages_processed as f64) * 100.0
+                } else {
+                    0.0
+                },
+                metrics.classification_count,
+                avg_confidence,
+                metrics.low_confidence_count,
+                metrics.intent_help_requests,
+                metrics.intent_code_generation,
+                metrics.intent_file_operations,
+                metrics.intent_system_commands,
+                metrics.intent_admin_actions,
+                metrics.intent_chat_responses,
+                metrics.intent_unknown,
+                metrics.intent_malicious,
+                metrics.malicious_attempts,
+                metrics.xss_attempts,
+                metrics.injection_attempts,
+                metrics.spam_detected,
+                metrics.rate_limited
+            ));
+        }
+
+        // Security reset command (authorized users only)
+        if content_lower.starts_with("!spiral security reset") {
+            // Check authorized user permission
+            if !self.is_authorized_user(msg.author.id.get()) {
+                return Some(
+                    "🚫 This command requires authorization. Contact an administrator.".to_string(),
+                );
+            }
+
+            self.secure_message_handler.reset_security_metrics();
+            return Some("✅ Security metrics have been reset.".to_string());
+        }
+
+        // Rate limit check command (available to all users)
+        if content_lower.starts_with("!spiral ratelimit") {
+            // Check if it's for another user (admin only)
+            let parts: Vec<&str> = content.split_whitespace().collect();
+            if parts.len() > 2 {
+                // Trying to check another user's rate limit (authorized users only)
+                if !self.is_authorized_user(msg.author.id.get()) {
+                    return Some(
+                        "🚫 Checking other users' rate limits requires authorization.".to_string(),
+                    );
+                }
+
+                // Extract user mention or ID
+                if let Some(user_id_str) = parts.get(2) {
+                    // Try to parse user mention <@123456789>
+                    let user_id = if user_id_str.starts_with("<@") && user_id_str.ends_with(">") {
+                        user_id_str
+                            .trim_start_matches("<@")
+                            .trim_end_matches(">")
+                            .trim_start_matches("!")
+                            .parse::<u64>()
+                            .ok()
+                    } else {
+                        user_id_str.parse::<u64>().ok()
+                    };
+
+                    if let Some(uid) = user_id {
+                        let remaining = self.secure_message_handler.get_remaining_messages(uid);
+                        return Some(format!(
+                            "📊 **Rate Limit Status for <@{}>**\n\
+                            • Remaining messages: {}/5\n\
+                            • Status: {}",
+                            uid,
+                            remaining,
+                            if remaining > 0 {
+                                "✅ Active"
+                            } else {
+                                "⏸️ Rate limited"
+                            }
+                        ));
+                    } else {
+                        return Some("❌ Invalid user ID or mention format.".to_string());
+                    }
+                }
+            }
+
+            // Check own rate limit
+            let remaining = self
+                .secure_message_handler
+                .get_remaining_messages(msg.author.id.get());
+            return Some(format!(
+                "📊 **Your Rate Limit Status**\n\
+                • Remaining messages: {}/5\n\
+                • Status: {}\n\n\
+                *Rate limits reset every minute*",
+                remaining,
+                if remaining > 0 {
+                    "✅ Active"
+                } else {
+                    "⏸️ Rate limited (wait a moment)"
+                }
+            ));
+        }
+
+        // Reset rate limit command (authorized users only)
+        if content_lower.starts_with("!spiral reset ratelimit") {
+            // Check authorized user permission
+            if !self.is_authorized_user(msg.author.id.get()) {
+                return Some(
+                    "🚫 This command requires authorization. Contact an administrator.".to_string(),
+                );
+            }
+
+            let parts: Vec<&str> = content.split_whitespace().collect();
+            if parts.len() < 4 {
+                return Some("❌ Usage: `!spiral reset ratelimit @user` or `!spiral reset ratelimit <user_id>`".to_string());
+            }
+
+            // Extract user mention or ID
+            if let Some(user_id_str) = parts.get(3) {
+                let user_id = if user_id_str.starts_with("<@") && user_id_str.ends_with(">") {
+                    user_id_str
+                        .trim_start_matches("<@")
+                        .trim_end_matches(">")
+                        .trim_start_matches("!")
+                        .parse::<u64>()
+                        .ok()
+                } else {
+                    user_id_str.parse::<u64>().ok()
+                };
+
+                if let Some(uid) = user_id {
+                    self.secure_message_handler.reset_rate_limit(uid);
+                    return Some(format!(
+                        "✅ Rate limit reset for <@{}>\nThey can now send messages again.",
+                        uid
+                    ));
+                } else {
+                    return Some("❌ Invalid user ID or mention format.".to_string());
+                }
+            }
+        }
+
+        // Security report command (authorized users only)
+        if content_lower.starts_with("!spiral security report") {
+            // Check authorized user permission
+            if !self.is_authorized_user(msg.author.id.get()) {
+                return Some(
+                    "🚫 This command requires authorization. Contact an administrator.".to_string(),
+                );
+            }
+
+            // For now, report on the current message as an example
+            let report = self.secure_message_handler.create_security_report(msg);
+
+            let mut report_text = "📋 **Security Report**\n\n".to_string();
+            for (key, value) in report.iter() {
+                report_text.push_str(&format!(
+                    "• **{}**: {}\n",
+                    key.replace("_", " ").to_uppercase(),
+                    value
+                ));
+            }
+
+            return Some(report_text);
+        }
+
+        // Commands list command
+        if content_lower.starts_with("!spiral commands") {
+            let mut commands_text = "📋 **Available Commands**\n\n".to_string();
+
+            // Basic commands available to all users
+            commands_text.push_str("**🌟 General Commands:**\n");
+            commands_text.push_str("• `!spiral help` - Show detailed help information\n");
+            commands_text.push_str("• `!spiral commands` - Show this command list\n");
+            commands_text.push_str(
+                "• `!spiral join <role>` - Join an agent role (SpiralDev, SpiralPM, etc.)\n",
+            );
+            commands_text.push_str("• `!spiral ratelimit` - Check your rate limit status\n");
+            commands_text.push_str("• `!spiral setup roles` - Create agent roles in server\n\n");
+
+            // Agent mentions
+            commands_text.push_str("**🤖 Agent Interactions:**\n");
+            commands_text.push_str("• `@SpiralDev <request>` - Software development tasks\n");
+            commands_text.push_str("• `@SpiralPM <request>` - Project management queries\n");
+            commands_text.push_str("• `@SpiralQA <request>` - Quality assurance reviews\n");
+            commands_text.push_str("• `@SpiralKing <request>` - Comprehensive code review\n");
+            commands_text.push_str("• Use role mentions: `<@&role_id> <request>`\n\n");
+
+            // Show admin commands if user is authorized
+            if self.is_authorized_user(msg.author.id.get()) {
+                commands_text.push_str("**🔐 Admin Commands (You have access):**\n");
+                commands_text.push_str("• `!spiral security stats` - View security metrics\n");
+                commands_text.push_str("• `!spiral security reset` - Reset security metrics\n");
+                commands_text.push_str("• `!spiral security report` - Generate security report\n");
+                commands_text.push_str("• `!spiral ratelimit @user` - Check user's rate limit\n");
+                commands_text
+                    .push_str("• `!spiral reset ratelimit @user` - Reset user's rate limit\n\n");
+            } else {
+                commands_text.push_str("**🔐 Admin Commands (Authorized users only):**\n");
+                commands_text.push_str("• Security and rate limit management commands\n");
+                commands_text.push_str("• Contact an administrator for access\n\n");
+            }
+
+            commands_text.push_str("*Use `!spiral help` for detailed usage information* 💡");
+
+            return Some(commands_text);
+        }
+
         // Help command
         if content_lower.contains("!spiral help") || content_lower == "help" {
             return Some(
@@ -925,13 +1299,21 @@ impl SpiralConstellationBot {
                 • `!spiral join SpiralKing` - Get agent role\n\
                 • `!spiral setup roles` - Create server roles\n\n\
                 **Commands:**\n\
-                • `!spiral help` - Show this help\n\
+                • `!spiral help` - Show this detailed help\n\
+                • `!spiral commands` - Show concise command list\n\
                 • `!spiral join <role>` - Join an agent role\n\
-                • `!spiral setup roles` - Create agent roles (admin)\n\n\
-                *Each persona responds with unique personality and expertise!* 🌟".to_string()
+                • `!spiral setup roles` - Create agent roles\n\
+                • `!spiral ratelimit` - Check your rate limit status\n\n\
+                **Security Commands (Authorized Users Only):**\n\
+                • `!spiral security stats` - View security metrics\n\
+                • `!spiral security reset` - Reset security metrics\n\
+                • `!spiral reset ratelimit @user` - Reset user's rate limit\n\
+                • `!spiral security report` - Generate security report\n\n\
+                *Each persona responds with unique personality and expertise!* 🌟"
+                    .to_string(),
             );
         }
-        
+
         None
     }
 }
@@ -952,9 +1334,7 @@ pub struct ConstellationBotHandler {
 
 impl ConstellationBotHandler {
     pub fn new(bot: SpiralConstellationBot) -> Self {
-        Self {
-            bot: Arc::new(bot),
-        }
+        Self { bot: Arc::new(bot) }
     }
 }
 
@@ -965,44 +1345,106 @@ impl EventHandler for ConstellationBotHandler {
         if msg.author.bot {
             return;
         }
-        
+
+        // 🛡️ SECURITY VALIDATION: Multi-layer security check before processing
+        // ARCHITECTURE DECISION: Validate all messages through security pipeline first
+        // Why: Prevents malicious content, spam, and injection attacks from reaching agents
+        // Alternative: Post-processing validation (rejected: allows attacks to reach business logic)
+        // Audit: Count security_validation_failures and blocked_message_types
+        let validation_result = {
+            let validator_result = {
+                let mut validator = self.bot.security_validator.lock().await;
+                validator.validate_message(&msg)
+            };
+
+            match validator_result {
+                Ok(result) => result,
+                Err(e) => {
+                    warn!("[SpiralConstellation] Security validation error: {}", e);
+                    if let Err(e) = msg
+                        .reply(&ctx.http, "⚠️ Security validation failed. Message blocked.")
+                        .await
+                    {
+                        warn!(
+                            "[SpiralConstellation] Failed to send validation error: {}",
+                            e
+                        );
+                    }
+                    return;
+                }
+            }
+        };
+
+        if !validation_result.is_valid {
+            warn!(
+                "[SpiralConstellation] Security validation failed for user {}: {:?}",
+                msg.author.id, validation_result.issues
+            );
+            if let Err(e) = msg.reply(&ctx.http, "🚫 Message flagged by security validation. Please ensure your message follows community guidelines.").await {
+                warn!("[SpiralConstellation] Failed to send security warning: {}", e);
+            }
+            return;
+        }
+        info!(
+            "[SpiralConstellation] Security validation passed for user {}: risk level {:?}",
+            msg.author.id, validation_result.risk_level
+        );
+
+        // 🚦 RATE LIMITING: Already handled by security validation above
+        // Note: Rate limiting is integrated into the MessageSecurityValidator
+
         // Validate message length to prevent DoS
         if msg.content.len() > MAX_MESSAGE_LENGTH {
-            warn!("[SpiralConstellation] Message too long: {} chars from user {}", msg.content.len(), msg.author.id);
+            warn!(
+                "[SpiralConstellation] Message too long: {} chars from user {}",
+                msg.content.len(),
+                msg.author.id
+            );
             if let Err(e) = msg.reply(&ctx.http, "❌ Message too long for processing. Please keep requests under 4000 characters.").await {
                 warn!("[SpiralConstellation] Failed to send length warning: {}", e);
             }
             return;
         }
-        
+
         // Check if message mentions any Spiral agent or contains role mentions
         let has_spiral_mention = self.bot.mention_regex.is_match(&msg.content);
         let has_role_mention = !msg.mention_roles.is_empty();
         let has_spiral_command = msg.content.to_lowercase().contains("!spiral");
-        
+
         if !has_spiral_mention && !has_role_mention && !has_spiral_command {
             return;
         }
-        
+
         info!("[SpiralConstellation] Processing message: {}", msg.id);
-        
+
         let context = MessageContext {
             author_id: msg.author.id.get(),
             channel_id: msg.channel_id.get(),
             message_id: msg.id.get(),
             guild_id: msg.guild_id.map(|id| id.get()),
         };
-        
+
         // Handle special commands first
-        if let Some(command_response) = self.bot.handle_special_commands(&msg.content, &msg, &ctx).await {
+        if let Some(command_response) = self
+            .bot
+            .handle_special_commands(&msg.content, &msg, &ctx)
+            .await
+        {
             if let Err(e) = msg.reply(&ctx.http, command_response).await {
-                warn!("[SpiralConstellation] Failed to send command response: {}", e);
+                warn!(
+                    "[SpiralConstellation] Failed to send command response: {}",
+                    e
+                );
             }
             return;
         }
-        
+
         // Detect which agent persona to use
-        let agent_type = match self.bot.detect_agent_persona(&msg.content, &msg, &ctx).await {
+        let agent_type = match self
+            .bot
+            .detect_agent_persona(&msg.content, &msg, &ctx)
+            .await
+        {
             Some(agent) => agent,
             None => {
                 if let Err(e) = msg.reply(&ctx.http, "❓ I'm not sure which agent you'd like to talk to. Try mentioning @SpiralDev, @SpiralPM, @SpiralQA, @SpiralKing, or use a role mention!").await {
@@ -1011,67 +1453,175 @@ impl EventHandler for ConstellationBotHandler {
                 return;
             }
         };
-        
+
         let persona = AgentPersona::for_agent_type(&agent_type);
         let cleaned_content = self.bot.clean_message_content(&msg.content);
-        
+
         if cleaned_content.is_empty() {
-            let response = format!("{} **{}**\n{}", persona.emoji, persona.name, persona.random_greeting());
+            let response = format!(
+                "{} **{}**\n{}",
+                persona.emoji,
+                persona.name,
+                persona.random_greeting()
+            );
             if let Err(e) = msg.reply(&ctx.http, response).await {
                 warn!("[SpiralConstellation] Failed to send greeting: {}", e);
             }
             return;
         }
-        
+
         // Update current persona
         {
             let mut stats = self.bot.stats.lock().await;
             stats.current_persona = Some(agent_type.clone());
         }
-        
+
         // Step 1: React with eyes emoji to acknowledge receipt
         if let Err(e) = msg.react(&ctx.http, '👀').await {
             warn!("[SpiralConstellation] Failed to add eyes reaction: {}", e);
         }
-        
-        // Step 2: Classify intent through Claude Code
-        let intent = self.bot.classify_user_intent(&cleaned_content).await;
-        info!("[SpiralConstellation] Classified intent as: {:?}", intent);
-        
+
+        // Step 2: 🔒 COMPREHENSIVE SECURITY PROCESSING: Security validation with intent classification
+        // ARCHITECTURE DECISION: Use SecureMessageHandler for integrated security validation and intent analysis
+        // Why: Combines message validation, intent analysis, and user verification in one step
+        // Alternative: Separate validation calls (rejected: creates gaps between security layers)
+        // Audit: Track processing_blocked_count and security_escalation_events
+        let secure_processing_result = match self
+            .bot
+            .secure_message_handler
+            .process_message_securely(&msg, &ctx)
+            .await
+        {
+            Ok(result) => result,
+            Err(e) => {
+                warn!(
+                    "[SpiralConstellation] Secure message processing failed: {}",
+                    e
+                );
+                if let Err(e) = msg
+                    .reply(
+                        &ctx.http,
+                        "⚠️ Unable to process message securely. Please try again.",
+                    )
+                    .await
+                {
+                    warn!(
+                        "[SpiralConstellation] Failed to send secure processing error: {}",
+                        e
+                    );
+                }
+                return;
+            }
+        };
+
+        // Check if secure processing allows continuation
+        if !secure_processing_result.should_process {
+            warn!(
+                "[SpiralConstellation] Message blocked by secure handler: {:?}",
+                secure_processing_result.validation_issues
+            );
+            if let Err(e) = msg
+                .reply(&ctx.http, "🚫 Message blocked by security validation.")
+                .await
+            {
+                warn!("[SpiralConstellation] Failed to send block message: {}", e);
+            }
+            return;
+        }
+
+        // Extract intent from security processing result
+        let default_intent = IntentResponse {
+            intent_type: IntentType::Unknown,
+            confidence: 0.0,
+            risk_level: RiskLevel::Medium,
+            parameters: std::collections::HashMap::new(),
+        };
+
+        let intent_response = secure_processing_result.intent.as_ref().unwrap_or_else(|| {
+            warn!("[SpiralConstellation] No intent classification from security processing, using default");
+            &default_intent
+        });
+
+        info!(
+            "[SpiralConstellation] Classified intent as: {:?} (confidence: {}, risk: {:?})",
+            intent_response.intent_type, intent_response.confidence, intent_response.risk_level
+        );
+
+        // Convert IntentType to UserIntent for compatibility
+        let intent = match intent_response.intent_type {
+            IntentType::Help => UserIntent::HelpRequest,
+            IntentType::CodeGeneration => UserIntent::TaskRequest,
+            IntentType::FileOperation => UserIntent::TaskRequest,
+            IntentType::SystemCommand => UserIntent::TaskRequest,
+            IntentType::AdminAction => UserIntent::TaskRequest,
+            IntentType::ChatResponse => UserIntent::Greeting,
+            IntentType::Malicious => UserIntent::Unknown,
+            IntentType::Unknown => UserIntent::Unknown,
+        };
+
+        // Check if this is an agent selection based on explicit agent mentions
+        let has_explicit_agent_mention =
+            self.bot.mention_regex.is_match(&msg.content) || !msg.mention_roles.is_empty();
+        let intent = if has_explicit_agent_mention && agent_type != AgentType::SoftwareDeveloper {
+            UserIntent::AgentSelection
+        } else {
+            intent
+        };
+
+        // Use sanitized content if available, otherwise use cleaned content
+        let processed_message = secure_processing_result
+            .sanitized_content
+            .unwrap_or_else(|| cleaned_content.clone());
+
+        info!(
+            "[SpiralConstellation] Message approved for processing: {}",
+            processed_message
+        );
+
         // Step 3: Respond with intended action
         let action_description = match intent {
-            UserIntent::InformationQuery => format!("🔍 **Analyzing Workspace**\nI'll inspect your workspace to find and list existing projects."),
-            UserIntent::Development => format!("🚀 **Development Task**\nI'll create/build the requested functionality."),
-            UserIntent::Modification => format!("🔧 **Modification Task**\nI'll update/fix the existing code as requested."),
-            UserIntent::Analysis => format!("📊 **Analysis Task**\nI'll review and analyze the requested code/project."),
+            UserIntent::StatusQuery => format!("🔍 **Analyzing Workspace**\nI'll inspect your workspace to find and list existing projects."),
+            UserIntent::TaskRequest => format!("🚀 **Development Task**\nI'll create/build the requested functionality."),
+            UserIntent::AgentSelection => format!("🎯 **Agent-Specific Task**\nI'll handle this with the selected agent's expertise."),
+            UserIntent::HelpRequest => format!("❓ **Help Request**\nI'll provide the information you need."),
+            UserIntent::Greeting => format!("👋 **Greeting**\nNice to meet you!"),
+            UserIntent::Unknown => format!("🔄 **Processing Request**\nI'll handle your request appropriately."),
         };
-        
+
         let intent_response = format!(
             "{} **{}**\n{}\n\n📝 **Request:** {}\n\n{}",
             persona.emoji,
             persona.name,
             action_description,
-            if cleaned_content.len() > 100 {
-                format!("{}...", &cleaned_content[..100])
+            if processed_message.len() > 100 {
+                format!("{}...", &processed_message[..100])
             } else {
-                cleaned_content.clone()
+                processed_message.clone()
             },
             "⏳ Working on this now..."
         );
-        
+
         let mut intent_msg = if let Ok(response) = msg.reply(&ctx.http, intent_response).await {
             Some(response)
         } else {
             warn!("[SpiralConstellation] Failed to send intent response");
             None
         };
-        
+
         // Step 4: Create and execute task based on agent type and intent
-        let task = self.bot.create_task_with_persona(&cleaned_content, agent_type.clone(), context, intent.clone());
+        let task = self.bot.create_task_with_persona(
+            &processed_message,
+            agent_type.clone(),
+            context,
+            intent.clone(),
+        );
         let task_id = task.id.clone();
-        
-        info!("[SpiralConstellation] Created {} task: {}", persona.name, task_id);
-        
+
+        info!(
+            "[SpiralConstellation] Created {} task: {}",
+            persona.name, task_id
+        );
+
         // Execute based on agent type - choose execution mode based on bot configuration
         let result = match agent_type {
             AgentType::SoftwareDeveloper => {
@@ -1082,31 +1632,37 @@ impl EventHandler for ConstellationBotHandler {
                     let task_id = match orchestrator.submit_task(task).await {
                         Ok(id) => id,
                         Err(e) => {
-                            warn!("[SpiralConstellation] Failed to submit task to orchestrator: {}", e);
+                            warn!(
+                                "[SpiralConstellation] Failed to submit task to orchestrator: {}",
+                                e
+                            );
                             let error_message = self.bot.format_helpful_error_message(&e, &persona);
                             if let Err(reply_err) = msg.reply(&ctx.http, error_message).await {
-                                warn!("[SpiralConstellation] Failed to send error message: {}", reply_err);
+                                warn!(
+                                    "[SpiralConstellation] Failed to send error message: {}",
+                                    reply_err
+                                );
                             }
                             return;
                         }
                     };
-                    
+
                     // Wait for task completion with progress updates
                     let timeout_duration = std::time::Duration::from_secs(120); // Increased timeout
                     let progress_emojis = ["⏳", "⌛", "🤔", "⚙️", "🔄"];
                     let mut emoji_index = 0;
                     let start_time = std::time::Instant::now();
-                    
+
                     let poll_future = async {
                         let mut last_update = std::time::Instant::now();
                         let max_attempts = 240; // 120 seconds at 500ms intervals
                         let mut attempts = 0;
-                        
+
                         loop {
                             if let Some(result) = orchestrator.get_task_result(&task_id).await {
                                 return Ok(result);
                             }
-                            
+
                             attempts += 1;
                             if attempts >= max_attempts {
                                 warn!("[SpiralConstellation] Task {} exceeded maximum polling attempts", task_id);
@@ -1114,57 +1670,69 @@ impl EventHandler for ConstellationBotHandler {
                                     message: format!("Task execution exceeded maximum polling time of {} seconds", timeout_duration.as_secs()),
                                 });
                             }
-                            
+
                             // Update emoji every 15 seconds
                             if last_update.elapsed() >= std::time::Duration::from_secs(15) {
                                 emoji_index = (emoji_index + 1) % progress_emojis.len();
-                                
+
                                 let progress_response = format!(
                                     "{} **{}**\n{}\n\n📝 **Request:** {}\n\n{} Working on this... ({:.0}s)",
                                     persona.emoji,
                                     persona.name,
                                     action_description,
-                                    if cleaned_content.len() > 100 {
-                                        format!("{}...", &cleaned_content[..100])
+                                    if processed_message.len() > 100 {
+                                        format!("{}...", &processed_message[..100])
                                     } else {
-                                        cleaned_content.clone()
+                                        processed_message.clone()
                                     },
                                     progress_emojis[emoji_index],
                                     start_time.elapsed().as_secs()
                                 );
-                                
+
                                 if let Some(ref mut msg_ref) = intent_msg {
-                                    let _ = msg_ref.edit(&ctx.http, serenity::builder::EditMessage::new().content(progress_response)).await;
+                                    let _ = msg_ref
+                                        .edit(
+                                            &ctx.http,
+                                            serenity::builder::EditMessage::new()
+                                                .content(progress_response),
+                                        )
+                                        .await;
                                 }
-                                
+
                                 last_update = std::time::Instant::now();
                             }
-                            
+
                             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                         }
                     };
-                    
+
                     match tokio::time::timeout(timeout_duration, poll_future).await {
                         Ok(Ok(result)) => {
-                            info!("[SpiralConstellation] {} task {} completed via orchestrator", persona.name, task_id);
-                            
+                            info!(
+                                "[SpiralConstellation] {} task {} completed via orchestrator",
+                                persona.name, task_id
+                            );
+
                             // Update success stats
                             {
                                 let mut stats = self.bot.stats.lock().await;
                                 stats.dev_tasks_completed += 1;
                                 stats.current_persona = None;
                             }
-                            
+
                             self.bot.format_persona_response(&agent_type, &result)
                         }
                         Ok(Err(e)) => {
-                            warn!("[SpiralConstellation] {} task {} failed via orchestrator: {}", persona.name, task_id, e);
+                            warn!(
+                                "[SpiralConstellation] {} task {} failed via orchestrator: {}",
+                                persona.name, task_id, e
+                            );
                             let error_message = self.bot.format_helpful_error_message(&e, &persona);
                             error_message
                         }
                         Err(_timeout) => {
                             warn!("[SpiralConstellation] {} task {} timed out via orchestrator after 2 minutes", persona.name, task_id);
-                            
+
                             // Check one more time if task completed during timeout
                             if let Some(result) = orchestrator.get_task_result(&task_id).await {
                                 info!("[SpiralConstellation] {} task {} completed just after timeout check", persona.name, task_id);
@@ -1173,7 +1741,9 @@ impl EventHandler for ConstellationBotHandler {
                                 let timeout_error = crate::SpiralError::Agent {
                                     message: "Task is taking longer than expected - still processing in background".to_string(),
                                 };
-                                let error_message = self.bot.format_helpful_error_message(&timeout_error, &persona);
+                                let error_message = self
+                                    .bot
+                                    .format_helpful_error_message(&timeout_error, &persona);
                                 error_message
                             }
                         }
@@ -1183,25 +1753,25 @@ impl EventHandler for ConstellationBotHandler {
                     info!("[SpiralConstellation] Using direct mode for task execution");
                     let execute_future = developer_agent.execute(task);
                     let timeout_duration = std::time::Duration::from_secs(90); // Increased timeout for direct mode
-                    
+
                     // Create progress update task for direct mode
                     let progress_task = {
                         let mut intent_msg_clone = intent_msg.clone();
                         let ctx_clone = ctx.clone();
                         let persona_clone = persona.clone();
                         let action_desc_clone = action_description.clone();
-                        let content_clone = cleaned_content.clone();
-                        
+                        let content_clone = processed_message.clone();
+
                         tokio::spawn(async move {
                             let progress_emojis = ["⏳", "⌛", "🤔", "⚙️", "🔄"];
                             let mut emoji_index = 0;
                             let start_time = std::time::Instant::now();
-                            
+
                             // Update every 15 seconds
                             while start_time.elapsed() < std::time::Duration::from_secs(90) {
                                 tokio::time::sleep(std::time::Duration::from_secs(15)).await;
                                 emoji_index = (emoji_index + 1) % progress_emojis.len();
-                                
+
                                 let progress_response = format!(
                                     "{} **{}**\n{}\n\n📝 **Request:** {}\n\n{} Working on this... ({:.0}s)",
                                     persona_clone.emoji,
@@ -1215,77 +1785,98 @@ impl EventHandler for ConstellationBotHandler {
                                     progress_emojis[emoji_index],
                                     start_time.elapsed().as_secs()
                                 );
-                                
+
                                 if let Some(ref mut intent_message) = intent_msg_clone {
-                                    let _ = intent_message.edit(&ctx_clone.http, serenity::builder::EditMessage::new().content(progress_response)).await;
+                                    let _ = intent_message
+                                        .edit(
+                                            &ctx_clone.http,
+                                            serenity::builder::EditMessage::new()
+                                                .content(progress_response),
+                                        )
+                                        .await;
                                 }
                             }
                         })
                     };
-                
+
                     match tokio::time::timeout(timeout_duration, execute_future).await {
                         Ok(execute_result) => {
                             // Cancel progress updates
                             progress_task.abort();
-                            
+
                             match execute_result {
                                 Ok(result) => {
-                                    info!("[SpiralConstellation] {} task {} completed", persona.name, task_id);
-                                    
+                                    info!(
+                                        "[SpiralConstellation] {} task {} completed",
+                                        persona.name, task_id
+                                    );
+
                                     // Update success stats
                                     {
                                         let mut stats = self.bot.stats.lock().await;
                                         stats.dev_tasks_completed += 1;
                                         stats.current_persona = None;
                                     }
-                                    
+
                                     self.bot.format_persona_response(&agent_type, &result)
                                 }
                                 Err(e) => {
-                                    warn!("[SpiralConstellation] {} task {} failed: {}", persona.name, task_id, e);
-                                    
+                                    warn!(
+                                        "[SpiralConstellation] {} task {} failed: {}",
+                                        persona.name, task_id, e
+                                    );
+
                                     // Update failure stats
                                     {
                                         let mut stats = self.bot.stats.lock().await;
                                         stats.total_tasks_failed += 1;
                                         stats.current_persona = None;
                                     }
-                                    
+
                                     // Provide helpful error messages based on error type
-                                    let error_message = self.bot.format_helpful_error_message(&e, &persona);
+                                    let error_message =
+                                        self.bot.format_helpful_error_message(&e, &persona);
                                     error_message
                                 }
                             }
-                        },
+                        }
                         Err(_timeout) => {
                             // Cancel progress updates
                             progress_task.abort();
-                            
-                            warn!("[SpiralConstellation] {} task {} timed out after 90 seconds", persona.name, task_id);
-                            
+
+                            warn!(
+                                "[SpiralConstellation] {} task {} timed out after 90 seconds",
+                                persona.name, task_id
+                            );
+
                             // Update failure stats
                             {
                                 let mut stats = self.bot.stats.lock().await;
                                 stats.total_tasks_failed += 1;
                                 stats.current_persona = None;
                             }
-                            
+
                             // Create a timeout error
                             let timeout_error = crate::SpiralError::Agent {
                                 message: "Task execution timed out - Claude Code system may be unavailable".to_string(),
                             };
-                            let error_message = self.bot.format_helpful_error_message(&timeout_error, &persona);
+                            let error_message = self
+                                .bot
+                                .format_helpful_error_message(&timeout_error, &persona);
                             error_message
                         }
                     }
                 } else {
-                        // Neither orchestrator nor direct agent available
-                        let config_error = crate::SpiralError::Agent {
-                            message: "Bot not properly configured - no execution method available".to_string(),
-                        };
-                        let error_message = self.bot.format_helpful_error_message(&config_error, &persona);
-                        error_message
-                    }
+                    // Neither orchestrator nor direct agent available
+                    let config_error = crate::SpiralError::Agent {
+                        message: "Bot not properly configured - no execution method available"
+                            .to_string(),
+                    };
+                    let error_message = self
+                        .bot
+                        .format_helpful_error_message(&config_error, &persona);
+                    error_message
+                }
             }
             _ => {
                 // For other agent types (not yet implemented)
@@ -1298,7 +1889,9 @@ impl EventHandler for ConstellationBotHandler {
                     persona.name,
                     persona.name.to_lowercase(),
                     persona.name.to_lowercase(),
-                    persona.personality_traits.iter()
+                    persona
+                        .personality_traits
+                        .iter()
                         .map(|trait_name| format!("• {}", trait_name))
                         .collect::<Vec<_>>()
                         .join("\n"),
@@ -1306,7 +1899,7 @@ impl EventHandler for ConstellationBotHandler {
                 )
             }
         };
-        
+
         // Step 5: Update the original intent message with the final result
         if let Some(mut intent_message) = intent_msg {
             // Create final response with task summary
@@ -1315,19 +1908,28 @@ impl EventHandler for ConstellationBotHandler {
                 persona.emoji,
                 persona.name,
                 action_description,
-                if cleaned_content.len() > 100 {
-                    format!("{}...", &cleaned_content[..100])
+                if processed_message.len() > 100 {
+                    format!("{}...", &processed_message[..100])
                 } else {
-                    cleaned_content.clone()
+                    processed_message.clone()
                 },
                 result
             );
-            
-            if let Err(e) = intent_message.edit(&ctx.http, serenity::builder::EditMessage::new().content(final_response)).await {
+
+            if let Err(e) = intent_message
+                .edit(
+                    &ctx.http,
+                    serenity::builder::EditMessage::new().content(final_response),
+                )
+                .await
+            {
                 warn!("[SpiralConstellation] Failed to edit intent message: {}", e);
                 // Fallback: send as new reply if edit fails
                 if let Err(e2) = msg.reply(&ctx.http, result).await {
-                    warn!("[SpiralConstellation] Failed to send fallback result: {}", e2);
+                    warn!(
+                        "[SpiralConstellation] Failed to send fallback result: {}",
+                        e2
+                    );
                 }
             }
         } else {
@@ -1337,15 +1939,29 @@ impl EventHandler for ConstellationBotHandler {
             }
         }
     }
-    
-    async fn ready(&self, _: Context, ready: Ready) {
-        info!("🌌 SpiralConstellation bot {} is connected and ready!", ready.user.name);
+
+    async fn ready(&self, ctx: Context, ready: Ready) {
+        info!(
+            "🌌 SpiralConstellation bot {} is connected and ready!",
+            ready.user.name
+        );
         info!("Available personas: SpiralDev, SpiralPM, SpiralQA, SpiralDecide, SpiralCreate, SpiralCoach");
         info!("Role support: Discord roles can be created with '!spiral setup roles'");
         info!("Usage: @SpiralDev, role mentions, or !spiral join <role>");
-        
+
+        // Set bot activity status to show the commands
+        use serenity::all::ActivityData;
+        let activity = ActivityData::playing("!spiral commands for help");
+        let status = OnlineStatus::Online;
+
+        ctx.set_presence(Some(activity), status);
+        info!("Bot status set: Playing '!spiral commands for help'");
+
         let stats = self.bot.stats.lock().await;
-        info!("Bot statistics: {} dev tasks completed", stats.dev_tasks_completed);
+        info!(
+            "Bot statistics: {} dev tasks completed",
+            stats.dev_tasks_completed
+        );
     }
 }
 
@@ -1359,13 +1975,13 @@ impl SpiralConstellationBotRunner {
     pub fn new(bot: SpiralConstellationBot, token: String) -> Self {
         Self { bot, token }
     }
-    
+
     /// 🚀 START BOT: Initialize and run the Discord bot
     pub async fn run(self) -> Result<()> {
-        use serenity::{Client, all::GatewayIntents};
-        
+        use serenity::{all::GatewayIntents, Client};
+
         info!("[SpiralConstellation] Starting Discord bot...");
-        
+
         // REDUCED INTENTS: Use minimal set for basic functionality
         // If you get "Disallowed intent(s)" error, enable these in Discord Developer Portal:
         // - MESSAGE CONTENT INTENT (critical)
@@ -1374,21 +1990,21 @@ impl SpiralConstellationBotRunner {
             | GatewayIntents::DIRECT_MESSAGES
             | GatewayIntents::MESSAGE_CONTENT  // Requires "Message Content Intent" enabled
             | GatewayIntents::GUILDS;
-            // Commented out for now: | GatewayIntents::GUILD_MEMBERS;  // Requires "Server Members Intent"
-        
+        // Commented out for now: | GatewayIntents::GUILD_MEMBERS;  // Requires "Server Members Intent"
+
         let handler = ConstellationBotHandler::new(self.bot);
-        
+
         let mut client = Client::builder(&self.token, intents)
             .event_handler(handler)
             .await
             .map_err(|e| SpiralError::Discord(Box::new(e)))?;
-        
+
         info!("[SpiralConstellation] Discord client created, starting...");
-        
+
         if let Err(e) = client.start().await {
             return Err(SpiralError::Discord(Box::new(e)));
         }
-        
+
         Ok(())
     }
 }

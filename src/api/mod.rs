@@ -458,7 +458,7 @@ async fn get_all_workspaces_status(
         Ok(workspaces) => {
             let total_count = workspaces.len();
             let total_size_bytes = workspaces.iter().map(|w| w.size_bytes).sum();
-            
+
             Ok(Json(AllWorkspacesStatusResponse {
                 workspaces,
                 total_count,
@@ -479,73 +479,83 @@ async fn get_all_workspaces_status(
     }
 }
 
-async fn scan_workspaces_directory(_api_server: &ApiServer) -> Result<Vec<WorkspaceStatusResponse>> {
+async fn scan_workspaces_directory(
+    _api_server: &ApiServer,
+) -> Result<Vec<WorkspaceStatusResponse>> {
     use std::fs;
-    
+
     // Get the current working directory and construct the workspaces path
     let current_dir = std::env::current_dir().map_err(|e| SpiralError::Agent {
         message: format!("Failed to get current directory: {e}"),
     })?;
-    
+
     let workspace_base_dir = current_dir.join("claude-workspaces");
-    
+
     if !workspace_base_dir.exists() {
         return Ok(Vec::new());
     }
-    
+
     let mut workspaces = Vec::new();
-    
+
     let entries = fs::read_dir(&workspace_base_dir).map_err(|e| SpiralError::Agent {
         message: format!("Failed to read workspaces directory: {e}"),
     })?;
-    
+
     for entry in entries {
         let entry = entry.map_err(|e| SpiralError::Agent {
             message: format!("Failed to read workspace entry: {e}"),
         })?;
-        
+
         let path = entry.path();
         if !path.is_dir() {
             continue;
         }
-        
-        let workspace_name = path.file_name()
+
+        let workspace_name = path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
             .to_string();
-        
+
         // Extract session ID if this is a session workspace
         let session_id = if workspace_name.starts_with("session-") {
-            Some(workspace_name.strip_prefix("session-").unwrap_or("unknown").to_string())
+            Some(
+                workspace_name
+                    .strip_prefix("session-")
+                    .unwrap_or("unknown")
+                    .to_string(),
+            )
         } else {
             None
         };
-        
+
         // Get directory metadata
         let metadata = entry.metadata().map_err(|e| SpiralError::Agent {
             message: format!("Failed to get workspace metadata: {e}"),
         })?;
-        
-        let created_at = metadata.created()
+
+        let created_at = metadata
+            .created()
             .map(|time| {
                 let datetime: chrono::DateTime<chrono::Utc> = time.into();
                 datetime.to_rfc3339()
             })
             .unwrap_or_else(|_| "unknown".to_string());
-        
-        let last_modified = metadata.modified()
+
+        let last_modified = metadata
+            .modified()
             .map(|time| {
                 let datetime: chrono::DateTime<chrono::Utc> = time.into();
                 datetime.to_rfc3339()
             })
             .unwrap_or_else(|_| "unknown".to_string());
-        
+
         // Calculate directory size and file count
         let (size_bytes, file_count) = calculate_directory_size(&path)?;
-        
+
         // Determine status based on age and activity
         let status = determine_workspace_status(&metadata, &path)?;
-        
+
         workspaces.push(WorkspaceStatusResponse {
             workspace_id: workspace_name,
             session_id,
@@ -557,34 +567,38 @@ async fn scan_workspaces_directory(_api_server: &ApiServer) -> Result<Vec<Worksp
             status,
         });
     }
-    
+
     // Sort by creation time (newest first)
     workspaces.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-    
+
     Ok(workspaces)
 }
 
 fn calculate_directory_size(dir_path: &std::path::Path) -> Result<(u64, usize)> {
     use std::fs;
-    
+
     let mut total_size = 0u64;
     let mut file_count = 0usize;
-    
-    fn visit_dir(dir: &std::path::Path, total_size: &mut u64, file_count: &mut usize) -> Result<()> {
+
+    fn visit_dir(
+        dir: &std::path::Path,
+        total_size: &mut u64,
+        file_count: &mut usize,
+    ) -> Result<()> {
         let entries = fs::read_dir(dir).map_err(|e| SpiralError::Agent {
             message: format!("Failed to read directory: {e}"),
         })?;
-        
+
         for entry in entries {
             let entry = entry.map_err(|e| SpiralError::Agent {
                 message: format!("Failed to read entry: {e}"),
             })?;
-            
+
             let path = entry.path();
             let metadata = entry.metadata().map_err(|e| SpiralError::Agent {
                 message: format!("Failed to get metadata: {e}"),
             })?;
-            
+
             if metadata.is_file() {
                 *total_size += metadata.len();
                 *file_count += 1;
@@ -592,53 +606,59 @@ fn calculate_directory_size(dir_path: &std::path::Path) -> Result<(u64, usize)> 
                 visit_dir(&path, total_size, file_count)?;
             }
         }
-        
+
         Ok(())
     }
-    
+
     visit_dir(dir_path, &mut total_size, &mut file_count)?;
     Ok((total_size, file_count))
 }
 
-fn determine_workspace_status(metadata: &std::fs::Metadata, _path: &std::path::Path) -> Result<String> {
+fn determine_workspace_status(
+    metadata: &std::fs::Metadata,
+    _path: &std::path::Path,
+) -> Result<String> {
     use std::time::SystemTime;
-    
+
     let now = SystemTime::now();
     let created = metadata.created().unwrap_or(now);
     let modified = metadata.modified().unwrap_or(now);
-    
+
     let age = now.duration_since(created).unwrap_or_default();
     let last_activity = now.duration_since(modified).unwrap_or_default();
-    
-    let status = if last_activity.as_secs() < 300 { // 5 minutes
+
+    let status = if last_activity.as_secs() < 300 {
+        // 5 minutes
         "active"
-    } else if last_activity.as_secs() < 3600 { // 1 hour
+    } else if last_activity.as_secs() < 3600 {
+        // 1 hour
         "recent"
-    } else if age.as_secs() < 86400 { // 24 hours
+    } else if age.as_secs() < 86400 {
+        // 24 hours
         "idle"
     } else {
         "old"
     };
-    
+
     Ok(status.to_string())
 }
 
 fn format_bytes_human_readable(bytes: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
     const THRESHOLD: u64 = 1024;
-    
+
     if bytes == 0 {
         return "0 B".to_string();
     }
-    
+
     let mut size = bytes as f64;
     let mut unit_index = 0;
-    
+
     while size >= THRESHOLD as f64 && unit_index < UNITS.len() - 1 {
         size /= THRESHOLD as f64;
         unit_index += 1;
     }
-    
+
     if unit_index == 0 {
         format!("{} {}", bytes, UNITS[unit_index])
     } else {

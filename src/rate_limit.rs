@@ -55,7 +55,7 @@ pub async fn rate_limit_middleware(
     // Why: Prevents abuse while allowing legitimate usage patterns
     // Alternative: Per-IP tracking (future enhancement: requires distributed state)
     // AUDIT CHECKPOINT: Critical DoS protection - verify rate limits are enforced
-    
+
     let path = request.uri().path();
     let method = request.method();
     let client_ip = addr.ip();
@@ -73,7 +73,7 @@ pub async fn rate_limit_middleware(
         // Task creation gets more restrictive rate limiting (10/min)
         &RATE_CONFIG.task_limiter
     } else {
-        // General API access (60/min)  
+        // General API access (60/min)
         &RATE_CONFIG.general_limiter
     };
 
@@ -91,7 +91,7 @@ pub async fn rate_limit_middleware(
                 "Rate limit exceeded for {} {} from IP: {} - request denied",
                 method, path, client_ip
             );
-            
+
             // Return 429 Too Many Requests with appropriate headers
             Err(StatusCode::TOO_MANY_REQUESTS)
         }

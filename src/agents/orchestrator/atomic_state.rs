@@ -1,10 +1,10 @@
 use crate::{
-    models::{Task, TaskResult, TaskStatus, AgentType},
+    models::{AgentType, Task, TaskResult, TaskStatus},
     Result, SpiralError,
 };
 use std::collections::HashMap;
-use tokio::sync::{Mutex, RwLock};
 use std::sync::Arc;
+use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, warn};
 
 /// Atomic state management for task execution to prevent race conditions
@@ -33,11 +33,11 @@ impl AtomicTaskStateManager {
     pub async fn start_task_atomic(&self, task: &mut Task) -> Result<()> {
         let task_id = task.id.clone();
         let agent_type = task.agent_type.clone();
-        
+
         // Acquire all locks in consistent order to prevent deadlocks
         let mut storage = self.task_storage.lock().await;
         let mut statuses = self.agent_statuses.write().await;
-        
+
         // Verify task is still in valid state for execution
         if let Some(stored_task) = storage.get(&task_id) {
             match stored_task.status {
@@ -60,21 +60,21 @@ impl AtomicTaskStateManager {
                 message: format!("Task {} not found in storage", task_id),
             });
         }
-        
+
         // Update task state
         task.status = TaskStatus::InProgress;
         task.updated_at = chrono::Utc::now();
-        
+
         // Update storage
         storage.insert(task_id.clone(), task.clone());
-        
+
         // Update agent status
         if let Some(status) = statuses.get_mut(&agent_type) {
             status.start_task(task_id.clone());
         } else {
             warn!("Agent status not found for type: {:?}", agent_type);
         }
-        
+
         debug!("Task {} atomically transitioned to InProgress", task_id);
         Ok(())
     }
@@ -90,38 +90,39 @@ impl AtomicTaskStateManager {
         let mut storage = self.task_storage.lock().await;
         let mut results = self.task_results.lock().await;
         let mut statuses = self.agent_statuses.write().await;
-        
+
         // Get task from storage
-        let task = storage.get_mut(task_id).ok_or_else(|| {
-            SpiralError::Agent {
-                message: format!("Task {} not found in storage", task_id),
-            }
+        let task = storage.get_mut(task_id).ok_or_else(|| SpiralError::Agent {
+            message: format!("Task {} not found in storage", task_id),
         })?;
-        
+
         // Verify task is in correct state
         if task.status != TaskStatus::InProgress {
             return Err(SpiralError::Agent {
-                message: format!("Task {} is not in progress (status: {:?})", task_id, task.status),
+                message: format!(
+                    "Task {} is not in progress (status: {:?})",
+                    task_id, task.status
+                ),
             });
         }
-        
+
         let agent_type = task.agent_type.clone();
-        
+
         // Update task status
         task.status = match &task_result.result {
             crate::models::TaskExecutionResult::Success { .. } => TaskStatus::Completed,
             crate::models::TaskExecutionResult::Failure { .. } => TaskStatus::Failed,
         };
         task.updated_at = chrono::Utc::now();
-        
+
         // Store result
         results.insert(task_id.to_string(), task_result);
-        
+
         // Update agent status
         if let Some(status) = statuses.get_mut(&agent_type) {
             status.complete_task(execution_time);
         }
-        
+
         debug!("Task {} atomically completed", task_id);
         Ok(())
     }
@@ -136,32 +137,33 @@ impl AtomicTaskStateManager {
         // Acquire all locks in consistent order
         let mut storage = self.task_storage.lock().await;
         let mut statuses = self.agent_statuses.write().await;
-        
+
         // Get task from storage
-        let task = storage.get_mut(task_id).ok_or_else(|| {
-            SpiralError::Agent {
-                message: format!("Task {} not found in storage", task_id),
-            }
+        let task = storage.get_mut(task_id).ok_or_else(|| SpiralError::Agent {
+            message: format!("Task {} not found in storage", task_id),
         })?;
-        
+
         // Verify task is in correct state
         if task.status != TaskStatus::InProgress {
             return Err(SpiralError::Agent {
-                message: format!("Task {} is not in progress (status: {:?})", task_id, task.status),
+                message: format!(
+                    "Task {} is not in progress (status: {:?})",
+                    task_id, task.status
+                ),
             });
         }
-        
+
         let agent_type = task.agent_type.clone();
-        
+
         // Update task status
         task.status = TaskStatus::Failed;
         task.updated_at = chrono::Utc::now();
-        
+
         // Update agent status
         if let Some(status) = statuses.get_mut(&agent_type) {
             status.complete_task(execution_time);
         }
-        
+
         debug!("Task {} atomically marked as failed: {}", task_id, error);
         Ok(())
     }
@@ -170,13 +172,13 @@ impl AtomicTaskStateManager {
     pub async fn cleanup_task_state(&self, task_id: &str) {
         let mut storage = self.task_storage.lock().await;
         let mut statuses = self.agent_statuses.write().await;
-        
+
         if let Some(task) = storage.get_mut(task_id) {
             if task.status == TaskStatus::InProgress {
                 // Reset to pending if task was in progress
                 task.status = TaskStatus::Pending;
                 task.updated_at = chrono::Utc::now();
-                
+
                 // Remove from agent's active tasks
                 if let Some(status) = statuses.get_mut(&task.agent_type) {
                     // We need to remove this task from the agent's active set
@@ -184,7 +186,7 @@ impl AtomicTaskStateManager {
                     status.is_busy = false;
                     status.current_task_id = None;
                 }
-                
+
                 warn!("Cleaned up incomplete task {}", task_id);
             }
         }

@@ -1,5 +1,5 @@
-use spiral_core::{agents::AgentOrchestrator, api::ApiServer, config::Config, security};
 use spiral_core::discord::startup::start_discord_with_orchestrator;
+use spiral_core::{agents::AgentOrchestrator, api::ApiServer, config::Config, security};
 use std::sync::Arc;
 use tokio::signal;
 use tracing::{error, info, warn, Level};
@@ -11,7 +11,9 @@ use tracing::{error, info, warn, Level};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // 📊 STARTUP PHASE 1: Initialize logging
-    tracing_subscriber::fmt().with_max_level(Level::DEBUG).init();
+    tracing_subscriber::fmt()
+        .with_max_level(Level::DEBUG)
+        .init();
 
     info!("Starting Spiral Core Agent Orchestration System");
     info!("Version: {}", env!("CARGO_PKG_VERSION"));
@@ -51,9 +53,10 @@ async fn main() -> anyhow::Result<()> {
         info!("Starting Discord integration with orchestrator...");
         let config_clone = config.clone();
         let orchestrator_clone = orchestrator.clone();
-        
+
         Some(tokio::spawn(async move {
-            if let Err(e) = start_discord_with_orchestrator(config_clone, orchestrator_clone).await {
+            if let Err(e) = start_discord_with_orchestrator(config_clone, orchestrator_clone).await
+            {
                 error!("Discord integration failed: {}", e);
             }
         }))
@@ -135,7 +138,10 @@ async fn perform_startup_validations(config: &Config) -> anyhow::Result<()> {
     // SECURITY: Authentication is always enabled
     match security::ensure_api_key_exists(config.api.api_key.as_deref()) {
         Ok(api_key) => {
-            info!("API key validation successful (length: {} chars)", api_key.len());
+            info!(
+                "API key validation successful (length: {} chars)",
+                api_key.len()
+            );
             // Note: Don't log the actual key for security
         }
         Err(e) => {
@@ -247,11 +253,7 @@ async fn wait_for_tasks_completion(orchestrator: &AgentOrchestrator) {
         check_interval.tick().await;
 
         let status = orchestrator.get_system_status().await;
-        let active_tasks: usize = status
-            .agents
-            .values()
-            .filter(|s| s.is_busy)
-            .count();
+        let active_tasks: usize = status.agents.values().filter(|s| s.is_busy).count();
 
         if active_tasks == 0 {
             info!("All tasks completed");
@@ -266,7 +268,10 @@ async fn wait_for_tasks_completion(orchestrator: &AgentOrchestrator) {
         );
 
         if elapsed > std::time::Duration::from_secs(25) {
-            warn!("Approaching shutdown timeout with {} tasks still active", active_tasks);
+            warn!(
+                "Approaching shutdown timeout with {} tasks still active",
+                active_tasks
+            );
         }
     }
 }

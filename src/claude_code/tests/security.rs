@@ -14,7 +14,9 @@ use serial_test::serial;
 #[ignore = "Integration test requiring Claude Code CLI and API access"]
 async fn test_workspace_isolation() {
     let config = create_test_config();
-    let client = ClaudeCodeClient::new(config).await.expect("Failed to create client");
+    let client = ClaudeCodeClient::new(config)
+        .await
+        .expect("Failed to create client");
 
     // Create two separate sessions with different workspaces
     let session1_id = uuid::Uuid::new_v4().to_string();
@@ -30,7 +32,9 @@ async fn test_workspace_isolation() {
         session_id: Some(session1_id.to_string()),
     };
 
-    let result1 = client.generate_code_with_session(request1, Some(&session1_id)).await;
+    let result1 = client
+        .generate_code_with_session(request1, Some(&session1_id))
+        .await;
     assert!(result1.is_ok(), "Session 1 code generation should succeed");
 
     // Generate code in session 2 - try to read session 1's file
@@ -43,8 +47,10 @@ async fn test_workspace_isolation() {
         session_id: Some(session2_id.to_string()),
     };
 
-    let result2 = client.generate_code_with_session(request2, Some(&session2_id)).await;
-    
+    let result2 = client
+        .generate_code_with_session(request2, Some(&session2_id))
+        .await;
+
     // SECURITY ASSERTION: Session 2 should NOT be able to access session 1's files
     match result2 {
         Ok(result) => {
@@ -75,7 +81,9 @@ async fn test_workspace_isolation() {
 #[ignore = "Integration test requiring Claude Code CLI and API access"]
 async fn test_permission_escalation_audit() {
     let config = create_test_config();
-    let client = ClaudeCodeClient::new(config).await.expect("Failed to create client");
+    let client = ClaudeCodeClient::new(config)
+        .await
+        .expect("Failed to create client");
 
     // Create a request that should fail with standard permissions
     let request = CodeGenerationRequest {
@@ -116,7 +124,9 @@ async fn test_permission_escalation_audit() {
 #[ignore = "Integration test requiring Claude Code CLI and API access"]
 async fn test_directory_traversal_protection() {
     let config = create_test_config();
-    let client = ClaudeCodeClient::new(config).await.expect("Failed to create client");
+    let client = ClaudeCodeClient::new(config)
+        .await
+        .expect("Failed to create client");
 
     // Attempt directory traversal attacks
     let malicious_paths = vec![
@@ -144,10 +154,10 @@ async fn test_directory_traversal_protection() {
             Ok(code_result) => {
                 // Check that sensitive content is not present
                 let sensitive_patterns = [
-                    "root:x:",           // /etc/passwd content
-                    "root:$",            // /etc/shadow content
-                    "-----BEGIN",        // SSH key content
-                    "SAM Stores",        // Windows SAM file
+                    "root:x:",    // /etc/passwd content
+                    "root:$",     // /etc/shadow content
+                    "-----BEGIN", // SSH key content
+                    "SAM Stores", // Windows SAM file
                 ];
 
                 for pattern in &sensitive_patterns {
@@ -174,18 +184,23 @@ async fn test_directory_traversal_protection() {
 #[ignore = "Integration test requiring Claude Code CLI and API access"]
 async fn test_workspace_cleanup() {
     let config = create_test_config();
-    let client = ClaudeCodeClient::new(config).await.expect("Failed to create client");
+    let client = ClaudeCodeClient::new(config)
+        .await
+        .expect("Failed to create client");
 
     // Get initial workspace count
-    let initial_stats = client.get_workspace_stats().await.expect("Should get stats");
-    
+    let initial_stats = client
+        .get_workspace_stats()
+        .await
+        .expect("Should get stats");
+
     // Create multiple workspaces
     let session_ids = vec![
         uuid::Uuid::new_v4().to_string(),
         uuid::Uuid::new_v4().to_string(),
         uuid::Uuid::new_v4().to_string(),
     ];
-    
+
     for session_id in &session_ids {
         let request = CodeGenerationRequest {
             language: "text".to_string(),
@@ -196,22 +211,30 @@ async fn test_workspace_cleanup() {
             session_id: Some(session_id.to_string()),
         };
 
-        let _ = client.generate_code_with_session(request, Some(session_id)).await;
+        let _ = client
+            .generate_code_with_session(request, Some(session_id))
+            .await;
     }
 
     // Verify workspaces were created
-    let after_creation_stats = client.get_workspace_stats().await.expect("Should get stats");
+    let after_creation_stats = client
+        .get_workspace_stats()
+        .await
+        .expect("Should get stats");
     assert!(
         after_creation_stats.total_workspaces > initial_stats.total_workspaces,
         "Workspaces should have been created"
     );
 
     // Trigger cleanup
-    client.cleanup_old_workspaces().await.expect("Cleanup should succeed");
+    client
+        .cleanup_old_workspaces()
+        .await
+        .expect("Cleanup should succeed");
 
     // Note: Since we just created the workspaces, they won't be cleaned up immediately
     // In a real test environment, you'd modify the cleanup logic or wait for the timeout
-    
+
     // Verify cleanup functionality exists and runs without error
     // The actual cleanup behavior depends on the configured cleanup timeout
 }
@@ -224,7 +247,9 @@ async fn test_workspace_cleanup() {
 #[ignore = "Integration test requiring Claude Code CLI and API access"]
 async fn test_session_continuity_security() {
     let config = create_test_config();
-    let client = ClaudeCodeClient::new(config).await.expect("Failed to create client");
+    let client = ClaudeCodeClient::new(config)
+        .await
+        .expect("Failed to create client");
 
     let session_id = uuid::Uuid::new_v4().to_string();
 
@@ -238,7 +263,9 @@ async fn test_session_continuity_security() {
         session_id: Some(session_id.to_string()),
     };
 
-    let _ = client.generate_code_with_session(request1, Some(&session_id)).await;
+    let _ = client
+        .generate_code_with_session(request1, Some(&session_id))
+        .await;
 
     // Session 2: Try to access the secret with a different session ID
     let different_session = uuid::Uuid::new_v4().to_string();
@@ -251,7 +278,9 @@ async fn test_session_continuity_security() {
         session_id: Some(different_session.to_string()),
     };
 
-    let result2 = client.generate_code_with_session(request2, Some(&different_session)).await;
+    let result2 = client
+        .generate_code_with_session(request2, Some(&different_session))
+        .await;
 
     // SECURITY ASSERTION: Different session should not have access to original context
     match result2 {
@@ -279,7 +308,9 @@ async fn test_session_continuity_security() {
 #[ignore = "Integration test requiring Claude Code CLI and API access"]
 async fn test_concurrent_session_access() {
     let config = create_test_config();
-    let client = ClaudeCodeClient::new(config).await.expect("Failed to create client");
+    let client = ClaudeCodeClient::new(config)
+        .await
+        .expect("Failed to create client");
 
     // Create multiple concurrent sessions
     let mut handles = vec![];
@@ -287,7 +318,7 @@ async fn test_concurrent_session_access() {
     for i in 0..5 {
         let client_clone = client.clone();
         let session_id = uuid::Uuid::new_v4().to_string();
-        
+
         let handle = tokio::spawn(async move {
             let request = CodeGenerationRequest {
                 language: "text".to_string(),
@@ -298,7 +329,9 @@ async fn test_concurrent_session_access() {
                 session_id: Some(session_id.clone()),
             };
 
-            client_clone.generate_code_with_session(request, Some(&session_id)).await
+            client_clone
+                .generate_code_with_session(request, Some(&session_id))
+                .await
         });
 
         handles.push(handle);
@@ -349,7 +382,7 @@ fn setup_test_logging() -> tracing::subscriber::DefaultGuard {
         .with_max_level(tracing::Level::WARN)
         .with_test_writer()
         .finish();
-    
+
     tracing::subscriber::set_default(subscriber)
 }
 

@@ -24,8 +24,8 @@ clap = { version = "4.0", features = ["derive"] }
 config = "0.14"
 async-trait = "0.1"
 regex = "1.0"
-dotenv = "0.15"
-validator = { version = "0.16", features = ["derive"] }
+dotenvy = "0.15"
+validator = { version = "0.18", features = ["derive"] }
 html-escape = "0.2"
 url = "2.4"
 governor = "0.6"

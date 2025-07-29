@@ -1,5 +1,5 @@
 use crate::{Result, SpiralError};
-use dotenv::dotenv;
+use dotenvy::dotenv;
 use serde::{Deserialize, Serialize};
 use std::env;
 
@@ -26,6 +26,7 @@ pub struct DiscordConfig {
     pub token: String,
     pub command_prefix: String,
     pub agent_mention_pattern: String,
+    pub authorized_users: Vec<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,11 +101,26 @@ impl Config {
             }
         }
 
+        // Load authorized users from environment
+        let authorized_users = env::var("DISCORD_AUTHORIZED_USERS")
+            .unwrap_or_else(|_| "".to_string())
+            .split(',')
+            .filter_map(|s| {
+                let trimmed = s.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    trimmed.parse::<u64>().ok()
+                }
+            })
+            .collect();
+
         let discord = DiscordConfig {
             token: discord_token,
             command_prefix: env::var("DISCORD_PREFIX").unwrap_or_else(|_| "!spiral".to_string()),
             agent_mention_pattern: env::var("AGENT_MENTION_PATTERN")
                 .unwrap_or_else(|_| r"@Spiral(\w+)".to_string()),
+            authorized_users,
         };
 
         // 🔐 SECURE API KEY LOADING: Environment variable or generated secure key
@@ -115,7 +131,9 @@ impl Config {
                 Some(key)
             }
             _ => {
-                tracing::info!("No API_KEY environment variable set, checking for generated key file");
+                tracing::info!(
+                    "No API_KEY environment variable set, checking for generated key file"
+                );
                 // Try to load from secure file, don't generate here (will be done in startup validation)
                 match crate::security::load_api_key_from_file() {
                     Ok(Some(key)) => {
@@ -127,7 +145,10 @@ impl Config {
                         None
                     }
                     Err(e) => {
-                        tracing::warn!("Failed to load API key from file: {}, will generate new one", e);
+                        tracing::warn!(
+                            "Failed to load API key from file: {}, will generate new one",
+                            e
+                        );
                         None
                     }
                 }

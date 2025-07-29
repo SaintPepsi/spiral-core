@@ -17,18 +17,20 @@ async fn main() -> Result<()> {
 
     // Create Claude Code client
     let claude_client = ClaudeCodeClient::new(config.claude_code.clone()).await?;
-    
+
     // Create developer agent
     let developer_agent = SoftwareDeveloperAgent::new(claude_client.clone());
-    
+
     // Create constellation bot
-    let constellation_bot = SpiralConstellationBot::new(developer_agent, claude_client).await?;
-    
+    let constellation_bot =
+        SpiralConstellationBot::new(developer_agent, claude_client, config.discord.clone()).await?;
+
     // Create bot runner
-    let bot_runner = SpiralConstellationBotRunner::new(constellation_bot, config.discord.token.clone());
-    
+    let bot_runner =
+        SpiralConstellationBotRunner::new(constellation_bot, config.discord.token.clone());
+
     info!("🌌 Starting SpiralConstellation Discord Bot...");
-    
+
     // Run the bot
     bot_runner.run().await?;
 
