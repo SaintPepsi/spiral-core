@@ -31,7 +31,7 @@ mod api_key_generation_security {
         let expected_freq = (sample_size * API_KEY_LENGTH) as f64 / 62.0; // 62 possible chars
         let mut chi_square = 0.0;
 
-        for (_char, &observed) in &char_frequency {
+        for &observed in char_frequency.values() {
             let diff = observed as f64 - expected_freq;
             chi_square += (diff * diff) / expected_freq;
         }
@@ -39,8 +39,7 @@ mod api_key_generation_security {
         // Chi-square should be within reasonable bounds for uniform distribution
         assert!(
             chi_square > 30.0 && chi_square < 100.0,
-            "Character distribution appears non-random: chi-square = {}",
-            chi_square
+            "Character distribution appears non-random: chi-square = {chi_square}"
         );
     }
 
@@ -69,10 +68,7 @@ mod api_key_generation_security {
             // Keys should differ significantly (at least 40% of characters)
             assert!(
                 hamming_distance >= API_KEY_LENGTH * 2 / 5,
-                "Sequential keys too similar: {} vs {} (distance: {})",
-                key1,
-                key2,
-                hamming_distance
+                "Sequential keys too similar: {key1} vs {key2} (distance: {hamming_distance})"
             );
         }
     }
@@ -87,15 +83,11 @@ mod api_key_generation_security {
             let key = generate_secure_api_key();
             assert!(
                 keys.insert(key.clone()),
-                "Collision detected! Duplicate key: {}",
-                key
+                "Collision detected! Duplicate key: {key}"
             );
         }
 
-        println!(
-            "Generated {} unique keys without collision",
-            generation_count
-        );
+        println!("Generated {generation_count} unique keys without collision");
     }
 
     /// ⏱️ Test timing attack resistance
@@ -134,8 +126,7 @@ mod api_key_generation_security {
         // Note: This is relaxed from 0.5 to 1.5 to account for system load variations
         assert!(
             cv < 1.5,
-            "Key generation timing too variable (CV: {}), potential timing attack vector",
-            cv
+            "Key generation timing too variable (CV: {cv}), potential timing attack vector"
         );
     }
 }
@@ -201,11 +192,7 @@ mod api_key_validation_security {
             // Simulate validation logic
             let is_valid = key.len() == API_KEY_LENGTH && key.chars().all(|c| c.is_alphanumeric());
 
-            assert!(
-                !is_valid,
-                "Malformed key #{} should be rejected: {:?}",
-                i, key
-            );
+            assert!(!is_valid, "Malformed key #{i} should be rejected: {key:?}");
         }
     }
 
@@ -226,11 +213,7 @@ mod api_key_validation_security {
             let is_valid =
                 attempt.len() == API_KEY_LENGTH && attempt.chars().all(|c| c.is_alphanumeric());
 
-            assert!(
-                !is_valid,
-                "Injection attempt should be rejected: {}",
-                attempt
-            );
+            assert!(!is_valid, "Injection attempt should be rejected: {attempt}");
         }
     }
 }
@@ -254,8 +237,7 @@ mod concurrency_and_race_conditions {
                     let mut keys_guard = keys_clone.lock().unwrap();
                     assert!(
                         keys_guard.insert(key.clone()),
-                        "Concurrent collision detected: {}",
-                        key
+                        "Concurrent collision detected: {key}"
                     );
                 }
             });
@@ -293,13 +275,11 @@ mod attack_vector_tests {
         // Verify sufficient entropy (should be well over 256 bits)
         assert!(
             bits_of_entropy > 256.0,
-            "Insufficient entropy: {} bits (need > 256)",
-            bits_of_entropy
+            "Insufficient entropy: {bits_of_entropy} bits (need > 256)"
         );
 
         println!(
-            "API key entropy: {} bits ({} possible combinations)",
-            bits_of_entropy, total_combinations
+            "API key entropy: {bits_of_entropy} bits ({total_combinations} possible combinations)"
         );
     }
 
@@ -318,8 +298,7 @@ mod attack_vector_tests {
         // Should complete reasonably quickly (no blocking operations)
         assert!(
             duration.as_secs() < 5,
-            "Key generation too slow, potential DoS: {:?}",
-            duration
+            "Key generation too slow, potential DoS: {duration:?}"
         );
     }
 }
@@ -337,7 +316,7 @@ mod integration_tests {
 
         // Phase 1: Generation
         let result = ensure_api_key_exists(None);
-        assert!(result.is_ok(), "Failed to generate key: {:?}", result);
+        assert!(result.is_ok(), "Failed to generate key: {result:?}");
         let key1 = result.unwrap();
 
         // Verify key properties
@@ -352,7 +331,7 @@ mod integration_tests {
 
         // Phase 3: Loading
         let result2 = ensure_api_key_exists(None);
-        assert!(result2.is_ok(), "Failed to load key: {:?}", result2);
+        assert!(result2.is_ok(), "Failed to load key: {result2:?}");
         let key2 = result2.unwrap();
 
         // Should get same key (persistence works)

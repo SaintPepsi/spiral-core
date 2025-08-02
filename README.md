@@ -5,7 +5,7 @@ A Rust-based AI agent orchestration system built by Anti Spiral Interactive. The
 ## Quick Links
 
 📋 **[Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md)** - System design and component relationships  
-🏗️ **[Development Setup](docs/DEVELOPMENT_PRACTICES.md)** - Local development and container setup  
+🏗️ **[Development Setup](docs/CODING_STANDARDS.md#development-practices)** - Local development and container setup  
 🔧 **[Coding Standards](docs/CODING_STANDARDS.md)** - SOLID, DRY, SID principles and best practices  
 🚀 **[Phase 1 Implementation](src/implementation/docs/IMPLEMENTATION_PHASE1.md)** - Current development phase  
 
@@ -53,7 +53,7 @@ DISCORD_TOKEN=your-discord-bot-token  # optional
 cargo run --bin spiral-core
 ```
 
-See [Development Practices](docs/DEVELOPMENT_PRACTICES.md) for complete environment setup.
+See [Development Practices](docs/CODING_STANDARDS.md) for complete environment setup.
 
 ### Available Aliases
 
@@ -204,7 +204,7 @@ Common issues and solutions:
 
 Debug mode: `RUST_LOG=debug cargo run`
 
-See [Development Practices](docs/DEVELOPMENT_PRACTICES.md) for detailed troubleshooting.
+See [Development Practices](docs/CODING_STANDARDS.md) for detailed troubleshooting.
 
 ## Documentation Structure
 
@@ -213,8 +213,7 @@ As the project grows, we're transitioning to a wiki-style documentation model:
 ```
 docs/                           # Core project documentation
 ├── ARCHITECTURE_*.md          # System architecture guides
-├── CODING_STANDARDS.md        # Development standards
-└── DEVELOPMENT_PRACTICES.md   # Setup and workflow guides
+└── CODING_STANDARDS.md  # All coding standards and practices
 
 src/                           # Implementation-specific docs
 ├── agents/docs/              # Agent implementation guides
@@ -227,7 +226,7 @@ src/                           # Implementation-specific docs
 1. Follow [Coding Standards](docs/CODING_STANDARDS.md) and architectural principles
 2. Ensure all tests pass before submitting PRs  
 3. Update relevant documentation for changes
-4. See [Development Practices](docs/DEVELOPMENT_PRACTICES.md) for workflow
+4. See [Development Practices](docs/CODING_STANDARDS.md) for workflow
 
 ## License
 

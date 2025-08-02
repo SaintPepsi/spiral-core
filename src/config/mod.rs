@@ -194,4 +194,32 @@ impl Config {
             api,
         })
     }
+
+    /// Create a test configuration with sensible defaults
+    #[cfg(test)]
+    pub fn test_config() -> Self {
+        Self {
+            claude_code: ClaudeCodeConfig {
+                claude_binary_path: Some("mock-claude".to_string()),
+                working_directory: Some("/tmp/test".to_string()),
+                timeout_seconds: 30,
+                permission_mode: "ask".to_string(),
+                allowed_tools: vec!["edit".to_string(), "read".to_string()],
+                workspace_cleanup_after_hours: 1,
+                max_workspace_size_mb: 100,
+            },
+            discord: DiscordConfig {
+                token: "mock-discord-token-for-testing-only".to_string(),
+                command_prefix: "!test".to_string(),
+                agent_mention_pattern: r"@Test(\w+)".to_string(),
+                authorized_users: vec![123456789],
+            },
+            api: ApiConfig {
+                host: "127.0.0.1".to_string(),
+                port: 3000,
+                api_key: Some("test-api-key-32-characters-long-for-security".to_string()),
+                allowed_origins: vec!["http://localhost:3000".to_string()],
+            },
+        }
+    }
 }

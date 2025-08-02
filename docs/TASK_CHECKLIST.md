@@ -22,6 +22,7 @@ Use this checklist before starting any development task to ensure adherence to p
 - [ ] **SOLID Principles**: Single Responsibility, Open-Closed, etc.
 - [ ] **DRY Principle**: Not duplicating logic or information
 - [ ] **SID Naming**: Short, Intuitive, Descriptive names
+- [ ] **Early Return Pattern**: Using early returns with negative conditions ([details](CODING_STANDARDS.md#early-return-pattern-required))
 - [ ] **Security**: Following established security patterns
 - [ ] **Error Handling**: Using project error handling patterns
 
@@ -69,7 +70,7 @@ Use this checklist before starting any development task to ensure adherence to p
 |-------|----------|-------------|
 | Project Architecture | `CLAUDE.md` | Every task |
 | Code Organization | `CLAUDE-colocation-patterns.md` | File/test creation |
-| Coding Standards | `CLAUDE-core-coding-standards.md` | Writing code |
+| Coding Standards | `CODING_STANDARDS.md` | Writing code |
 | API Patterns | `src/api/API_REFERENCE.md` | API work |
 | Agent Development | `docs/CLAUDE-agents-*.md` | Agent features |
 | Security Patterns | `SECURITY.md` | Security-related work |

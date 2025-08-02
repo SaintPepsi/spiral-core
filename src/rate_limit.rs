@@ -10,7 +10,7 @@ use governor::{
     Quota, RateLimiter,
 };
 use std::{net::SocketAddr, num::NonZeroU32, sync::Arc};
-use tracing::warn;
+use tracing::{error, warn};
 
 // SECURITY: Rate limiting configuration
 pub const REQUESTS_PER_MINUTE: u32 = 60; // Allow 60 requests per minute per IP
@@ -25,11 +25,31 @@ pub struct RateLimitConfig {
 impl RateLimitConfig {
     pub fn new() -> Self {
         // SECURITY: General rate limiter - 60 requests per minute
-        let general_quota = Quota::per_minute(NonZeroU32::new(REQUESTS_PER_MINUTE).unwrap());
+        // These constants are compile-time guarantees, so unwrap is safe here
+        // but we'll use a match for consistency with error handling practices
+        let general_quota = match NonZeroU32::new(REQUESTS_PER_MINUTE) {
+            Some(n) => Quota::per_minute(n),
+            None => {
+                // This should never happen with non-zero constants
+                error!("REQUESTS_PER_MINUTE constant is zero, using fallback of 60");
+                // SAFETY: 60 is a compile-time constant that is definitely non-zero
+                // Using a match here would be recursive, so we use unsafe to guarantee this
+                unsafe { Quota::per_minute(NonZeroU32::new_unchecked(60)) }
+            }
+        };
         let general_limiter = Arc::new(RateLimiter::direct(general_quota));
 
         // SECURITY: Task creation rate limiter - 10 requests per minute
-        let task_quota = Quota::per_minute(NonZeroU32::new(TASK_REQUESTS_PER_MINUTE).unwrap());
+        let task_quota = match NonZeroU32::new(TASK_REQUESTS_PER_MINUTE) {
+            Some(n) => Quota::per_minute(n),
+            None => {
+                // This should never happen with non-zero constants
+                error!("TASK_REQUESTS_PER_MINUTE constant is zero, using fallback of 10");
+                // SAFETY: 10 is a compile-time constant that is definitely non-zero
+                // Using a match here would be recursive, so we use unsafe to guarantee this
+                unsafe { Quota::per_minute(NonZeroU32::new_unchecked(10)) }
+            }
+        };
         let task_limiter = Arc::new(RateLimiter::direct(task_quota));
 
         Self {
@@ -65,7 +85,7 @@ pub async fn rate_limit_middleware(
     // Why: Better performance than creating limiters per request
     // Alternative: Injected service state (future enhancement)
     use std::sync::LazyLock;
-    static RATE_CONFIG: LazyLock<RateLimitConfig> = LazyLock::new(|| RateLimitConfig::new());
+    static RATE_CONFIG: LazyLock<RateLimitConfig> = LazyLock::new(RateLimitConfig::new);
 
     // 🎯 ENDPOINT-SPECIFIC RATE LIMITING: Different limits for different operations
     // Why: Task creation is more resource-intensive than status checks

@@ -30,7 +30,6 @@
       "Bash(timeout 120 docker build -f Dockerfile . --tag spiral-test --no-cache)",
       "Bash(gtimeout:*)",
       "Bash(docker run:*)",
-      "Bash(./test-container.sh:*)",
       "Bash(time docker build:*)",
       "Bash(grep:*)",
       "Bash(npx markdownlint:*)",
@@ -42,8 +41,6 @@
       "Bash(npm run lint:md:*)",
       "Bash(npm run test:docs:*)",
       "Bash(npm run format:md:*)",
-      "Bash(RUST_BACKTRACE=1 cargo test claude_code::tests::unit::test_api_url_validation --lib -- --nocapture)",
-      "Bash(hurl:*)",
       "Bash(curl:*)",
       "Bash(./scripts/run-hurl-tests.sh:*)",
       "Bash(nohup cargo run --bin spiral-core > server.log 2>&1 &)",
@@ -65,7 +62,12 @@
       "Read(path:**/Cargo.lock)",
       "Edit(path:**/Cargo.lock)",
       "Bash(sed:*)",
-      "Bash(RUST_BACKTRACE=1 cargo test discord::intent_classifier::tests::test_adversarial_input_handling -- --nocapture)"
+      "Bash(echo:*)",
+      "Bash(cargo test * | grep *)",
+      "Bash(RUST_BACKTRACE=* cargo test * | grep *)",
+      "Bash(*cargo*2>&1|*grep*)",
+      "Bash(RUST_LOG=debug cargo test test_concurrent_shutdown_signal_race -- --nocapture)",
+      "Bash(./scripts/validate.sh:*)"
     ],
     "deny": [
       "Bash(npm install -g:*)",

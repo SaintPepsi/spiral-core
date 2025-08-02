@@ -56,7 +56,7 @@ impl MessageRateLimiter {
     }
 
     pub fn is_allowed(&mut self, user_id: u64, timestamp: Instant) -> bool {
-        let user_messages = self.user_messages.entry(user_id).or_insert_with(Vec::new);
+        let user_messages = self.user_messages.entry(user_id).or_default();
 
         // Remove old messages outside the time window
         user_messages.retain(|&msg_time| timestamp.duration_since(msg_time) < self.time_window);
@@ -110,6 +110,16 @@ impl MessageSecurityValidator {
     pub fn validate_message_content(&self, content: &str) -> MessageValidationResult {
         let mut issues = Vec::new();
         let mut risk_level = RiskLevel::Low;
+
+        // Check message length first
+        if content.len() > MAX_MESSAGE_LENGTH {
+            issues.push(format!(
+                "Message too long: {} characters (max: {})",
+                content.len(),
+                MAX_MESSAGE_LENGTH
+            ));
+            risk_level = RiskLevel::High;
+        }
 
         // Check for script tags
         if content.to_lowercase().contains("<script") {
@@ -234,8 +244,6 @@ impl MessageSecurityValidator {
 
         let risk_level = if content.len() > MAX_MESSAGE_LENGTH {
             RiskLevel::High
-        } else if content.is_empty() {
-            RiskLevel::Low
         } else {
             RiskLevel::Low
         };
@@ -265,7 +273,7 @@ impl MessageSecurityValidator {
             .iter()
             .any(|ext| lowercase_filename.ends_with(ext))
         {
-            issues.push(format!("Dangerous file extension: {}", filename));
+            issues.push(format!("Dangerous file extension: {filename}"));
             risk_level = RiskLevel::Critical;
         }
 
@@ -291,7 +299,7 @@ impl MessageSecurityValidator {
 
     /// Check if message is spam
     pub fn is_spam_message(&self, content: &str) -> bool {
-        let spam_keywords = vec![
+        let spam_keywords = [
             "free money",
             "click here",
             "win big",
@@ -347,26 +355,55 @@ impl MessageSecurityValidator {
         let mut issues = Vec::new();
         let mut risk_level = RiskLevel::Low;
 
-        let dangerous_chars = vec!['$', '`', '|', '&', ';', '>', '<', '(', ')'];
+        let dangerous_chars = ['$', '`', '|', '&', ';', '>', '<', '(', ')'];
 
-        // Check for dangerous characters
-        if input.chars().any(|c| dangerous_chars.contains(&c)) {
-            issues.push("Contains dangerous command characters".to_string());
+        // Check for dangerous characters and collect matches
+        let found_chars: Vec<char> = input
+            .chars()
+            .filter(|c| dangerous_chars.contains(c))
+            .collect();
+
+        if !found_chars.is_empty() {
+            let char_list = found_chars
+                .iter()
+                .map(|c| format!("'{c}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            issues.push(format!(
+                "Contains dangerous command characters: {char_list}"
+            ));
             risk_level = RiskLevel::Critical;
         }
 
-        // Check for dangerous keywords
+        // Check for dangerous keywords and collect matches
         let dangerous_keywords = vec![
             "rm", "curl", "wget", "nc", "python", "sh", "bash", "eval", "exec", "sudo", "su",
             "chmod", "chown", "passwd", "useradd", "userdel",
         ];
 
         let lowercase_input = input.to_lowercase();
-        if dangerous_keywords
+        let found_keywords: Vec<&str> = dangerous_keywords
             .iter()
-            .any(|keyword| lowercase_input.contains(keyword))
-        {
-            issues.push("Contains dangerous command keywords".to_string());
+            .filter(|keyword| {
+                // Check for word boundaries to avoid false positives
+                let keyword_with_boundaries = format!(r"\b{keyword}\b");
+                regex::Regex::new(&keyword_with_boundaries)
+                    .ok()
+                    .map(|re| re.is_match(&lowercase_input))
+                    .unwrap_or(false)
+            })
+            .copied()
+            .collect();
+
+        if !found_keywords.is_empty() {
+            let keyword_list = found_keywords
+                .iter()
+                .map(|k| format!("'{k}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            issues.push(format!(
+                "Contains dangerous command keywords: {keyword_list}"
+            ));
             risk_level = RiskLevel::Critical;
         }
 
@@ -374,13 +411,19 @@ impl MessageSecurityValidator {
         if input.starts_with('!') {
             // Basic format validation
             let parts: Vec<&str> = input.split_whitespace().collect();
-            if parts.is_empty() {
+            if parts.is_empty() || parts[0].len() <= 1 {
                 issues.push("Empty command".to_string());
                 risk_level = RiskLevel::Low;
             } else {
-                // Command name should be alphanumeric after !
+                // Command name should only contain safe characters after !
                 let command_name = &parts[0][1..];
-                if !command_name.chars().all(|c| c.is_alphanumeric()) {
+                if command_name.is_empty() {
+                    issues.push("Empty command".to_string());
+                    risk_level = RiskLevel::Low;
+                } else if !command_name
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+                {
                     issues.push("Invalid command name format".to_string());
                     risk_level = RiskLevel::Medium;
                 }
@@ -421,8 +464,7 @@ impl MessageSecurityValidator {
         }
 
         // Check for suspicious usernames
-        let suspicious_patterns =
-            vec!["admin", "root", "system", "bot", "service", "test", "debug"];
+        let suspicious_patterns = ["admin", "root", "system", "bot", "service", "test", "debug"];
 
         let username_lower = user.name.to_lowercase();
         if suspicious_patterns
@@ -521,68 +563,15 @@ impl Default for MessageSecurityValidator {
     }
 }
 
-#[cfg(disabled)] // Disabled due to Serenity struct construction issues
+#[cfg(feature = "discord-tests")] // Disabled due to Serenity struct construction issues
 mod tests {
     use super::*;
     use serenity::model::prelude::*;
 
     /// Helper function to create a mock message
     fn create_mock_message(content: &str, author_bot: bool) -> Message {
-        use serenity::model::id::*;
-        use std::collections::HashMap;
-
-        Message {
-            id: MessageId::new(1),
-            channel_id: ChannelId::new(1),
-            guild_id: Some(GuildId::new(1)),
-            author: User {
-                id: UserId::new(1),
-                name: "test_user".to_string(),
-                discriminator: None,
-                global_name: None,
-                avatar: None,
-                bot: author_bot,
-                system: false,
-                mfa_enabled: false,
-                banner: None,
-                accent_colour: None,
-                locale: None,
-                verified: Some(true),
-                email: None,
-                flags: None,
-                premium_type: None,
-                public_flags: None,
-                avatar_decoration: None,
-            },
-            content: content.to_string(),
-            timestamp: serenity::model::Timestamp::now(),
-            edited_timestamp: None,
-            tts: false,
-            mention_everyone: false,
-            mentions: vec![],
-            mention_roles: vec![],
-            mention_channels: vec![],
-            attachments: vec![],
-            embeds: vec![],
-            reactions: vec![],
-            nonce: None,
-            pinned: false,
-            webhook_id: None,
-            kind: MessageType::Regular,
-            activity: None,
-            application: None,
-            application_id: None,
-            message_reference: None,
-            flags: None,
-            referenced_message: None,
-            interaction: None,
-            thread: None,
-            components: vec![],
-            sticker_items: vec![],
-            stickers: vec![],
-            position: None,
-            role_subscription_data: None,
-        }
+        // 🔧 TEST INFRASTRUCTURE FIX: Use proper test utilities with realistic IDs
+        crate::discord::test_utils::create_test_message(content, author_bot)
     }
 
     #[test]

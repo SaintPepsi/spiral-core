@@ -32,28 +32,23 @@ mod tests {
             // Verify persona has required fields
             assert!(
                 !persona.name.is_empty(),
-                "Persona name cannot be empty for {:?}",
-                agent_type
+                "Persona name cannot be empty for {agent_type:?}"
             );
             assert!(
                 !persona.emoji.is_empty(),
-                "Persona emoji cannot be empty for {:?}",
-                agent_type
+                "Persona emoji cannot be empty for {agent_type:?}"
             );
             assert!(
                 !persona.greetings.is_empty(),
-                "Persona must have at least one greeting for {:?}",
-                agent_type
+                "Persona must have at least one greeting for {agent_type:?}"
             );
             assert!(
                 !persona.working_message.is_empty(),
-                "Working message cannot be empty for {:?}",
-                agent_type
+                "Working message cannot be empty for {agent_type:?}"
             );
             assert!(
                 !persona.personality_traits.is_empty(),
-                "Personality traits cannot be empty for {:?}",
-                agent_type
+                "Personality traits cannot be empty for {agent_type:?}"
             );
         }
     }

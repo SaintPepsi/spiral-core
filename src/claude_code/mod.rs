@@ -10,8 +10,4 @@ pub use command_builder::{ClaudeCommandBuilder, OutputFormat, PermissionMode, Se
 
 // 🧪 TEST MODULE: Comprehensive testing for external AI integration
 #[cfg(test)]
-mod tests;
-
-// 🔧 PUBLIC TEST UTILITIES: For integration testing from other modules
-// #[cfg(test)]
-// pub use tests::security::*;  // Disabled until security module has exports
+pub mod tests;

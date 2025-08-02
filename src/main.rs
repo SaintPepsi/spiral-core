@@ -1,5 +1,11 @@
 use spiral_core::discord::startup::start_discord_with_orchestrator;
-use spiral_core::{agents::AgentOrchestrator, api::ApiServer, config::Config, security};
+use spiral_core::{
+    agents::AgentOrchestrator,
+    api::ApiServer,
+    config::Config,
+    monitoring::{MonitoringConfig, SystemMonitor},
+    security,
+};
 use std::sync::Arc;
 use tokio::signal;
 use tracing::{error, info, warn, Level};
@@ -65,11 +71,24 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
+    // 🔧 STARTUP PHASE 4.6: Initialize system monitoring
+    info!("Initializing system monitoring...");
+    let system_monitor = SystemMonitor::new(MonitoringConfig::default());
+
+    // Register components for monitoring (Claude client will be registered by the orchestrator)
+    if let Err(e) = system_monitor.start_monitoring().await {
+        error!("Failed to start system monitoring: {}", e);
+        return Err(anyhow::Error::from(e));
+    }
+    info!("System monitoring initialized successfully");
+
+    let system_monitor = Arc::new(system_monitor);
+
     info!("Initializing API server...");
     let api_server = match ApiServer::new(config.clone(), orchestrator.clone()) {
         Ok(server) => {
             info!("API server initialized successfully");
-            server
+            server.with_system_monitor(system_monitor.clone())
         }
         Err(e) => {
             error!("Failed to initialize API server: {}", e);
@@ -127,7 +146,7 @@ async fn perform_startup_validations(config: &Config) -> anyhow::Result<()> {
 
     // Check Claude Code CLI availability
     if let Some(claude_binary) = &config.claude_code.claude_binary_path {
-        if !tokio::fs::metadata(claude_binary).await.is_ok() {
+        if tokio::fs::metadata(claude_binary).await.is_err() {
             error!("Claude Code binary not found at: {}", claude_binary);
             return Err(anyhow::anyhow!("Claude Code CLI not available"));
         }
@@ -155,8 +174,12 @@ async fn perform_startup_validations(config: &Config) -> anyhow::Result<()> {
         .claude_code
         .working_directory
         .as_ref()
-        .map(|d| std::path::PathBuf::from(d))
-        .unwrap_or_else(|| std::env::current_dir().unwrap().join("claude-workspaces"));
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::current_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                .join("claude-workspaces")
+        });
 
     if workspace_dir.exists() {
         match tokio::fs::metadata(&workspace_dir).await {
@@ -185,32 +208,44 @@ async fn perform_startup_validations(config: &Config) -> anyhow::Result<()> {
 
 /// 🛑 SHUTDOWN HANDLER: Setup signal handling for graceful shutdown
 /// DECISION: Handle multiple shutdown signals for cross-platform compatibility
-fn setup_shutdown_handler() -> impl std::future::Future<Output = ()> {
-    async {
-        let ctrl_c = async {
-            signal::ctrl_c()
-                .await
-                .expect("Failed to install Ctrl+C handler");
-        };
-
-        #[cfg(unix)]
-        let terminate = async {
-            signal::unix::signal(signal::unix::SignalKind::terminate())
-                .expect("Failed to install SIGTERM handler")
-                .recv()
-                .await;
-        };
-
-        #[cfg(not(unix))]
-        let terminate = std::future::pending::<()>();
-
-        tokio::select! {
-            _ = ctrl_c => {
-                info!("Received Ctrl+C signal");
+async fn setup_shutdown_handler() {
+    let ctrl_c = async {
+        match signal::ctrl_c().await {
+            Ok(()) => {}
+            Err(e) => {
+                error!("Failed to install Ctrl+C handler: {}", e);
+                // Still allow the program to run, but warn about missing handler
+                warn!("Graceful shutdown via Ctrl+C will not be available");
+                // Wait forever since we can't handle the signal
+                std::future::pending::<()>().await
             }
-            _ = terminate => {
-                info!("Received SIGTERM signal");
+        }
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match signal::unix::signal(signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
             }
+            Err(e) => {
+                error!("Failed to install SIGTERM handler: {}", e);
+                warn!("Graceful shutdown via SIGTERM will not be available");
+                // Wait forever since we can't handle the signal
+                std::future::pending::<()>().await
+            }
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            info!("Received Ctrl+C signal");
+        }
+        _ = terminate => {
+            info!("Received SIGTERM signal");
         }
     }
 }

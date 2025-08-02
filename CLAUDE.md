@@ -38,9 +38,13 @@ The system follows a "Spiral" naming convention for all components, using cosmic
 
 ## Development Commands
 
-This repository currently appears to be in early planning stages with no Cargo.toml file present. The main content consists of architecture documentation rather than implemented code.
+For standard Rust development commands and practices, see [Coding Standards](docs/CODING_STANDARDS.md#standard-development-commands).
 
-**Note**: Since there's no Cargo.toml file, standard Rust commands are not yet available. The project structure suggests this will be a Rust project once implementation begins.
+### Self-Update System
+
+The system can update itself through Discord mentions. See [Self-Update Guide](docs/SELF_UPDATE_GUIDE.md) for details.
+
+**Important**: Self-updates are only triggered via Discord mentions by authorized users, not through commands.
 
 ## Key Files and Structure
 
@@ -66,6 +70,7 @@ The system is designed around a sophisticated multi-agent architecture with:
 
 - **Claude Code Orchestration**: Agents specialize in coordinating Claude Code for different tasks
 - **Simplified Resource Management**: Track Claude Code API usage rather than complex prompt allocation
+- **Self-Update System**: Autonomous improvement capability with safety checks and rollback
 - **Tool Building System**: Agents request and coordinate tool creation via Claude Code
 - **Message Queue System**: Redis-based async communication between agents
 - **GitHub Integration**: Automated repository management, PR creation, and code review
@@ -83,14 +88,17 @@ The simplified architecture focuses on Claude Code orchestration with Discord as
 
 ## Development Notes
 
-- This appears to be a greenfield project in the planning/design phase
-- No actual Rust code has been implemented yet
+- **Active Development**: Core Discord bot and self-update system implemented
 - **Simplified Architecture**: Removed local LLM complexity, focusing on Claude Code orchestration
 - **Resource Efficient**: ~2.1GB memory usage (vs 8GB+ with local models)  
 - **M2 Optimized**: Native Apple Silicon compilation without GPU model management
 - Heavy emphasis on agent coordination via Claude Code
 - Discord serves as the primary human interface for the system
 - GitHub integration provides automated repository management
+
+### Self-Update Philosophy
+
+Following Uncle Iroh's wisdom: "A system that can improve itself is like tea that gets better with each steeping." The self-update system embodies careful, incremental improvement with robust safety mechanisms. See [Iroh's Wisdom](docs/IROH_WISDOM.md) for philosophical guidance.
 
 ## Coding Standards and Architecture Principles
 
@@ -99,8 +107,13 @@ The Spiral Core system follows strict architectural principles to ensure maintai
 - **SOLID Principles**: Single Responsibility, Open-Closed, Liskov Substitution, Interface Segregation, Dependency Inversion
 - **DRY Principle**: Don't Repeat Yourself - single source of truth for all knowledge  
 - **SID Naming**: Short, Intuitive, Descriptive naming conventions
+- **Early Return Pattern**: Use negative conditions with early returns for all validation and error handling
 
-For detailed implementation guidance and examples, see [Coding Standards](docs/CODING_STANDARDS.md).
+### Conditional Logic Standard
+
+**Required**: Use early returns with negative conditions for all validation and error handling. This pattern reduces nesting, improves readability, and optimizes the happy path.
+
+For detailed implementation guidance, code examples, and best practices, see [Coding Standards](docs/CODING_STANDARDS.md).
 
 ## Modular Documentation Architecture
 
@@ -108,12 +121,14 @@ This CLAUDE.md file serves as the orchestrator for specialized documentation mod
 
 ### Core System Modules
 
-- **[Coding Standards](docs/CODING_STANDARDS.md)** - SOLID, DRY, and SID principles with Rust-specific patterns
+- **[Coding Standards](docs/CODING_STANDARDS.md)** - SOLID, DRY, SID principles, development practices, and Rust patterns
 - **[Colocation Patterns](docs/COLOCATION_PATTERNS.md)** - Code organization, test colocation, and modular structure patterns
 - **[Task Checklist](docs/TASK_CHECKLIST.md)** - Pre-task documentation review and execution guidelines
 - **[Markdown Standards](docs/MARKDOWN_STANDARDS.md)** - Documentation formatting and style guidelines
-- **[Development Practices](docs/DEVELOPMENT_PRACTICES.md)** - Package management practices and prohibited commands
+- **[Development Practices](docs/CODING_STANDARDS.md#development-practices)** - Package management and development workflow
 - **[Security Policy](docs/SECURITY_POLICY.md)** - Security hardening measures and vulnerability reporting
+- **[Self-Update Guide](docs/SELF_UPDATE_GUIDE.md)** - How to use the self-update system
+- **[Iroh's Wisdom](docs/IROH_WISDOM.md)** - Philosophical principles guiding system design
 
 ### Agent System Modules  
 
@@ -158,3 +173,17 @@ This CLAUDE.md file serves as the orchestrator for specialized documentation mod
 3. **Self-Improvement Mechanisms** - Agent learning and adaptation
 
 For detailed implementation steps, database schemas, security frameworks, and code examples, see the respective modular documentation files.
+
+## 🚨 CRITICAL: Task Completion Requirements
+
+**NEVER declare a task "complete" or "done" without running these validations:**
+
+1. **Run Tests** - `cargo test` (ALL tests MUST pass)
+2. **Check Compilation** - `cargo check --all-targets` (MUST compile)
+3. **Check Formatting** - `cargo fmt -- --check` (MUST be formatted)
+4. **Run Clippy** - `cargo clippy --all-targets` (NO errors allowed)
+5. **Verify Changes** - Manually verify your changes work as intended
+
+See [Claude Completion Checklist](docs/CLAUDE_COMPLETION_CHECKLIST.md) for detailed requirements.
+
+**If ANY validation fails, you are NOT done - fix the issues first!**

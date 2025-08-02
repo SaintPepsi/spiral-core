@@ -1,0 +1,69 @@
+//! 🔄 SELF UPDATE MODULE: Autonomous system update functionality
+//!
+//! This module provides safe, controlled system updates through Claude Code integration.
+//! It ensures atomic updates with automatic rollback capabilities and comprehensive validation.
+//!
+//! # Architecture
+//!
+//! The self-update system is designed with safety as the primary concern:
+//! - **Bounded Queues**: Prevents memory exhaustion from unlimited update requests
+//! - **Git Snapshots**: Every update creates a restorable snapshot before changes
+//! - **Atomic Operations**: Updates either fully succeed or are completely rolled back
+//! - **Multi-Stage Validation**: Pre-flight checks, compilation, tests, and security validation
+//!
+//! # Components
+//!
+//! - `UpdateQueue`: Thread-safe queue for managing pending update requests
+//! - `GitOperations`: Safe git operations for snapshots and rollbacks
+//! - `UpdateValidator`: Validates requests and system changes
+//! - `PreflightChecker`: Ensures system is ready for updates
+//!
+//! # Safety Guarantees
+//!
+//! 1. **Input Sanitization**: All user inputs are sanitized to prevent injection attacks
+//! 2. **Resource Limits**: Queue size and content size are bounded to prevent DoS
+//! 3. **Authorization**: Only authorized users can trigger updates
+//! 4. **Rollback Capability**: Any failed update can be rolled back to previous state
+//!
+//! # Usage Example
+//!
+//! ```rust,no_run
+//! use spiral_core::discord::self_update::{UpdateQueue, SelfUpdateRequest, UpdateStatus};
+//! use serenity::model::id::{UserId, ChannelId};
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! let queue = UpdateQueue::new();
+//! let request = SelfUpdateRequest {
+//!     id: "update-123".to_string(),
+//!     codename: "feature-x".to_string(),
+//!     description: "Add feature X".to_string(),
+//!     user_id: 123456789,
+//!     channel_id: 987654321,
+//!     message_id: 111222333,
+//!     combined_messages: vec!["Add feature X functionality".to_string()],
+//!     timestamp: chrono::Utc::now().to_rfc3339(),
+//!     retry_count: 0,
+//!     status: UpdateStatus::Queued,
+//! };
+//!
+//! // Add request to queue
+//! queue.try_add_request(request).await?;
+//! # Ok(())
+//! # }
+//! ```
+
+mod git_ops;
+mod queue;
+mod status_tracker;
+mod types;
+mod validation;
+
+pub use git_ops::{GitOperations, SnapshotManager};
+pub use queue::{UpdateQueue, UpdateQueueStatus};
+pub use status_tracker::{ImplementationProgress, StatusTracker, UpdateType};
+pub use types::{SelfUpdateRequest, UpdateStatus};
+pub use validation::{PreflightChecker, UpdateValidator};
+
+// Re-export constants
+pub const MAX_QUEUE_SIZE: usize = 10;
+pub const MAX_UPDATE_CONTENT_SIZE: usize = 64 * 1024; // 64KB

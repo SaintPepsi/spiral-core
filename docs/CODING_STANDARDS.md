@@ -1,20 +1,21 @@
-# CLAUDE-core-coding-standards.md
+# Coding Standards and Development Practices
 
-**Purpose**: Establishes SOLID, DRY, and SID coding principles for all Spiral Core development
-**Dependencies**: None (this is a foundational reference)
-**Updated**: 2024-07-24
+**Purpose**: Single source of truth for all Spiral Core development standards and practices  
+**Updated**: 2024-08-01
 
-## Quick Start
+## Quick Reference
 
-All Spiral Core code must follow these three core principles:
+- **Architecture**: SOLID principles, DRY, SID naming
+- **Code Style**: Early returns, Rust idioms, type safety
+- **Development**: Local-only packages, no destructive commands
+- **Testing**: Colocated tests, comprehensive coverage
+- **Documentation**: Inline docs for public APIs, examples where beneficial
 
-- **SOLID**: Single Responsibility, Open-Closed, Liskov Substitution, Interface Segregation, Dependency Inversion
-- **DRY**: Don't Repeat Yourself - single source of truth for all knowledge
-- **SID**: Short, Intuitive, Descriptive naming for maximum clarity
+## Core Principles
 
-## SOLID Principles
+### SOLID Principles
 
-### Single Responsibility Principle (SRP)
+#### Single Responsibility Principle (SRP)
 
 Each component has one clear responsibility and one reason to change.
 
@@ -31,421 +32,355 @@ impl DeveloperAgent {
     }
 }
 
-// ✅ Good - Separate responsibility
-pub struct DiscordInterface {
-    bot_client: serenity::Client,
-}
-
-impl DiscordInterface {
-    pub async fn send_message(&self, content: &str) -> Result<(), DiscordError> {
-        // Only handles Discord communication
-    }
-}
-
 // ❌ Bad - Mixed responsibilities
 pub struct BadAgentManager {
     pub async fn generate_code(&mut self, requirements: &str) -> Result<CodeResult, AgentError> {
         // Handles code generation
     }
 
-    pub async fn send_discord_message(&self, content: &str) -> Result<(), DiscordError> {
-        // Also handles Discord communication - violates SRP
-    }
-
-    pub async fn manage_database(&self, query: &str) -> Result<DbResult, DbError> {
-        // Also handles database operations - violates SRP
+    pub async fn send_discord_message(&self, msg: &str) -> Result<(), DiscordError> {
+        // Also handles Discord communication
     }
 }
 ```
 
-### Open-Closed Principle (OCP)
+#### Open-Closed Principle (OCP)
 
-Components extensible through traits, not modification.
-
-```rust
-// ✅ Good - Open for extension, closed for modification
-pub trait LLMClient: Send + Sync {
-    async fn generate_response(&self, prompt: &str) -> Result<String, LLMError>;
-}
-
-pub struct ClaudeClient { /* implementation */ }
-pub struct OllamaClient { /* implementation */ }
-pub struct OpenAIClient { /* implementation */ }
-
-// All implement LLMClient trait - no modification of existing code needed
-
-// ❌ Bad - Requires modification to add new providers
-pub struct BadLLMManager {
-    pub fn generate_response(&self, provider: &str, prompt: &str) -> Result<String, Error> {
-        match provider {
-            "claude" => self.call_claude_api(prompt),
-            "openai" => self.call_openai_api(prompt),
-            // Adding new provider requires modifying this function!
-            "ollama" => self.call_ollama_api(prompt), // Violates OCP
-            _ => Err(Error::UnsupportedProvider),
-        }
-    }
-
-    // Every new provider needs a new method here
-    fn call_claude_api(&self, prompt: &str) -> Result<String, Error> { /* ... */ }
-    fn call_openai_api(&self, prompt: &str) -> Result<String, Error> { /* ... */ }
-    fn call_ollama_api(&self, prompt: &str) -> Result<String, Error> { /* ... */ }
-}
-```
-
-### Liskov Substitution Principle (LSP)
-
-Any component implementing a trait must be interchangeable with others.
+Open for extension, closed for modification.
 
 ```rust
-// ✅ Good - All agents substitutable
+// ✅ Good - Extensible via trait implementation
 pub trait Agent: Send + Sync {
-    async fn process_request(&mut self, request: &AgentRequest) -> Result<AgentResponse, AgentError>;
-    fn agent_type(&self) -> AgentType;
-    fn prompts_remaining(&self) -> u32;
+    async fn execute(&mut self, task: Task) -> Result<TaskResult, AgentError>;
+    async fn can_handle(&self, task: &Task) -> bool;
 }
 
-// Any Agent can be used in agent manager without knowing specific type
-pub struct AgentManager {
+// New agents extend without modifying existing code
+pub struct QAAgent { /* ... */ }
+impl Agent for QAAgent { /* ... */ }
+```
+
+#### Liskov Substitution Principle (LSP)
+
+Subtypes must be substitutable for their base types.
+
+```rust
+// ✅ Good - All agents respect the same contract
+fn execute_with_any_agent(agent: &mut dyn Agent, task: Task) -> Result<TaskResult, AgentError> {
+    agent.execute(task) // Works with any Agent implementation
+}
+```
+
+#### Interface Segregation Principle (ISP)
+
+Depend on narrow, focused interfaces.
+
+```rust
+// ✅ Good - Focused traits
+pub trait CodeGenerator {
+    async fn generate_code(&mut self, spec: &str) -> Result<Code, Error>;
+}
+
+pub trait CodeReviewer {
+    async fn review_code(&self, code: &Code) -> Result<Review, Error>;
+}
+
+// ❌ Bad - Fat interface
+pub trait BadAgent {
+    async fn generate_code(&mut self, spec: &str) -> Result<Code, Error>;
+    async fn review_code(&self, code: &Code) -> Result<Review, Error>;
+    async fn deploy_code(&self, code: &Code) -> Result<(), Error>;
+    async fn monitor_code(&self, code: &Code) -> Result<Metrics, Error>;
+}
+```
+
+#### Dependency Inversion Principle (DIP)
+
+Depend on abstractions, not concretions.
+
+```rust
+// ✅ Good - Depends on trait abstraction
+pub struct AgentOrchestrator {
     agents: Vec<Box<dyn Agent>>,
-}
-
-impl AgentManager {
-    pub async fn process_with_any_agent(&mut self, request: &AgentRequest) -> Result<AgentResponse, Error> {
-        // Can use any agent interchangeably - LSP satisfied
-        let agent = &mut self.agents[0];
-        agent.process_request(request).await
-    }
-}
-
-// ❌ Bad - LSP violation through different contracts
-pub trait BadAgent: Send + Sync {
-    async fn process_request(&mut self, request: &AgentRequest) -> Result<AgentResponse, AgentError>;
-}
-
-pub struct BadDeveloperAgent;
-impl BadAgent for BadDeveloperAgent {
-    async fn process_request(&mut self, request: &AgentRequest) -> Result<AgentResponse, AgentError> {
-        // Developer agent returns immediate response
-        Ok(AgentResponse::immediate("Task started"))
-    }
-}
-
-pub struct BadProjectManagerAgent;
-impl BadAgent for BadProjectManagerAgent {
-    async fn process_request(&mut self, request: &AgentRequest) -> Result<AgentResponse, AgentError> {
-        // PM agent requires different usage pattern - violates LSP!
-        if request.requires_analysis {
-            Ok(AgentResponse::analysis("Analysis complete"))
-        } else {
-            panic!("PM agent requires analysis flag!") // Breaks substitutability
-        }
-    }
-}
-```
-
-### Interface Segregation Principle (ISP)
-
-Components only depend on interfaces they actually use.
-
-```rust
-// ✅ Good - Segregated interfaces
-pub trait MessageSender {
-    async fn send_message(&self, msg: &AgentMessage) -> Result<(), MessageError>;
-}
-
-pub trait MessageReceiver {
-    async fn receive_messages(&mut self) -> Result<Vec<AgentMessage>, MessageError>;
-}
-
-pub trait ConversationManager {
-    async fn start_conversation(&self, topic: &str) -> Result<ConversationId, ConversationError>;
-}
-
-// Agents only implement what they need
-impl MessageSender for DeveloperAgent { /* only sending */ }
-impl MessageReceiver for QAAgent { /* only receiving */ }
-
-// ❌ Bad - Monolithic interface forces unnecessary dependencies
-pub trait BadAgentInterface {
-    async fn send_message(&self, msg: &AgentMessage) -> Result<(), MessageError>;
-    async fn receive_messages(&mut self) -> Result<Vec<AgentMessage>, MessageError>;
-    async fn start_conversation(&self, topic: &str) -> Result<ConversationId, ConversationError>;
-    async fn manage_database(&self, query: &str) -> Result<DbResult, DbError>;
-    async fn handle_file_upload(&self, file: File) -> Result<(), FileError>;
-    async fn process_payments(&self, payment: Payment) -> Result<(), PaymentError>;
-}
-
-// Forces all agents to implement irrelevant methods
-impl BadAgentInterface for DeveloperAgent {
-    // Developer agent shouldn't handle payments!
-    async fn process_payments(&self, payment: Payment) -> Result<(), PaymentError> {
-        Err(PaymentError::NotSupported) // Violates ISP
-    }
-}
-```
-
-### Dependency Inversion Principle (DIP)
-
-Depend on abstractions (traits), not concrete implementations.
-
-```rust
-// ✅ Good - Depends on abstraction
-pub struct ProjectManager {
     llm_client: Box<dyn LLMClient>,
-    message_sender: Box<dyn MessageSender>,
-    tool_registry: Box<dyn ToolRegistry>,
 }
 
 // ❌ Bad - Depends on concrete types
-pub struct BadProjectManager {
-    claude_client: ClaudeClient,
-    discord_sender: DiscordSender,
-    file_tool_registry: FileToolRegistry,
+pub struct BadOrchestrator {
+    developer_agent: DeveloperAgent,
+    claude_client: ClaudeClient, // Concrete implementation
 }
 ```
 
-## DRY Principle (Don't Repeat Yourself)
+### DRY Principle (Don't Repeat Yourself)
 
-Every piece of knowledge must have a single, unambiguous, authoritative representation.
-
-### Configuration Management
+Single source of truth for all knowledge.
 
 ```rust
-// ✅ Good - Single source of truth
-#[derive(Deserialize)]
-pub struct Config {
-    pub agents: AgentConfig,
-    pub llm: LLMConfig,
-    pub discord: DiscordConfig,
+// ✅ Good - Centralized configuration
+pub const MAX_RETRIES: u32 = 3;
+pub const TIMEOUT_SECONDS: u64 = 30;
+
+pub struct RetryConfig {
+    pub max_retries: u32,
+    pub timeout: Duration,
 }
 
-// All components use the same config instance
-```
-
-### Error Handling
-
-```rust
-// ✅ Good - Centralized error types
-#[derive(Debug, thiserror::Error)]
-pub enum CoreError {
-    #[error("Agent error: {0}")]
-    Agent(#[from] AgentError),
-    #[error("LLM error: {0}")]
-    LLM(#[from] LLMError),
-    #[error("Communication error: {0}")]
-    Communication(#[from] MessageError),
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_retries: MAX_RETRIES,
+            timeout: Duration::from_secs(TIMEOUT_SECONDS),
+        }
+    }
 }
 
-// ❌ Bad - Repeated error handling in each module
-// Each module defines its own similar error types and handling
-```
-
-### Prompt Templates
-
-```rust
-// ✅ Good - Reusable prompt templates
-pub struct PromptTemplateEngine {
-    templates: HashMap<String, String>,
-}
-
-impl PromptTemplateEngine {
-    pub fn render(&self, template_name: &str, context: &Context) -> Result<String, TemplateError> {
-        // Single implementation used by all agents
+// ❌ Bad - Duplicated values
+impl DeveloperAgent {
+    async fn execute(&mut self) -> Result<()> {
+        let max_retries = 3; // Duplicated
+        let timeout = Duration::from_secs(30); // Duplicated
+        // ...
     }
 }
 ```
 
-## SID Naming Convention (Short, Intuitive, Descriptive)
-
-### Short
-
-Names should be concise but not cryptic.
+### SID Naming Convention (Short, Intuitive, Descriptive)
 
 ```rust
-// ✅ Good
-let agent_count = 6;
-let msg_queue = MessageQueue::new();
-let llm_client = create_client();
+// ✅ Good SID naming
+pub struct TaskQueue { }           // Short, clear purpose
+pub fn validate_input() { }        // Intuitive action
+pub const MAX_QUEUE_SIZE: usize = 1000; // Descriptive constant
 
-// ❌ Bad - Too long
-let number_of_currently_active_agents = 6;
-let message_queue_for_inter_agent_communication = MessageQueue::new();
-
-// ❌ Bad - Too cryptic
-let n = 6;
-let mq = MessageQueue::new();
-let c = create_client();
+// ❌ Bad naming
+pub struct TQ { }                  // Too short, unclear
+pub fn do_validation_on_input_data() { } // Too verbose
+pub const SIZE: usize = 1000;      // Not descriptive
 ```
 
-### Intuitive
+## Code Style Requirements
 
-Names should read naturally and be immediately understandable.
+### Early Return Pattern (Required)
 
-```rust
-// ✅ Good - Natural language flow
-if should_escalate_to_human {
-    agent.request_human_approval().await?;
-}
-
-let can_process_request = agent.has_sufficient_prompts();
-
-// ❌ Bad - Awkward or unclear
-if escalation_human_needed {
-    agent.human_request_approve().await?;
-}
-
-let prompt_check_ok = agent.prompt_count_sufficient();
-```
-
-### Descriptive
-
-Names should clearly indicate purpose and content.
+All validation and error handling must use early returns with negative conditions.
 
 ```rust
-// ✅ Good - Clear purpose
-pub struct ToolBuildingRequest {
-    pub tool_name: String,
-    pub requesting_agent: AgentId,
-    pub requirements: Vec<String>,
-    pub priority_score: u8,
+// ✅ REQUIRED: Early return pattern
+fn process_task(task: &Task) -> Result<()> {
+    // Validate inputs first (negative conditions)
+    if task.description.is_empty() {
+        return Err(Error::InvalidInput("Task description cannot be empty"));
+    }
+
+    if task.priority > Priority::MAX {
+        return Err(Error::InvalidInput("Priority exceeds maximum"));
+    }
+
+    if !self.can_handle_task(task) {
+        return Err(Error::Unsupported("Agent cannot handle this task type"));
+    }
+
+    // Happy path - unindented and clear
+    let result = self.execute_task(task)?;
+    self.record_result(result)?;
+    Ok(())
 }
 
-pub async fn validate_tool_requirements(req: &ToolBuildingRequest) -> Result<ValidationResult, ValidationError> {
-    // Function name clearly indicates what it does
-}
-
-// ❌ Bad - Vague purpose
-pub struct Request {
-    pub name: String,
-    pub agent: AgentId,
-    pub data: Vec<String>,
-    pub score: u8,
-}
-
-pub async fn check(req: &Request) -> Result<bool, Error> {
-    // Unclear what this function checks
+// ❌ AVOID: Nested conditionals
+fn process_task(task: &Task) -> Result<()> {
+    if !task.description.is_empty() {
+        if task.priority <= Priority::MAX {
+            if self.can_handle_task(task) {
+                let result = self.execute_task(task)?;
+                self.record_result(result)?;
+                Ok(())
+            } else {
+                Err(Error::Unsupported("Agent cannot handle this task type"))
+            }
+        } else {
+            Err(Error::InvalidInput("Priority exceeds maximum"))
+        }
+    } else {
+        Err(Error::InvalidInput("Task description cannot be empty"))
+    }
 }
 ```
 
-## Rust-Specific Best Practices
+### Rust-Specific Patterns
 
-### Type Safety
+#### Error Handling
 
 ```rust
-// ✅ Good - Strong typing prevents errors
-#[derive(Debug, Clone, PartialEq)]
+// ✅ Use Result types with descriptive errors
+pub enum AgentError {
+    RateLimitExceeded { retry_after: Duration },
+    InvalidTask { reason: String },
+    ExecutionFailed { task_id: String, cause: String },
+}
+
+// ✅ Use ? operator for propagation
+async fn execute_task(&mut self, task: Task) -> Result<TaskResult, AgentError> {
+    let validated = self.validate_task(&task)?;
+    let prepared = self.prepare_execution(validated)?;
+    self.run_execution(prepared).await
+}
+```
+
+#### Type Safety
+
+```rust
+// ✅ Use NewType pattern for domain types
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SessionId(String);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AgentId(String);
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ConversationId(String);
-
-// Impossible to accidentally pass wrong ID type
-pub fn get_agent_by_id(id: AgentId) -> Option<Box<dyn Agent>> { /* */ }
+// Prevents mixing up IDs
+fn get_session(session_id: SessionId) -> Option<Session> { }
 ```
 
-### Advanced Error Handling
+## Development Practices
+
+### Environment Setup
+
+1. **Clone repository**
+2. **Install dependencies**: `npm install` (no -g flag)
+3. **Use npx**: All Node commands run through `npx`
+4. **Cargo commands**: Use standard Rust toolchain
+
+### Package Management
+
+#### ✅ Approved Practices
+
+```bash
+# Local packages only
+npm install --save-dev <package>
+npx <command>
+
+# Rust development
+cargo build
+cargo test
+cargo clippy
+cargo fmt
+```
+
+#### ❌ Prohibited Commands
+
+Never run:
+
+- Global npm installs (`npm install -g`)
+- Destructive system commands (`rm -rf /`)
+- System-wide permission changes
+- Direct package manager modifications
+
+### Standard Development Commands
+
+```bash
+# Rust commands
+cargo build              # Build the project
+cargo test              # Run all tests
+cargo test -- --nocapture    # Tests with output
+cargo clippy            # Linting
+cargo fmt               # Format code
+
+# Documentation
+cargo doc --open        # Generate and view docs
+
+# Node/npm commands
+npm run lint:md         # Check markdown
+npm run format:md       # Format markdown
+```
+
+## Testing Standards
+
+### Test Organization
+
+- Unit tests in `#[cfg(test)] mod tests` blocks
+- Integration tests in `tests/` directory
+- Doctests for usage examples
+
+### Test Naming
 
 ```rust
-// ✅ Good - Comprehensive error types with context
-#[derive(Debug, thiserror::Error)]
-pub enum AgentError {
-    #[error("Insufficient prompts: {remaining} remaining, {required} required")]
-    InsufficientPrompts { remaining: u32, required: u32 },
+#[test]
+fn test_validate_session_extends_expiry() { }  // Clear behavior
 
-    #[error("Agent {agent_id} not found")]
-    AgentNotFound { agent_id: AgentId },
-
-    #[error("Invalid agent state transition from {from:?} to {to:?}")]
-    InvalidStateTransition { from: AgentState, to: AgentState },
-}
+#[test]
+fn test_queue_rejects_when_full() { }         // Negative case
 ```
 
-### Memory Management
+### Test Coverage
 
-```rust
-// ✅ Good - Clear ownership patterns
-pub struct AgentManager {
-    agents: HashMap<AgentId, Box<dyn Agent>>,
-    message_queue: Arc<MessageQueue>,
-    config: Arc<Config>,
-}
+- Public APIs must have tests
+- Error paths must be tested
+- Edge cases documented in tests
 
-// Use Arc for shared immutable data, Box for owned dynamic types
-```
+## Documentation Requirements
 
-## Code Organization Rules
+### Inline Documentation
 
-### Module Structure
+````rust
+/// Validates and extends an active session.
+///
+/// # Arguments
+/// * `session_id` - The ID of the session to validate
+///
+/// # Returns
+/// * `Ok(Session)` - The validated session with extended expiry
+/// * `Err(Error::NotFound)` - If session doesn't exist
+/// * `Err(Error::Expired)` - If session has expired
+///
+/// # Example
+/// ```
+/// let session = manager.validate_session(&id).await?;
+/// assert!(session.expires_at > Utc::now());
+/// ```
+pub async fn validate_session(&self, session_id: &SessionId) -> Result<Session> {
+````
 
-```rust
-// src/lib.rs
-pub mod agents;      // All agent implementations
-pub mod communication; // Message queues, Discord interface
-pub mod llm;         // LLM client abstractions
-pub mod tools;       // Tool building and registry
-pub mod config;      // Configuration management
-pub mod errors;      // Centralized error types
+### Module Documentation
 
-// Each module has clear, non-overlapping responsibilities
-```
+````rust
+//! # Session Management
+//!
+//! This module provides secure session management with:
+//! - Automatic expiry handling
+//! - Concurrent session limits
+//! - Activity tracking
+//!
+//! ## Usage
+//! ```
+//! let manager = SessionManager::new(config);
+//! let session = manager.create_session(user_id).await?;
+//! ```
+````
 
-### Testing Standards
+## Code Review Checklist
 
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn developer_agent_generates_valid_code() {
-        // Test names describe exact behavior being tested
-        // Use descriptive test data that represents real scenarios
-    }
-
-    #[tokio::test]
-    async fn agent_escalates_when_prompts_exhausted() {
-        // Each test validates one specific behavior
-    }
-}
-```
-
-## Common Pitfalls
-
-### Violating Single Responsibility
-
-- **Problem**: Agent classes that handle multiple concerns (communication + logic + persistence)
-- **Solution**: Separate into focused components with clear interfaces
-
-### Over-abstraction
-
-- **Problem**: Creating traits/interfaces for every single struct
-- **Solution**: Only abstract when you have multiple implementations or expect future extension
-
-### Inconsistent Naming
-
-- **Problem**: Mixed naming conventions across the codebase
-- **Solution**: Use this SID guide consistently and review naming in code reviews
-
-## Integration Points
-
-This coding standards module is referenced by:
-
-- All agent-specific documentation files
-- Integration documentation (Discord, GitHub, Claude Code)
-- Implementation phase documentation
-
-## Testing Strategy
-
-These standards are enforced through:
-
-- Rust compiler (type safety, memory management)
-- Code reviews (naming conventions, SOLID adherence)
-- Automated linting (clippy, rustfmt)
-- Architecture decision records (ADRs) for major design choices
+- [ ] Follows SOLID principles
+- [ ] No code duplication (DRY)
+- [ ] SID naming convention used
+- [ ] Early return pattern for validation
+- [ ] Proper error handling (no unwrap in production)
+- [ ] Tests included for new functionality
+- [ ] Public APIs documented
+- [ ] No prohibited commands used
 
 ## Related Documentation
 
-- See [Developer Agent](../src/agents/docs/AGENTS_DEVELOPER.md) for agent-specific applications
-- See [Discord Integration](../src/integrations/docs/INTEGRATIONS_DISCORD.md) for Discord-specific patterns
-- See [Implementation Guide](../src/implementation/docs/IMPLEMENTATION_PHASE1.md) for practical application
+- [Colocation Patterns](COLOCATION_PATTERNS.md) - File organization
+- [Task Checklist](TASK_CHECKLIST.md) - Pre-task verification
+- [Security Policy](SECURITY_POLICY.md) - Security requirements
+- [Self-Update Guide](SELF_UPDATE_GUIDE.md) - Update procedures
+
+## Migration Notes
+
+This document consolidates the former `CODING_STANDARDS.md` and `DEVELOPMENT_PRACTICES.md` files:
+
+- Merged architectural principles and development workflow
+- Removed duplication (e.g., early return pattern)
+- Created single source of truth for all development standards
+
+All teams should reference this document for coding standards and development practices.

@@ -1,9 +1,15 @@
 pub mod intent_classifier;
+pub mod lordgenome_quotes;
 pub mod message_security;
 pub mod message_state_manager;
+pub mod messages;
 pub mod secure_message_handler;
+pub mod self_update;
 pub mod spiral_constellation_bot;
 pub mod startup;
+
+#[cfg(test)]
+pub mod test_utils;
 
 #[cfg(test)]
 pub mod tests;

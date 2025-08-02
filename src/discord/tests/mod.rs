@@ -4,10 +4,13 @@
 //! Alternative: Minimal testing (rejected: too much business logic to leave uncovered)
 //! Audit: Verify all critical bot functions work correctly
 
+mod auto_core_update_tests;
+mod detailed_validation_tests;
 mod intent_classification_tests;
 mod message_security_tests;
 mod persona_tests;
 mod security_integration_tests;
+mod security_logging_tests;
 mod security_tests;
 
 // Test modules are internal - no need to re-export them

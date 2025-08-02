@@ -2,6 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, str::FromStr};
 use uuid::Uuid;
 
+/// Represents a task to be processed by an agent
+///
+/// Tasks are the fundamental unit of work in the Spiral Core system.
+/// Each task is assigned to a specific agent type and includes priority
+/// and status tracking.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub id: String,
@@ -14,6 +19,10 @@ pub struct Task {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Types of specialized agents available in the system
+///
+/// Each agent type has specific capabilities and responsibilities
+/// within the orchestration system.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum AgentType {
     SoftwareDeveloper,
@@ -25,6 +34,10 @@ pub enum AgentType {
     SpiralKing,
 }
 
+/// Task priority levels
+///
+/// Higher priority tasks are processed before lower priority ones
+/// when multiple tasks are queued.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub enum Priority {
     Low,
@@ -33,6 +46,7 @@ pub enum Priority {
     Critical,
 }
 
+/// Current status of a task in the processing pipeline
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum TaskStatus {
     Pending,
@@ -42,6 +56,10 @@ pub enum TaskStatus {
     Cancelled,
 }
 
+/// Result of a completed task execution
+///
+/// Contains the outcome of task processing along with any metadata
+/// generated during execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskResult {
     pub task_id: String,
@@ -72,6 +90,7 @@ pub struct AgentCapability {
     pub required_tools: Vec<String>,
 }
 
+/// Represents a message from Discord that needs processing
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscordMessage {
     pub content: String,
@@ -82,6 +101,9 @@ pub struct DiscordMessage {
 }
 
 impl Task {
+    /// Creates a new task with the specified agent type, content, and priority
+    ///
+    /// The task is assigned a unique ID and initialized with pending status.
     pub fn new(agent_type: AgentType, content: String, priority: Priority) -> Self {
         let now = chrono::Utc::now();
         Self {

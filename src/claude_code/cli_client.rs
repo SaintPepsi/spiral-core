@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::fs;
@@ -338,14 +338,14 @@ impl ClaudeCodeCliClient {
 
         let (workspace_path, is_new) = if let Some(sid) = session_id {
             // Use specific session ID for workspace
-            let session_workspace = base_workspace_dir.join(format!("session-{}", sid));
+            let session_workspace = base_workspace_dir.join(format!("session-{sid}"));
             let is_new_session = !session_workspace.exists();
 
             if is_new_session {
                 fs::create_dir_all(&session_workspace)
                     .await
                     .map_err(|e| SpiralError::Agent {
-                        message: format!("Failed to create session workspace: {}", e),
+                        message: format!("Failed to create session workspace: {e}"),
                     })?;
                 info!("Created new session workspace for session: {}", sid);
             } else {
@@ -361,7 +361,7 @@ impl ClaudeCodeCliClient {
             fs::create_dir_all(&workspace_path)
                 .await
                 .map_err(|e| SpiralError::Agent {
-                    message: format!("Failed to create workspace: {}", e),
+                    message: format!("Failed to create workspace: {e}"),
                 })?;
 
             (workspace_path, true)
@@ -399,14 +399,14 @@ impl ClaudeCodeCliClient {
             fs::read_dir(&base_workspace_dir)
                 .await
                 .map_err(|e| SpiralError::Agent {
-                    message: format!("Failed to read workspace directory: {}", e),
+                    message: format!("Failed to read workspace directory: {e}"),
                 })?;
 
         let mut cleaned_count = 0;
         let now = std::time::SystemTime::now();
 
         while let Some(entry) = entries.next_entry().await.map_err(|e| SpiralError::Agent {
-            message: format!("Failed to read workspace entry: {}", e),
+            message: format!("Failed to read workspace entry: {e}"),
         })? {
             let path = entry.path();
             if !path.is_dir() {
@@ -466,7 +466,7 @@ impl ClaudeCodeCliClient {
             fs::read_dir(&base_workspace_dir)
                 .await
                 .map_err(|e| SpiralError::Agent {
-                    message: format!("Failed to read workspace directory: {}", e),
+                    message: format!("Failed to read workspace directory: {e}"),
                 })?;
 
         let mut workspace_count = 0;
@@ -475,7 +475,7 @@ impl ClaudeCodeCliClient {
         let now = std::time::SystemTime::now();
 
         while let Some(entry) = entries.next_entry().await.map_err(|e| SpiralError::Agent {
-            message: format!("Failed to read workspace entry: {}", e),
+            message: format!("Failed to read workspace entry: {e}"),
         })? {
             let path = entry.path();
             if !path.is_dir() {
@@ -509,33 +509,34 @@ impl ClaudeCodeCliClient {
     }
 
     /// Calculate directory size recursively
-    fn calculate_directory_size<'a>(
-        &'a self,
-        dir: &'a PathBuf,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<u64>> + 'a>> {
-        Box::pin(async move {
-            let mut total_size = 0;
-            let mut entries = fs::read_dir(dir).await.map_err(|e| SpiralError::Agent {
-                message: format!("Failed to read directory: {}", e),
-            })?;
+    async fn calculate_directory_size_impl(dir: &PathBuf) -> Result<u64> {
+        let mut total_size = 0;
+        let mut entries = fs::read_dir(dir).await.map_err(|e| SpiralError::Agent {
+            message: format!("Failed to read directory: {e}"),
+        })?;
 
-            while let Some(entry) = entries.next_entry().await.map_err(|e| SpiralError::Agent {
-                message: format!("Failed to read directory entry: {}", e),
-            })? {
-                let path = entry.path();
-                if path.is_file() {
-                    if let Ok(metadata) = entry.metadata().await {
-                        total_size += metadata.len();
-                    }
-                } else if path.is_dir() {
-                    if let Ok(subdir_size) = self.calculate_directory_size(&path).await {
-                        total_size += subdir_size;
-                    }
+        while let Some(entry) = entries.next_entry().await.map_err(|e| SpiralError::Agent {
+            message: format!("Failed to read directory entry: {e}"),
+        })? {
+            let path = entry.path();
+            if path.is_file() {
+                if let Ok(metadata) = entry.metadata().await {
+                    total_size += metadata.len();
+                }
+            } else if path.is_dir() {
+                if let Ok(subdir_size) = Box::pin(Self::calculate_directory_size_impl(&path)).await
+                {
+                    total_size += subdir_size;
                 }
             }
+        }
 
-            Ok(total_size)
-        })
+        Ok(total_size)
+    }
+
+    /// Calculate directory size recursively
+    async fn calculate_directory_size(&self, dir: &PathBuf) -> Result<u64> {
+        Self::calculate_directory_size_impl(dir).await
     }
 
     /// 🔎 LIMITATION DETECTION: Parse responses for known constraint patterns
@@ -575,7 +576,7 @@ impl ClaudeCodeCliClient {
                 // For critical limitations, we might want to return an error
                 if matches!(*pattern, "timeout" | "quota exceeded" | "rate limit") {
                     return Err(SpiralError::Agent {
-                        message: format!("Claude Code limitation: {} - {}", pattern, suggestion),
+                        message: format!("Claude Code limitation: {pattern} - {suggestion}"),
                     });
                 }
             }
@@ -839,18 +840,18 @@ impl ClaudeCodeCliClient {
         let _sanitized_description = self
             .validator
             .validate_and_sanitize_task_content(&request.description)
-            .map_err(|e| SpiralError::Validation(format!("Invalid request content: {}", e)))?;
+            .map_err(|e| SpiralError::Validation(format!("Invalid request content: {e}")))?;
 
         // Validate context keys and values
         for (key, value) in &request.context {
             self.validator.validate_context_key(key).map_err(|e| {
-                SpiralError::Validation(format!("Invalid context key '{}': {}", key, e))
+                SpiralError::Validation(format!("Invalid context key '{key}': {e}"))
             })?;
             let _sanitized_value = self
                 .validator
                 .validate_and_sanitize_context_value(value)
                 .map_err(|e| {
-                    SpiralError::Validation(format!("Invalid context value for '{}': {}", key, e))
+                    SpiralError::Validation(format!("Invalid context value for '{key}': {e}"))
                 })?;
         }
 
@@ -998,7 +999,7 @@ impl ClaudeCodeCliClient {
         response: ClaudeCodeCliResponse,
         language: String,
         session_id: Option<&str>,
-        workspace_path: &PathBuf,
+        workspace_path: &Path,
     ) -> Result<CodeGenerationResult> {
         let result_text = &response.result;
 
@@ -1132,6 +1133,43 @@ impl ClaudeCodeCliClient {
         &self,
     ) -> crate::claude_code::circuit_breaker::CircuitBreakerMetrics {
         self.circuit_breaker.get_metrics().await
+    }
+
+    /// 🔧 CONNECTIVITY CHECK: Test Claude API connectivity with a lightweight request
+    /// Returns Ok(true) if connected, Ok(false) if not available, Err on failures
+    pub async fn test_connectivity(&self) -> Result<bool> {
+        debug!("Testing Claude Code API connectivity");
+
+        // First check if circuit breaker allows the request
+        if !self.circuit_breaker.should_allow_request().await {
+            debug!("Circuit breaker is open, Claude API unavailable");
+            return Ok(false);
+        }
+
+        // Use a minimal prompt that should complete quickly
+        let test_prompt = "Respond with just 'ok' to confirm connectivity.";
+
+        let start = std::time::Instant::now();
+        match self.execute_with_fallback(test_prompt).await {
+            Ok(response) => {
+                let elapsed = start.elapsed();
+                debug!("Claude API connectivity test succeeded in {:?}", elapsed);
+
+                // Verify we got a reasonable response
+                if response.result.to_lowercase().contains("ok") {
+                    info!("Claude API connectivity verified");
+                    Ok(true)
+                } else {
+                    warn!("Claude API returned unexpected response for connectivity test");
+                    Ok(false)
+                }
+            }
+            Err(e) => {
+                warn!("Claude API connectivity test failed: {}", e);
+                // Don't propagate the error, just indicate not connected
+                Ok(false)
+            }
+        }
     }
 }
 

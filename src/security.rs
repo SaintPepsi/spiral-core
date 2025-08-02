@@ -41,7 +41,7 @@ pub fn save_api_key_to_file(api_key: &str) -> Result<(), SpiralError> {
 
     // Write the API key to file
     fs::write(API_KEY_FILE, api_key).map_err(|e| {
-        SpiralError::ConfigurationError(format!("Failed to write API key file: {}", e))
+        SpiralError::ConfigurationError(format!("Failed to write API key file: {e}"))
     })?;
 
     // Set restrictive permissions (owner read/write only)
@@ -50,12 +50,12 @@ pub fn save_api_key_to_file(api_key: &str) -> Result<(), SpiralError> {
         use std::os::unix::fs::PermissionsExt;
         let mut perms = fs::metadata(API_KEY_FILE)
             .map_err(|e| {
-                SpiralError::ConfigurationError(format!("Failed to get file metadata: {}", e))
+                SpiralError::ConfigurationError(format!("Failed to get file metadata: {e}"))
             })?
             .permissions();
         perms.set_mode(0o600); // Owner read/write only
         fs::set_permissions(API_KEY_FILE, perms).map_err(|e| {
-            SpiralError::ConfigurationError(format!("Failed to set file permissions: {}", e))
+            SpiralError::ConfigurationError(format!("Failed to set file permissions: {e}"))
         })?;
     }
 
@@ -73,7 +73,7 @@ pub fn load_api_key_from_file() -> Result<Option<String>, SpiralError> {
     }
 
     let api_key = fs::read_to_string(API_KEY_FILE).map_err(|e| {
-        SpiralError::ConfigurationError(format!("Failed to read API key file: {}", e))
+        SpiralError::ConfigurationError(format!("Failed to read API key file: {e}"))
     })?;
 
     let api_key = api_key.trim().to_string();
@@ -221,12 +221,13 @@ mod tests {
         ];
 
         for invalid_key in invalid_keys {
-            if invalid_key.len() != API_KEY_LENGTH
-                || !invalid_key.chars().all(|c| c.is_alphanumeric())
-            {
-                // This simulates the validation logic
-                assert!(true, "Invalid key correctly identified: {}", &invalid_key);
-            }
+            // Verify that invalid keys don't meet our requirements
+            assert!(
+                invalid_key.len() != API_KEY_LENGTH
+                    || !invalid_key.chars().all(|c| c.is_alphanumeric()),
+                "Key should be invalid: {}",
+                &invalid_key
+            );
         }
     }
 

@@ -13,7 +13,7 @@ mod message_validation_security {
     fn test_message_content_sanitization() {
         let validator = MessageSecurityValidator::new();
 
-        let malicious_messages = vec![
+        let malicious_messages = [
             "<script>alert('xss')</script>",            // XSS attempt
             "javascript:alert(1)",                      // JavaScript protocol
             "data:text/html,<script>alert(1)</script>", // Data URI
@@ -29,8 +29,7 @@ mod message_validation_security {
             // All malicious content should be detected and rejected
             assert!(
                 !result.is_valid,
-                "Malicious message #{} not detected: {}",
-                i, content
+                "Malicious message #{i} not detected: {content}"
             );
             assert!(
                 result.risk_level != RiskLevel::Low,
@@ -46,7 +45,7 @@ mod message_validation_security {
 
         let test_cases = vec![
             ("".to_string(), false),      // Empty message
-            ("a".repeat(1), true),        // Minimum valid length
+            ("a".to_string(), true),      // Minimum valid length
             ("a".repeat(4000), true),     // Max length (4000)
             ("a".repeat(4001), false),    // Just over limit
             ("a".repeat(10000), false),   // Way over limit
@@ -86,8 +85,7 @@ mod message_validation_security {
             let result = validator.validate_attachment_name(attachment);
             assert!(
                 !result.is_valid,
-                "Dangerous attachment should be blocked: {}",
-                attachment
+                "Dangerous attachment should be blocked: {attachment}"
             );
             assert!(
                 result.risk_level != RiskLevel::Low,
@@ -108,8 +106,7 @@ mod message_validation_security {
             let result = validator.validate_attachment_name(attachment);
             assert!(
                 result.is_valid,
-                "Safe attachment should be allowed: {}",
-                attachment
+                "Safe attachment should be allowed: {attachment}"
             );
             assert_eq!(
                 result.risk_level,
@@ -136,8 +133,7 @@ mod message_validation_security {
         for pattern in spam_patterns {
             assert!(
                 validator.is_spam_message(pattern),
-                "Spam pattern not detected: {}",
-                pattern
+                "Spam pattern not detected: {pattern}"
             );
         }
 
@@ -151,8 +147,7 @@ mod message_validation_security {
         for message in legitimate_messages {
             assert!(
                 !validator.is_spam_message(message),
-                "Legitimate message flagged as spam: {}",
-                message
+                "Legitimate message flagged as spam: {message}"
             );
         }
     }
@@ -162,7 +157,7 @@ mod message_validation_security {
     fn test_command_injection_prevention() {
         let validator = MessageSecurityValidator::new();
 
-        let injection_attempts = vec![
+        let injection_attempts = [
             "!admin $(rm -rf /)",                               // Command substitution
             "!config `whoami`",                                 // Backtick execution
             "!system ${PATH}",                                  // Variable expansion
@@ -179,14 +174,12 @@ mod message_validation_security {
             let result = validator.validate_command_input(command);
             assert!(
                 !result.is_valid,
-                "Command injection #{} not detected: {}",
-                i, command
+                "Command injection #{i} not detected: {command}"
             );
             assert_eq!(
                 result.risk_level,
                 RiskLevel::Critical,
-                "Command injection should be critical risk: {}",
-                command
+                "Command injection should be critical risk: {command}"
             );
         }
     }
@@ -207,14 +200,12 @@ mod message_validation_security {
             let result = validator.validate_command_input(command);
             assert!(
                 result.is_valid,
-                "Safe command incorrectly flagged: {}",
-                command
+                "Safe command incorrectly flagged: {command}"
             );
             assert_eq!(
                 result.risk_level,
                 RiskLevel::Low,
-                "Safe command should have low risk: {}",
-                command
+                "Safe command should have low risk: {command}"
             );
         }
 
@@ -226,14 +217,12 @@ mod message_validation_security {
             // These are considered safe since they don't contain dangerous chars/keywords
             assert!(
                 result.is_valid,
-                "Safe admin command should be valid: {}",
-                command
+                "Safe admin command should be valid: {command}"
             );
             assert_eq!(
                 result.risk_level,
                 RiskLevel::Low,
-                "Safe admin command should have low risk: {}",
-                command
+                "Safe admin command should have low risk: {command}"
             );
         }
     }
@@ -254,8 +243,7 @@ mod rate_limiting_security {
         for i in 0..5 {
             assert!(
                 rate_limiter.is_allowed(user_id, now + Duration::from_millis(i * 100)),
-                "Message {} should be allowed",
-                i
+                "Message {i} should be allowed"
             );
         }
 
@@ -263,8 +251,7 @@ mod rate_limiting_security {
         for i in 5..10 {
             assert!(
                 !rate_limiter.is_allowed(user_id, now + Duration::from_millis(i * 100)),
-                "Message {} should be blocked",
-                i
+                "Message {i} should be blocked"
             );
         }
 

@@ -328,7 +328,7 @@ impl IntentClassifier {
 
     /// Validate confidence score bounds
     pub fn validate_confidence_bounds(&self, confidence: f64) -> f64 {
-        confidence.max(0.0).min(1.0)
+        confidence.clamp(0.0, 1.0)
     }
 
     /// Get intent type from string (for testing)
@@ -443,12 +443,12 @@ impl IntentClassifier {
 
         // Create JSON log entry for easy AI parsing
         let log_entry = format!(
-            r#"{{"timestamp":{},"user_id":"{}","intent_type":"{}","confidence":{},"risk_level":"{}","message_length":{},"message_hash":"{:x}","context_keys":{},"has_dangerous_context":{},"is_impersonation":{},"contains_malicious_patterns":{},"contains_adversarial_patterns":{}}}"#,
+            r#"{{"timestamp":{},"user_id":"{}","intent_type":"{:?}","confidence":{},"risk_level":"{:?}","message_length":{},"message_hash":"{:x}","context_keys":{},"has_dangerous_context":{},"is_impersonation":{},"contains_malicious_patterns":{},"contains_adversarial_patterns":{}}}"#,
             timestamp,
             request.user_id,
-            format!("{:?}", response.intent_type),
+            response.intent_type,
             response.confidence,
-            format!("{:?}", response.risk_level),
+            response.risk_level,
             request.message.len(),
             message_hash,
             request.context.keys().len(),
@@ -463,17 +463,14 @@ impl IntentClassifier {
 
         // Write to daily log file (using simple date format to avoid chrono dependency)
         let days_since_epoch = timestamp / 86400; // seconds per day
-        let log_filename = format!(
-            "{}/intent_classifications_day_{}.jsonl",
-            log_dir, days_since_epoch
-        );
+        let log_filename = format!("{log_dir}/intent_classifications_day_{days_since_epoch}.jsonl");
 
         if let Ok(mut file) = OpenOptions::new()
             .create(true)
             .append(true)
             .open(&log_filename)
         {
-            let _ = writeln!(file, "{}", log_entry);
+            let _ = writeln!(file, "{log_entry}");
         }
     }
 }

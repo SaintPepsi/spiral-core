@@ -2,7 +2,8 @@ use serenity::model::id::{ChannelId, MessageId};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
 /// Represents a message update that should be applied
@@ -81,6 +82,9 @@ pub struct MessageStateManager {
     pending_messages: Arc<RwLock<HashMap<MessageId, PendingMessage>>>,
     config: MessageStateConfig,
     recovery_stats: Arc<Mutex<RecoveryStats>>,
+    // 🔧 RESOURCE LEAK FIX: Add task lifecycle management
+    cleanup_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    shutdown_signal_sender: Arc<Mutex<Option<mpsc::Sender<()>>>>,
 }
 
 #[derive(Debug, Default)]
@@ -96,6 +100,9 @@ impl MessageStateManager {
             pending_messages: Arc::new(RwLock::new(HashMap::new())),
             config,
             recovery_stats: Arc::new(Mutex::new(RecoveryStats::default())),
+            // 🔧 RESOURCE LEAK FIX: Initialize task management
+            cleanup_handle: Arc::new(Mutex::new(None)),
+            shutdown_signal_sender: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -215,17 +222,62 @@ impl MessageStateManager {
         }
     }
 
-    /// Start background cleanup task
-    pub fn start_cleanup_task(self: Arc<Self>) {
+    /// Start background cleanup task with proper lifecycle management
+    /// 🔧 RESOURCE LEAK FIX: Properly managed background task with shutdown capability
+    pub async fn start_cleanup_task(self: Arc<Self>) {
         let cleanup_interval = self.config.cleanup_interval;
+        let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel::<()>(1);
 
-        tokio::spawn(async move {
+        // Store the shutdown channel for later cleanup
+        {
+            let mut sender_guard = self.shutdown_signal_sender.lock().await;
+            *sender_guard = Some(shutdown_signal_sender);
+        }
+
+        let manager_clone = Arc::clone(&self);
+        let handle = tokio::spawn(async move {
             let mut interval = tokio::time::interval(cleanup_interval);
+
             loop {
-                interval.tick().await;
-                self.cleanup_expired_messages().await;
+                tokio::select! {
+                    _ = interval.tick() => {
+                        manager_clone.cleanup_expired_messages().await;
+                    }
+                    _ = shutdown_signal_receiver.recv() => {
+                        info!("MessageStateManager cleanup task shutting down gracefully");
+                        break;
+                    }
+                }
             }
         });
+
+        // Store the handle for proper cleanup
+        {
+            let mut handle_guard = self.cleanup_handle.lock().await;
+            *handle_guard = Some(handle);
+        }
+
+        info!("MessageStateManager cleanup task started with graceful shutdown capability");
+    }
+
+    /// Shutdown cleanup task and free resources
+    /// 🔧 RESOURCE LEAK FIX: Proper task shutdown and resource cleanup
+    pub async fn shutdown(&self) {
+        info!("Shutting down MessageStateManager...");
+
+        // Signal shutdown
+        if let Some(sender) = self.shutdown_signal_sender.lock().await.take() {
+            let _ = sender.send(()).await; // Ignore send errors if receiver is dropped
+        }
+
+        // Wait for task to complete
+        if let Some(handle) = self.cleanup_handle.lock().await.take() {
+            if let Err(e) = handle.await {
+                warn!("Error waiting for cleanup task to complete: {}", e);
+            }
+        }
+
+        info!("MessageStateManager shutdown complete");
     }
 }
 

@@ -178,7 +178,7 @@ impl ClaudeCommandBuilder {
     /// 🏗️ BUILD FINAL COMMAND
     /// DECISION: Return tokio::process::Command for async execution
     /// Why: Integrates seamlessly with async runtime
-    /// Alternative: Return Vec<String> (rejected: loses type safety)
+    /// Alternative: Return `Vec<String>` (rejected: loses type safety)
     pub fn build(self) -> Command {
         let mut command = Command::new(&self.binary_path);
 

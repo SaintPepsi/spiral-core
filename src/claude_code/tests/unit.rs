@@ -33,15 +33,13 @@ fn test_prompt_injection_prevention() {
                     assert!(
                         msg.contains("Invalid request content")
                             || msg.contains("dangerous pattern"),
-                        "Should provide appropriate error message for: {}",
-                        malicious_input
+                        "Should provide appropriate error message for: {malicious_input}"
                     );
                 }
                 Err(crate::SpiralError::Agent { message }) => {
                     assert!(
                         message.contains("dangerous pattern"),
-                        "Should detect dangerous pattern for: {}",
-                        malicious_input
+                        "Should detect dangerous pattern for: {malicious_input}"
                     );
                 }
                 _ => panic!("Should return appropriate error type for prompt injection"),

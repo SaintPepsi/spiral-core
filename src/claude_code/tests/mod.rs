@@ -9,3 +9,7 @@ mod unit;
 /// 🛡️ SECURITY TEST SUITE: Comprehensive security validation
 /// CRITICAL: AI integrations have unique security considerations
 pub mod security;
+
+/// 🧪 MOCK IMPLEMENTATIONS: Test doubles for controlled testing
+/// Why: Enable deterministic testing without external dependencies
+pub mod mock;

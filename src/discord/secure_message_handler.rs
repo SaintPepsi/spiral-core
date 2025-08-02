@@ -203,8 +203,15 @@ impl SecureMessageHandler {
 
     /// Verify user with security checks
     fn verify_user(&self, user: &User) -> UserVerificationResult {
-        let validator = self.security_validator.lock().unwrap();
-        validator.verify_user(user)
+        match self.security_validator.lock() {
+            Ok(validator) => validator.verify_user(user),
+            Err(_) => UserVerificationResult {
+                is_verified: false,
+                permissions: vec![],
+                risk_level: RiskLevel::Critical,
+                is_bot: user.bot,
+            },
+        }
     }
 
     /// Extract contextual information from message
@@ -256,7 +263,7 @@ impl SecureMessageHandler {
         user_verification: &UserVerificationResult,
         intent_response: &IntentResponse,
     ) -> RiskLevel {
-        let risk_levels = vec![
+        let risk_levels = [
             &message_validation.risk_level,
             &user_verification.risk_level,
             &intent_response.risk_level,
@@ -276,43 +283,80 @@ impl SecureMessageHandler {
 
     /// Check if command input is safe
     pub fn validate_command_input(&self, input: &str) -> MessageValidationResult {
-        let validator = self.security_validator.lock().unwrap();
-        validator.validate_command_input(input)
+        match self.security_validator.lock() {
+            Ok(validator) => validator.validate_command_input(input),
+            Err(_) => MessageValidationResult {
+                is_valid: false,
+                risk_level: RiskLevel::Critical,
+                issues: vec!["Failed to acquire security validator lock".to_string()],
+                sanitized_content: None,
+            },
+        }
     }
 
     /// Check rate limiting for user
     pub fn check_rate_limit(&self, user_id: u64) -> bool {
-        let mut validator = self.security_validator.lock().unwrap();
-        validator.check_rate_limit(user_id)
+        match self.security_validator.lock() {
+            Ok(mut validator) => validator.check_rate_limit(user_id),
+            Err(_) => {
+                // On lock error, deny access for safety
+                warn!("Failed to acquire security validator lock for rate limit check");
+                false
+            }
+        }
     }
 
     /// Get remaining messages for user
     pub fn get_remaining_messages(&self, user_id: u64) -> usize {
-        let validator = self.security_validator.lock().unwrap();
-        validator.get_remaining_messages(user_id)
+        match self.security_validator.lock() {
+            Ok(validator) => validator.get_remaining_messages(user_id),
+            Err(_) => {
+                warn!("Failed to acquire security validator lock for remaining messages check");
+                0 // Return 0 remaining messages on error
+            }
+        }
     }
 
     /// Reset rate limit for user (admin function)
     pub fn reset_rate_limit(&self, user_id: u64) {
-        let mut validator = self.security_validator.lock().unwrap();
-        validator.reset_rate_limit(user_id);
+        match self.security_validator.lock() {
+            Ok(mut validator) => validator.reset_rate_limit(user_id),
+            Err(_) => {
+                error!("Failed to acquire security validator lock for rate limit reset");
+            }
+        }
     }
 
     /// Get security metrics
     pub fn get_security_metrics(&self) -> SecurityMetrics {
-        let metrics = self.metrics.lock().unwrap();
-        metrics.clone()
+        match self.metrics.lock() {
+            Ok(metrics) => metrics.clone(),
+            Err(_) => {
+                error!("Failed to acquire metrics lock");
+                SecurityMetrics::default()
+            }
+        }
     }
 
     /// Reset security metrics
     pub fn reset_security_metrics(&self) {
-        let mut metrics = self.metrics.lock().unwrap();
-        *metrics = SecurityMetrics::default();
+        match self.metrics.lock() {
+            Ok(mut metrics) => *metrics = SecurityMetrics::default(),
+            Err(_) => {
+                error!("Failed to acquire metrics lock for reset");
+            }
+        }
     }
 
     /// Update intent classification metrics
     pub fn update_intent_metrics(&self, intent_response: &IntentResponse) {
-        let mut metrics = self.metrics.lock().unwrap();
+        let mut metrics = match self.metrics.lock() {
+            Ok(m) => m,
+            Err(_) => {
+                error!("Failed to acquire metrics lock for intent update");
+                return;
+            }
+        };
 
         // Update classification count and confidence tracking
         metrics.classification_count += 1;
@@ -340,18 +384,30 @@ impl SecureMessageHandler {
 
     /// Get average confidence score
     pub fn get_average_confidence(&self) -> f64 {
-        let metrics = self.metrics.lock().unwrap();
-        if metrics.classification_count > 0 {
-            metrics.total_confidence / metrics.classification_count as f64
-        } else {
-            0.0
+        match self.metrics.lock() {
+            Ok(metrics) => {
+                if metrics.classification_count > 0 {
+                    metrics.total_confidence / metrics.classification_count as f64
+                } else {
+                    0.0
+                }
+            }
+            Err(_) => {
+                error!("Failed to acquire metrics lock for confidence score");
+                0.0
+            }
         }
     }
 
     /// Check if message should be processed (quick check)
     pub fn should_process_message(&self, message: &Message) -> bool {
-        let validator = self.security_validator.lock().unwrap();
-        validator.should_process_message(message)
+        match self.security_validator.lock() {
+            Ok(validator) => validator.should_process_message(message),
+            Err(_) => {
+                warn!("Failed to acquire security validator lock for message processing check");
+                false // Deny processing on lock error
+            }
+        }
     }
 
     /// Get sanitized version of message content
@@ -370,7 +426,16 @@ impl SecureMessageHandler {
     pub fn analyze_security_threats(&self, message: &Message) -> Vec<String> {
         let mut threats = Vec::new();
 
-        let validator = self.security_validator.lock().unwrap();
+        let validator = match self.security_validator.lock() {
+            Ok(v) => v,
+            Err(_) => {
+                threats.push(
+                    "CRITICAL: Failed to acquire security validator lock - system anomaly detected"
+                        .to_string(),
+                );
+                return threats;
+            }
+        };
 
         // Check content validation
         let content_result = validator.validate_message_content(&message.content);
@@ -460,7 +525,7 @@ impl Default for SecureMessageHandler {
     }
 }
 
-#[cfg(disabled)] // Disabled due to Serenity struct construction issues
+#[cfg(feature = "discord-tests")] // Disabled due to Serenity struct construction issues
 mod tests {
     use super::*;
     use serenity::model::id::*;
@@ -468,60 +533,8 @@ mod tests {
 
     /// Helper function to create a mock message
     fn create_test_message(content: &str, author_bot: bool) -> Message {
-        use std::collections::HashMap;
-
-        Message {
-            id: MessageId::new(1),
-            channel_id: ChannelId::new(1),
-            guild_id: Some(GuildId::new(1)),
-            author: User {
-                id: UserId::new(1),
-                name: "test_user".to_string(),
-                discriminator: None,
-                global_name: None,
-                avatar: None,
-                bot: author_bot,
-                system: false,
-                mfa_enabled: false,
-                banner: None,
-                accent_colour: None,
-                locale: None,
-                verified: Some(true),
-                email: None,
-                flags: None,
-                premium_type: None,
-                public_flags: None,
-                avatar_decoration: None,
-            },
-            content: content.to_string(),
-            timestamp: serenity::model::Timestamp::now(),
-            edited_timestamp: None,
-            tts: false,
-            mention_everyone: false,
-            mentions: vec![],
-            mention_roles: vec![],
-            mention_channels: vec![],
-            attachments: vec![],
-            embeds: vec![],
-            reactions: vec![],
-            nonce: None,
-            pinned: false,
-            webhook_id: None,
-            kind: MessageType::Regular,
-            activity: None,
-            application: None,
-            application_id: None,
-            message_reference: None,
-            flags: None,
-            referenced_message: None,
-            interaction: None,
-            thread: None,
-            components: vec![],
-            sticker_items: vec![],
-            stickers: vec![],
-            position: None,
-            role_subscription_data: None,
-        }
+        // 🔧 TEST INFRASTRUCTURE FIX: Use proper test utilities with realistic IDs
+        crate::discord::test_utils::create_test_message(content, author_bot)
     }
 
     /// Helper function to create a mock context

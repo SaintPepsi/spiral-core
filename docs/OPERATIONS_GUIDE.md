@@ -462,4 +462,4 @@ Watch for:
 
 ---
 
-This operations guide provides comprehensive procedures for running Spiral Core in production. For development-specific guidance, see [DEVELOPMENT_PRACTICES.md](DEVELOPMENT_PRACTICES.md).
+This operations guide provides comprehensive procedures for running Spiral Core in production. For development-specific guidance, see [CODING_STANDARDS.md](CODING_STANDARDS.md#development-practices).

@@ -46,18 +46,18 @@ impl AtomicTaskStateManager {
                 }
                 TaskStatus::InProgress => {
                     return Err(SpiralError::Agent {
-                        message: format!("Task {} is already in progress", task_id),
+                        message: format!("Task {task_id} is already in progress"),
                     });
                 }
                 TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled => {
                     return Err(SpiralError::Agent {
-                        message: format!("Task {} has already been processed", task_id),
+                        message: format!("Task {task_id} has already been processed"),
                     });
                 }
             }
         } else {
             return Err(SpiralError::Agent {
-                message: format!("Task {} not found in storage", task_id),
+                message: format!("Task {task_id} not found in storage"),
             });
         }
 
@@ -93,7 +93,7 @@ impl AtomicTaskStateManager {
 
         // Get task from storage
         let task = storage.get_mut(task_id).ok_or_else(|| SpiralError::Agent {
-            message: format!("Task {} not found in storage", task_id),
+            message: format!("Task {task_id} not found in storage"),
         })?;
 
         // Verify task is in correct state
@@ -140,7 +140,7 @@ impl AtomicTaskStateManager {
 
         // Get task from storage
         let task = storage.get_mut(task_id).ok_or_else(|| SpiralError::Agent {
-            message: format!("Task {} not found in storage", task_id),
+            message: format!("Task {task_id} not found in storage"),
         })?;
 
         // Verify task is in correct state

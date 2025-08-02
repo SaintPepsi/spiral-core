@@ -3,6 +3,7 @@ use crate::{
     auth::{auth_middleware, create_auth_state},
     config::{ApiConfig, Config},
     models::{AgentType, Priority, Task, TaskStatus},
+    monitoring::SystemMonitor,
     rate_limit::rate_limit_middleware, // RateLimitConfig},
     validation::TaskContentValidator,
     Result,
@@ -20,13 +21,14 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 use tower::ServiceBuilder;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 #[derive(Clone)]
 pub struct ApiServer {
     config: ApiConfig,
     orchestrator: Arc<AgentOrchestrator>,
     validator: TaskContentValidator,
+    system_monitor: Option<Arc<SystemMonitor>>,
     // rate_limiter: RateLimitConfig,
 }
 
@@ -61,6 +63,23 @@ pub struct AgentStatusResponse {
     pub tasks_completed: u64,
     pub tasks_failed: u64,
     pub average_execution_time: f64,
+}
+
+/// 🔧 DRY PRINCIPLE: Single conversion logic for AgentStatus -> AgentStatusResponse
+/// DECISION: Centralize status mapping to eliminate code duplication
+/// Why: Reduces maintenance burden and ensures consistency across endpoints
+/// Alternative: Inline mapping (rejected: violates DRY principle)
+impl From<crate::agents::AgentStatus> for AgentStatusResponse {
+    fn from(status: crate::agents::AgentStatus) -> Self {
+        Self {
+            agent_type: status.agent_type,
+            is_busy: status.is_busy,
+            current_task_id: status.current_task_id,
+            tasks_completed: status.tasks_completed,
+            tasks_failed: status.tasks_failed,
+            average_execution_time: status.average_execution_time,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -121,8 +140,15 @@ impl ApiServer {
             config: config.api,
             orchestrator,
             validator,
+            system_monitor: None,
             // rate_limiter,
         })
+    }
+
+    /// Set the system monitor for monitoring endpoints
+    pub fn with_system_monitor(mut self, monitor: Arc<SystemMonitor>) -> Self {
+        self.system_monitor = Some(monitor);
+        self
     }
 
     pub async fn run(&self) -> Result<()> {
@@ -176,6 +202,10 @@ impl ApiServer {
             .route("/agents", get(get_all_agent_statuses))
             .route("/agents/:agent_type", get(get_agent_status))
             .route("/system/status", get(get_system_status))
+            .route("/system/metrics", get(get_system_metrics))
+            .route("/system/metrics/history", get(get_metrics_history))
+            .route("/system/health", get(get_system_health))
+            .route("/circuit-breakers", get(get_circuit_breaker_status))
             .route("/workspaces", get(get_all_workspaces_status))
             .layer(
                 ServiceBuilder::new()
@@ -202,7 +232,8 @@ async fn health_check() -> Json<serde_json::Value> {
 async fn create_task(
     State(api_server): State<ApiServer>,
     Json(request): Json<CreateTaskRequest>,
-) -> std::result::Result<Json<CreateTaskResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> std::result::Result<(StatusCode, Json<CreateTaskResponse>), (StatusCode, Json<ErrorResponse>)>
+{
     // 🛡️ SECURITY AUDIT CHECKPOINT: Content validation and sanitization
     // CRITICAL: This is the primary defense against malicious task content
     // Verify: XSS prevention, injection attack mitigation, content length limits
@@ -255,7 +286,7 @@ async fn create_task(
                 .validator
                 .validate_and_sanitize_context_value(&value)
             {
-                Ok(val) => val,
+                Ok(sanitized_value) => sanitized_value,
                 Err(_) => {
                     warn!(
                         "Invalid context value for key '{}': {}",
@@ -284,10 +315,13 @@ async fn create_task(
             // ✅ SUCCESSFUL SUBMISSION: Task accepted by orchestrator
             // AUDIT: Verify task ID generation security and uniqueness
             info!("Task {} successfully submitted to orchestrator", task_id);
-            Ok(Json(CreateTaskResponse {
-                task_id,
-                status: "submitted".to_string(),
-            }))
+            Ok((
+                StatusCode::CREATED,
+                Json(CreateTaskResponse {
+                    task_id,
+                    status: "submitted".to_string(),
+                }),
+            ))
         }
         Err(e) => {
             // 🚨 SUBMISSION FAILURE AUDIT CHECKPOINT: System capacity or validation issue
@@ -380,14 +414,7 @@ async fn get_agent_status(
         }
     };
     match api_server.orchestrator.get_agent_status(&agent_type).await {
-        Some(status) => Ok(Json(AgentStatusResponse {
-            agent_type: status.agent_type,
-            is_busy: status.is_busy,
-            current_task_id: status.current_task_id,
-            tasks_completed: status.tasks_completed,
-            tasks_failed: status.tasks_failed,
-            average_execution_time: status.average_execution_time,
-        })),
+        Some(status) => Ok(Json(status.into())),
         None => Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
@@ -404,19 +431,7 @@ async fn get_all_agent_statuses(
     let statuses = api_server.orchestrator.get_all_agent_statuses().await;
     let response: HashMap<AgentType, AgentStatusResponse> = statuses
         .into_iter()
-        .map(|(agent_type, status)| {
-            (
-                agent_type,
-                AgentStatusResponse {
-                    agent_type: status.agent_type,
-                    is_busy: status.is_busy,
-                    current_task_id: status.current_task_id,
-                    tasks_completed: status.tasks_completed,
-                    tasks_failed: status.tasks_failed,
-                    average_execution_time: status.average_execution_time,
-                },
-            )
-        })
+        .map(|(agent_type, status)| (agent_type, status.into()))
         .collect();
 
     Json(response)
@@ -429,19 +444,7 @@ async fn get_system_status(State(api_server): State<ApiServer>) -> Json<SystemSt
 
     let agents: HashMap<AgentType, AgentStatusResponse> = agent_statuses
         .into_iter()
-        .map(|(agent_type, status)| {
-            (
-                agent_type,
-                AgentStatusResponse {
-                    agent_type: status.agent_type,
-                    is_busy: status.is_busy,
-                    current_task_id: status.current_task_id,
-                    tasks_completed: status.tasks_completed,
-                    tasks_failed: status.tasks_failed,
-                    average_execution_time: status.average_execution_time,
-                },
-            )
-        })
+        .map(|(agent_type, status)| (agent_type, status.into()))
         .collect();
 
     Json(SystemStatusResponse {
@@ -660,8 +663,108 @@ fn format_bytes_human_readable(bytes: u64) -> String {
     }
 
     if unit_index == 0 {
-        format!("{} {}", bytes, UNITS[unit_index])
+        format!("{bytes} {}", UNITS[unit_index])
     } else {
-        format!("{:.1} {}", size, UNITS[unit_index])
+        format!("{size:.1} {}", UNITS[unit_index])
+    }
+}
+
+/// 📊 SYSTEM METRICS ENDPOINT: Current system performance and health metrics
+/// DECISION: Real-time metrics for operational visibility
+/// Why: Enables proactive monitoring and troubleshooting
+/// Alternative: Log-only metrics (rejected: not accessible for monitoring tools)
+async fn get_system_metrics(
+    State(server): State<ApiServer>,
+) -> std::result::Result<Json<serde_json::Value>, StatusCode> {
+    if let Some(monitor) = &server.system_monitor {
+        let metrics = monitor.get_current_metrics().await;
+        match serde_json::to_value(metrics) {
+            Ok(value) => Ok(Json(value)),
+            Err(e) => {
+                error!("Failed to serialize metrics: {}", e);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
+    } else {
+        Err(StatusCode::SERVICE_UNAVAILABLE)
+    }
+}
+
+/// 📈 METRICS HISTORY ENDPOINT: Historical performance data
+/// DECISION: Provide metrics history for trend analysis
+/// Why: Enables identification of performance patterns and degradation
+/// Alternative: Current metrics only (rejected: no trend visibility)
+async fn get_metrics_history(
+    State(server): State<ApiServer>,
+) -> std::result::Result<Json<serde_json::Value>, StatusCode> {
+    if let Some(monitor) = &server.system_monitor {
+        let history = monitor.get_metrics_history().await;
+        Ok(Json(serde_json::json!({
+            "metrics_count": history.len(),
+            "metrics": history
+        })))
+    } else {
+        Err(StatusCode::SERVICE_UNAVAILABLE)
+    }
+}
+
+/// 🏥 SYSTEM HEALTH ENDPOINT: Overall health assessment
+/// DECISION: Simple health check with detailed status
+/// Why: Standard health check endpoint for load balalncers and monitoring
+/// Alternative: Binary healthy/unhealthy (rejected: insufficient detail)
+async fn get_system_health(
+    State(server): State<ApiServer>,
+) -> std::result::Result<Json<serde_json::Value>, StatusCode> {
+    if let Some(monitor) = &server.system_monitor {
+        let health_status = monitor.get_health_status().await;
+
+        Ok(Json(serde_json::json!({
+            "status": health_status,
+            "service": "spiral-core",
+            "version": "0.1.0",
+            "timestamp": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+        })))
+    } else {
+        Ok(Json(serde_json::json!({
+            "status": "unknown",
+            "service": "spiral-core",
+            "version": "0.1.0",
+            "error": "monitoring not available"
+        })))
+    }
+}
+
+/// ⚡ CIRCUIT BREAKER STATUS ENDPOINT: Circuit breaker states and metrics
+/// DECISION: Dedicated endpoint for circuit breaker monitoring
+/// Why: Circuit breaker health is critical for system reliability
+/// Alternative: Include in general metrics (rejected: needs specific visibility)
+async fn get_circuit_breaker_status(
+    State(server): State<ApiServer>,
+) -> std::result::Result<Json<serde_json::Value>, StatusCode> {
+    if let Some(monitor) = &server.system_monitor {
+        let metrics = monitor.get_current_metrics().await;
+        Ok(Json(serde_json::json!({
+            "circuit_breakers": metrics.circuit_breakers,
+            "timestamp": metrics.timestamp
+        })))
+    } else {
+        // Fallback: get directly from orchestrator's Claude client if available
+        if let Ok(client) = server.orchestrator.get_claude_client() {
+            let cb_metrics = client.get_circuit_breaker_metrics().await;
+            Ok(Json(serde_json::json!({
+                "circuit_breakers": {
+                    "claude_code": cb_metrics
+                },
+                "timestamp": std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+            })))
+        } else {
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        }
     }
 }

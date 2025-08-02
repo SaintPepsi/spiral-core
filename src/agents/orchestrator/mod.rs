@@ -7,7 +7,10 @@ use crate::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::task::JoinHandle;
+use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
 
 mod atomic_state;
@@ -24,6 +27,9 @@ pub struct AgentOrchestrator {
     start_time: Arc<std::time::Instant>,
     claude_client: Arc<ClaudeCodeClient>,
     atomic_state: Arc<AtomicTaskStateManager>,
+    // 🔧 RESOURCE LEAK FIX: Add task lifecycle management for orchestrator
+    task_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    shutdown_signal_sender: Arc<Mutex<Option<mpsc::Sender<()>>>>,
 }
 
 impl AgentOrchestrator {
@@ -81,53 +87,132 @@ impl AgentOrchestrator {
             start_time: Arc::new(std::time::Instant::now()),
             claude_client: Arc::new(claude_client),
             atomic_state,
+            // 🔧 RESOURCE LEAK FIX: Initialize task management
+            task_handles: Arc::new(Mutex::new(Vec::new())),
+            shutdown_signal_sender: Arc::new(Mutex::new(None)),
         })
     }
 
+    /// Start orchestrator with proper task lifecycle management
+    /// 🔧 RESOURCE LEAK FIX: Managed tasks with graceful shutdown
     pub async fn run(&self) -> Result<()> {
-        info!("Starting Agent Orchestrator");
+        info!("Starting Agent Orchestrator with managed task lifecycle");
 
-        let (result_tx, mut result_rx) = mpsc::unbounded_channel();
+        // Create shutdown channel
+        let (shutdown_signal_sender, shutdown_signal_receiver) = mpsc::channel::<()>(1);
+        {
+            let mut sender_guard = self.shutdown_signal_sender.lock().await;
+            *sender_guard = Some(shutdown_signal_sender);
+        }
+
+        let (result_sender, result_receiver) = mpsc::unbounded_channel();
         {
             let mut sender = self.result_sender.lock().await;
-            *sender = Some(result_tx);
+            *sender = Some(result_sender);
         }
 
-        let orchestrator = self.clone();
-        let task_processor = tokio::spawn(async move { orchestrator.process_tasks().await });
+        // Start managed tasks with shutdown capability
+        let handles = self
+            .start_managed_tasks(result_receiver, shutdown_signal_receiver)
+            .await;
 
-        let result_processor = tokio::spawn(async move {
-            while let Some(result) = result_rx.recv().await {
-                info!(
-                    "Received task result: {} - {:?}",
-                    result.task_id, result.result
-                );
+        // Store handles for cleanup
+        {
+            let mut handles_guard = self.task_handles.lock().await;
+            *handles_guard = handles;
+        }
+
+        info!("Agent Orchestrator started with managed task lifecycle");
+        Ok(())
+    }
+
+    /// Start all orchestrator tasks with shutdown management
+    async fn start_managed_tasks(
+        &self,
+        mut result_receiver: mpsc::UnboundedReceiver<TaskResult>,
+        mut shutdown_signal_receiver: mpsc::Receiver<()>,
+    ) -> Vec<JoinHandle<()>> {
+        let mut handles = Vec::new();
+
+        // Task processor with shutdown
+        let orchestrator = self.clone();
+        let handle = tokio::spawn(async move {
+            orchestrator.process_tasks_managed().await;
+        });
+        handles.push(handle);
+
+        // Result processor with shutdown
+        let handle = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    result = result_receiver.recv() => {
+                        match result {
+                            Some(result) => {
+                                info!("Received task result: {} - {:?}", result.task_id, result.result);
+                            }
+                            None => break, // Channel closed
+                        }
+                    }
+                    _ = shutdown_signal_receiver.recv() => {
+                        info!("Result processor shutting down gracefully");
+                        break;
+                    }
+                }
             }
         });
+        handles.push(handle);
 
+        // Cleanup processor with shutdown
         let cleanup_orchestrator = self.clone();
-        let cleanup_processor =
-            tokio::spawn(async move { cleanup_orchestrator.cleanup_loop().await });
+        let handle = tokio::spawn(async move {
+            cleanup_orchestrator.cleanup_loop_managed().await;
+        });
+        handles.push(handle);
 
-        tokio::select! {
-            result = task_processor => {
-                if let Err(e) = result {
-                    error!("Task processor failed: {}", e);
+        handles
+    }
+
+    /// Shutdown orchestrator and clean up all resources
+    /// 🔧 RESOURCE LEAK FIX: Proper shutdown of all background tasks
+    pub async fn shutdown(&self) {
+        info!("Shutting down Agent Orchestrator...");
+
+        // Signal shutdown to all tasks
+        if let Some(sender) = self.shutdown_signal_sender.lock().await.take() {
+            let _ = sender.send(()).await; // Ignore send errors if receiver is dropped
+        }
+
+        // Wait for all tasks to complete with timeout
+        let handles = {
+            let mut handles_guard = self.task_handles.lock().await;
+            std::mem::take(&mut *handles_guard)
+        };
+
+        // In test mode, use shorter timeout to prevent hanging
+        let shutdown_timeout = if cfg!(test) {
+            Duration::from_secs(2)
+        } else {
+            Duration::from_secs(30)
+        };
+
+        for (i, handle) in handles.into_iter().enumerate() {
+            match timeout(shutdown_timeout, handle).await {
+                Ok(Ok(())) => {
+                    debug!("Orchestrator task {} completed successfully", i);
                 }
-            }
-            result = result_processor => {
-                if let Err(e) = result {
-                    error!("Result processor failed: {}", e);
+                Ok(Err(e)) => {
+                    warn!("Orchestrator task {} panicked: {}", i, e);
                 }
-            }
-            result = cleanup_processor => {
-                if let Err(e) = result {
-                    error!("Cleanup processor failed: {}", e);
+                Err(_) => {
+                    warn!(
+                        "Orchestrator task {} timed out after {:?}",
+                        i, shutdown_timeout
+                    );
                 }
             }
         }
 
-        Ok(())
+        info!("Agent Orchestrator shutdown complete");
     }
 
     /// 📝 USER REQUEST ENTRY POINT: Where human intentions become agent tasks
@@ -208,10 +293,20 @@ impl AgentOrchestrator {
         self.start_time.elapsed().as_secs_f64()
     }
 
-    async fn cleanup_loop(&self) -> Result<()> {
-        info!("Starting cleanup loop");
+    /// Managed cleanup loop with graceful shutdown
+    /// 🔧 RESOURCE LEAK FIX: Cleanup loop with shutdown signal handling
+    async fn cleanup_loop_managed(&self) {
+        info!("Starting managed cleanup loop");
 
         loop {
+            // Check for shutdown signal
+            if let Some(sender) = &*self.shutdown_signal_sender.lock().await {
+                if sender.is_closed() {
+                    info!("Cleanup loop shutting down gracefully");
+                    break;
+                }
+            }
+
             tokio::time::sleep(tokio::time::Duration::from_secs(
                 crate::constants::CLEANUP_INTERVAL_SECS,
             ))
@@ -291,10 +386,20 @@ impl AgentOrchestrator {
         agents.contains_key(agent_type)
     }
 
-    async fn process_tasks(&self) -> Result<()> {
-        info!("Task processor started");
+    /// Managed task processor with graceful shutdown
+    /// 🔧 RESOURCE LEAK FIX: Task processing loop with shutdown signal handling
+    async fn process_tasks_managed(&self) {
+        info!("Managed task processor started");
 
         loop {
+            // Check for shutdown signal
+            if let Some(sender) = &*self.shutdown_signal_sender.lock().await {
+                if sender.is_closed() {
+                    info!("Task processor shutting down gracefully");
+                    break;
+                }
+            }
+
             let task = {
                 let mut queue = self.task_queue.lock().await;
                 queue.pop()
@@ -423,18 +528,6 @@ impl AgentOrchestrator {
             })?;
 
         agent.analyze_task(task).await
-    }
-
-    pub async fn shutdown(&self) -> Result<()> {
-        info!("Shutting down Agent Orchestrator");
-
-        {
-            let mut sender = self.result_sender.lock().await;
-            *sender = None;
-        }
-
-        info!("Agent Orchestrator shutdown complete");
-        Ok(())
     }
 
     /// 🔧 CLAUDE CLIENT ACCESS: Provide access to Claude Code client for shutdown cleanup

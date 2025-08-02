@@ -5,6 +5,7 @@ use crate::SpiralError;
 use html_escape::encode_text;
 use regex::Regex;
 use std::collections::HashSet;
+use tracing::error;
 
 /// 📏 MAX TASK CONTENT LENGTH: DoS protection via size limits
 /// Why: 10KB allows full feature descriptions while preventing memory exhaustion
@@ -176,7 +177,28 @@ impl TaskContentValidator {
 
 impl Default for TaskContentValidator {
     fn default() -> Self {
-        Self::new().expect("Failed to create TaskContentValidator")
+        match Self::new() {
+            Ok(validator) => validator,
+            Err(_) => {
+                // Fallback to a basic validator with minimal regex
+                // This regex is a compile-time constant pattern, so it should never fail
+                // But we handle it properly anyway
+                match Regex::new(r"^[a-zA-Z0-9\s\-_.,!?]+$") {
+                    Ok(regex) => Self {
+                        safe_content_regex: regex,
+                        dangerous_patterns: HashSet::new(),
+                    },
+                    Err(e) => {
+                        // This should never happen with a valid regex pattern
+                        error!("Failed to compile basic safe content regex: {}", e);
+                        // Create a validator that rejects everything for safety
+                        // Use a regex that never matches by using negative lookahead
+                        // This is a failsafe that should never be reached
+                        panic!("Critical error: Cannot compile basic regex patterns. This indicates a serious issue with the regex engine.");
+                    }
+                }
+            }
+        }
     }
 }
 

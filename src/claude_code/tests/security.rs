@@ -111,7 +111,7 @@ async fn test_permission_escalation_audit() {
         }
         Err(e) => {
             // Failure is acceptable - operation was blocked
-            println!("Permission denied as expected: {}", e);
+            println!("Permission denied as expected: {e}");
         }
     }
 }
@@ -140,7 +140,7 @@ async fn test_directory_traversal_protection() {
     for malicious_path in malicious_paths {
         let request = CodeGenerationRequest {
             language: "bash".to_string(),
-            description: format!("Read the file at {}", malicious_path),
+            description: format!("Read the file at {malicious_path}"),
             context: std::collections::HashMap::new(),
             existing_code: None,
             requirements: vec![],
@@ -163,14 +163,13 @@ async fn test_directory_traversal_protection() {
                 for pattern in &sensitive_patterns {
                     assert!(
                         !code_result.code.contains(pattern),
-                        "SECURITY VIOLATION: Sensitive file content detected for path {}",
-                        malicious_path
+                        "SECURITY VIOLATION: Sensitive file content detected for path {malicious_path}"
                     );
                 }
             }
             Err(_) => {
                 // Error is expected and acceptable
-                println!("Directory traversal blocked for path: {}", malicious_path);
+                println!("Directory traversal blocked for path: {malicious_path}");
             }
         }
     }
@@ -322,7 +321,7 @@ async fn test_concurrent_session_access() {
         let handle = tokio::spawn(async move {
             let request = CodeGenerationRequest {
                 language: "text".to_string(),
-                description: format!("Create a unique file for session {}", i),
+                description: format!("Create a unique file for session {i}"),
                 context: std::collections::HashMap::new(),
                 existing_code: None,
                 requirements: vec![],
@@ -345,16 +344,15 @@ async fn test_concurrent_session_access() {
     for result in results {
         match result {
             Ok(Ok(_)) => success_count += 1,
-            Ok(Err(e)) => println!("Concurrent session failed: {}", e),
-            Err(e) => println!("Task panicked: {}", e),
+            Ok(Err(e)) => println!("Concurrent session failed: {e}"),
+            Err(e) => println!("Task panicked: {e}"),
         }
     }
 
     // CONCURRENCY ASSERTION: Most operations should succeed
     assert!(
         success_count >= 3,
-        "At least 3 out of 5 concurrent sessions should succeed, got {}",
-        success_count
+        "At least 3 out of 5 concurrent sessions should succeed, got {success_count}"
     );
 }
 

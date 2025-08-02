@@ -27,7 +27,7 @@ mod security_validator_tests {
 
         for input in malicious_inputs {
             let result = validator.validate_message_content(input);
-            assert!(!result.is_valid, "Should reject malicious input: {}", input);
+            assert!(!result.is_valid, "Should reject malicious input: {input}");
             assert!(
                 result.risk_level != RiskLevel::Low,
                 "Should have elevated risk"
@@ -56,8 +56,7 @@ mod security_validator_tests {
         for spam in spam_messages {
             assert!(
                 validator.is_spam_message(spam),
-                "Should detect spam: {}",
-                spam
+                "Should detect spam: {spam}"
             );
         }
 
@@ -70,8 +69,7 @@ mod security_validator_tests {
         for msg in legitimate_messages {
             assert!(
                 !validator.is_spam_message(msg),
-                "Should not flag as spam: {}",
-                msg
+                "Should not flag as spam: {msg}"
             );
         }
     }
@@ -85,8 +83,7 @@ mod security_validator_tests {
         for i in 0..5 {
             assert!(
                 validator.check_rate_limit(user_id),
-                "Message {} should be allowed",
-                i
+                "Message {i} should be allowed"
             );
         }
 
@@ -121,7 +118,7 @@ mod security_validator_tests {
 
         for cmd in dangerous_commands {
             let result = validator.validate_command_input(cmd);
-            assert!(!result.is_valid, "Should reject dangerous command: {}", cmd);
+            assert!(!result.is_valid, "Should reject dangerous command: {cmd}");
             assert_eq!(result.risk_level, RiskLevel::Critical);
         }
 
@@ -130,7 +127,7 @@ mod security_validator_tests {
 
         for cmd in safe_commands {
             let result = validator.validate_command_input(cmd);
-            assert!(result.is_valid, "Should accept safe command: {}", cmd);
+            assert!(result.is_valid, "Should accept safe command: {cmd}");
         }
     }
 
@@ -147,14 +144,14 @@ mod security_validator_tests {
 
         for file in dangerous_files {
             let result = validator.validate_attachment_name(file);
-            assert!(!result.is_valid, "Should reject dangerous file: {}", file);
+            assert!(!result.is_valid, "Should reject dangerous file: {file}");
         }
 
         let safe_files = vec!["image.png", "document.pdf", "data.csv"];
 
         for file in safe_files {
             let result = validator.validate_attachment_name(file);
-            assert!(result.is_valid, "Should accept safe file: {}", file);
+            assert!(result.is_valid, "Should accept safe file: {file}");
         }
     }
 }
@@ -278,7 +275,7 @@ mod secure_message_handler_tests {
 
         for command in safe_commands {
             let result = handler.validate_command_input(command);
-            assert!(result.is_valid, "Should accept safe command: {}", command);
+            assert!(result.is_valid, "Should accept safe command: {command}");
         }
 
         // Test dangerous commands
@@ -292,8 +289,7 @@ mod secure_message_handler_tests {
             let result = handler.validate_command_input(command);
             assert!(
                 !result.is_valid,
-                "Should reject dangerous command: {}",
-                command
+                "Should reject dangerous command: {command}"
             );
         }
     }
@@ -307,8 +303,7 @@ mod secure_message_handler_tests {
         for i in 0..5 {
             assert!(
                 handler.check_rate_limit(user_id),
-                "Message {} should be allowed",
-                i
+                "Message {i} should be allowed"
             );
         }
 

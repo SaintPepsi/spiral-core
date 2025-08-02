@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum CircuitState {
     Closed,   // Normal operation
     Open,     // Failing, reject all requests
@@ -218,23 +218,24 @@ impl CircuitBreaker {
 
     /// Get circuit breaker metrics
     pub async fn get_metrics(&self) -> CircuitBreakerMetrics {
+        let last_change = *self.last_state_change.read().await;
         CircuitBreakerMetrics {
             state: *self.state.read().await,
             failure_count: self.failure_count.load(Ordering::Relaxed),
             success_count: self.success_count.load(Ordering::Relaxed),
             total_requests: self.total_requests.load(Ordering::Relaxed),
             total_failures: self.total_failures.load(Ordering::Relaxed),
-            last_state_change: *self.last_state_change.read().await,
+            last_state_change_seconds: last_change.elapsed().as_secs(),
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CircuitBreakerMetrics {
     pub state: CircuitState,
     pub failure_count: u32,
     pub success_count: u32,
     pub total_requests: u64,
     pub total_failures: u64,
-    pub last_state_change: Instant,
+    pub last_state_change_seconds: u64,
 }
