@@ -85,27 +85,85 @@
 - **Push Changes**: Push git commits to remote repository
 - Maintain git history for accountability
 
-### 1.5 Validation Pipeline
+### 1.5 Two-Phase Validation Pipeline
 
-### Testing Requirements
+### Pipeline Architecture
 
-- **Standard**: Run comprehensive testing validation
-- **Execution**: Claude runs test commands (automated testing)
-- **Threshold**: Zero test failures accepted
-- **Failure Response**: Do NOT aggressively delete failing tests; investigate and fix
+**Flow Logic**: Phase 1 (AQA) → Phase 2 (CRCC) → Success/Failure Analysis
 
-### Audit Procedures
+- If ANY Phase 2 check requires retry, loop back to Phase 1
+- Maximum 3 complete pipeline iterations before failure
 
-1. **Testing**: Run comprehensive testing validation
-2. **Security Audit**: Perform security vulnerability analysis
-3. **Code Review**: Execute comprehensive code review
-4. **System Integration**: Verify changes don't break existing functionality
+### Phase 1: Advanced Quality Assurance (AQA)
+
+Execute sequentially with max 3 retries per check:
+
+1. **Code Review & Standards Compliance**
+
+   - **Claude Prompt**: "Perform comprehensive code review against project standards. Verify architectural consistency, naming conventions, error handling patterns, and adherence to established codebase guidelines."
+   - **Success**: Full compliance with coding standards
+
+2. **Comprehensive Testing Analysis**
+
+   - **Claude Prompt**: "Perform comprehensive testing analysis focused on pressure points and critical failure scenarios. Implement ONLY high-value test cases for edge cases that could cause system failure."
+   - **Success**: Zero test failures, critical scenarios covered
+
+3. **Security Audit**
+
+   - **Claude Prompt**: "Conduct thorough security audit. Identify potential vulnerabilities, unsafe code patterns, dependency security issues, and data validation gaps."
+   - **Success**: Zero critical vulnerabilities
+
+4. **System Integration Verification**
+   - **Claude Prompt**: "Verify system integration integrity. Test that changes don't break existing functionality, APIs remain compatible, and all integration points function correctly."
+   - **Success**: No integration regressions
+
+### Phase 2: Core Rust Compliance Checks (CRCC)
+
+Execute sequentially - ANY retry triggers return to Phase 1:
+
+1. **Compilation Verification** (`cargo check`)
+
+   - **Failure Action**: Spawn Claude with "Fix all compilation errors identified by cargo check"
+   - **Loop Trigger**: Any retry → Phase 1
+
+2. **Test Suite Validation** (`cargo test`)
+
+   - **Failure Action**: Spawn Claude with "Analyse and fix failing tests. DO NOT delete tests unless fundamentally invalid"
+   - **Loop Trigger**: Any retry → Phase 1
+
+3. **Code Formatting** (`cargo fmt`)
+
+   - **Failure Action**: Spawn Claude with "Apply Rust standard formatting using cargo fmt"
+   - **Loop Trigger**: Any retry → Phase 1
+
+4. **Linting Compliance** (`cargo clippy`)
+
+   - **Failure Action**: Spawn Claude with "Fix all Clippy warnings and errors"
+   - **Loop Trigger**: Any retry → Phase 1
+
+5. **Documentation Generation** (`cargo doc`)
+   - **Failure Action**: Spawn Claude with "Fix documentation build errors"
+   - **Loop Trigger**: Any retry → Phase 1
 
 ### Timeout Handling
 
-- **Claude Timeout**: Retry operation and update progress message
-- **Extended Timeout**: Implement exponential backoff with status updates
-- **Maximum Retries**: Define limit before marking as failed
+- **Claude Timeout**: Immediate retry with progress update
+- **Extended Timeout**: Exponential backoff (1s, 2s, 4s)
+- **Maximum Timeout Retries**: 3 attempts before escalation
+
+### Analysis Protocols
+
+**Success Analysis** (No Phase 2 retries):
+
+- Spawn Claude: "Generate success report including checks performed, code quality metrics, security findings, test coverage, and deployment checklist"
+
+**Success with Issues Analysis** (Phase 2 retries but passed):
+
+- Spawn Claude: "Analyze which compliance checks required retries, identify systemic problems, recommend process improvements"
+
+**Failure Analysis** (3 iterations exhausted):
+
+- Spawn Claude: "CRITICAL FAILURE ANALYSIS: Identify root causes, determine if failures are due to prompts/code/tools/criteria. Propose pipeline modifications"
 
 ### 1.6 Success/Failure Handling
 
@@ -119,10 +177,10 @@
 
 ### Failure Path
 
-1. **Problem Analysis**: Analyze issues using generated logs
+1. **Problem Analysis**: Execute failure analysis protocol using generated logs
 2. **Immediate Rollback**: Revert to pre-update snapshot
 3. **System Restart**: Reboot to last known good state (if the server got shut down)
-4. **Failure Report**: Comprehensive analysis of what succeeded/failed (include Coach Iroh's analysis)
+4. **Failure Report**: Comprehensive analysis of what succeeded/failed
 5. **Queue Cleanup**: Mark all queued requests with failure status
 6. **Retry Mechanism**: Add retry emoji ♻️ to failed requests for user retry
 
@@ -146,7 +204,7 @@
 
 - **Structured Logs**: Maintain detailed update logs organised by codename + timestamp
 - **Change Tracking**: Git history provides complete audit trail
-- **Issue Analysis**: Log all encountered problems under codename for Coach Iroh analysis
+- **Issue Analysis**: Log all encountered problems under codename for failure analysis
 - **Success Metrics**: Track successful update patterns by codename
 
 ### Continuous Monitoring
@@ -172,7 +230,7 @@
 - [ ] 3+ successful test additions/modifications
 - [ ] 1+ successful feature addition
 - [ ] Zero data loss incidents
-- [ ] All validation agents working reliably
+- [ ] Two-phase validation pipeline working reliably with specialist agents
 - [ ] Queue system handling concurrent requests properly
 - [ ] Rollback mechanism tested and working
 
