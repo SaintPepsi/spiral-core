@@ -61,113 +61,12 @@ impl UpdateValidator {
         Ok(true)
     }
 
-    /// Validate system changes after implementation
-    ///
-    /// This comprehensive validation ensures all code changes meet our quality standards:
-    /// 1. Code must compile (cargo check)
-    /// 2. All tests must pass (cargo test)
-    /// 3. Code must be properly formatted (cargo fmt)
-    /// 4. No clippy errors allowed (cargo clippy)
-    /// 5. Documentation must build (cargo doc)
+    /// Temporary stub for validate_changes - will be replaced with two-phase pipeline
     pub async fn validate_changes() -> Result<()> {
-        info!("[UpdateValidator] Starting comprehensive validation of system changes");
-
-        // Step 1: Run cargo check
-        info!("[UpdateValidator] Step 1/5: Running cargo check...");
-        let check_output = Command::new("cargo")
-            .args(["check", "--all-targets"])
-            .output()
-            .map_err(|e| SpiralError::SystemError(format!("Failed to run cargo check: {e}")))?;
-
-        if !check_output.status.success() {
-            let stderr = String::from_utf8_lossy(&check_output.stderr);
-            return Err(SpiralError::Validation(format!(
-                "❌ Cargo check failed:\n{stderr}"
-            )));
-        }
-        info!("[UpdateValidator] ✅ Cargo check passed");
-
-        // Step 2: Run all tests
-        info!("[UpdateValidator] Step 2/5: Running cargo test...");
-        let test_output = Command::new("cargo")
-            .args(["test", "--", "--test-threads=4", "--nocapture"])
-            .env("RUST_TEST_TIME_UNIT", "1000")
-            .output()
-            .map_err(|e| SpiralError::SystemError(format!("Failed to run tests: {e}")))?;
-
-        if !test_output.status.success() {
-            let stderr = String::from_utf8_lossy(&test_output.stderr);
-            let stdout = String::from_utf8_lossy(&test_output.stdout);
-
-            // Check if it's just slow tests
-            if stdout.contains("test result: ok") {
-                info!("[UpdateValidator] ✅ Tests passed (some were slow)");
-            } else {
-                return Err(SpiralError::Validation(format!(
-                    "❌ Tests failed:\n{stdout}\n{stderr}"
-                )));
-            }
-        } else {
-            info!("[UpdateValidator] ✅ All tests passed");
-        }
-
-        // Step 3: Check code formatting
-        info!("[UpdateValidator] Step 3/5: Checking code formatting...");
-        let fmt_output = Command::new("cargo")
-            .args(["fmt", "--", "--check"])
-            .output()
-            .map_err(|e| SpiralError::SystemError(format!("Failed to run cargo fmt: {e}")))?;
-
-        if !fmt_output.status.success() {
-            let stderr = String::from_utf8_lossy(&fmt_output.stderr);
-            let stdout = String::from_utf8_lossy(&fmt_output.stdout);
-            return Err(SpiralError::Validation(format!(
-                "❌ Code formatting check failed. Run 'cargo fmt' to fix:\n{stdout}\n{stderr}"
-            )));
-        }
-        info!("[UpdateValidator] ✅ Code formatting is correct");
-
-        // Step 4: Run clippy for linting
-        info!("[UpdateValidator] Step 4/5: Running clippy linting...");
-        let clippy_output = Command::new("cargo")
-            .args(["clippy", "--all-targets", "--", "-D", "warnings"])
-            .output()
-            .map_err(|e| SpiralError::SystemError(format!("Failed to run cargo clippy: {e}")))?;
-
-        if !clippy_output.status.success() {
-            let stderr = String::from_utf8_lossy(&clippy_output.stderr);
-            let stdout = String::from_utf8_lossy(&clippy_output.stdout);
-
-            // Check if it's just warnings (shouldn't happen with -D warnings)
-            if stderr.contains("error:") || stdout.contains("error:") {
-                return Err(SpiralError::Validation(format!(
-                    "❌ Clippy found errors:\n{stdout}\n{stderr}"
-                )));
-            }
-            warn!("[UpdateValidator] Clippy warnings detected but proceeding");
-        }
-        info!("[UpdateValidator] ✅ Clippy checks passed");
-
-        // Step 5: Verify documentation builds
-        info!("[UpdateValidator] Step 5/5: Verifying documentation...");
-        let doc_output = Command::new("cargo")
-            .args(["doc", "--no-deps", "--quiet"])
-            .output()
-            .map_err(|e| SpiralError::SystemError(format!("Failed to run cargo doc: {e}")))?;
-
-        if !doc_output.status.success() {
-            let stderr = String::from_utf8_lossy(&doc_output.stderr);
-            warn!(
-                "[UpdateValidator] Documentation warnings detected: {}",
-                stderr
-            );
-            // Don't fail on doc warnings, but log them
-        } else {
-            info!("[UpdateValidator] ✅ Documentation builds successfully");
-        }
-
-        info!("[UpdateValidator] 🎉 All validation checks passed successfully!");
-        Ok(())
+        info!("[UpdateValidator] Two-phase validation pipeline not yet implemented");
+        Err(SpiralError::Validation(
+            "New two-phase validation pipeline is being implemented".to_string(),
+        ))
     }
 }
 

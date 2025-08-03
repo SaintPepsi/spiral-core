@@ -52,7 +52,6 @@
 //! # }
 //! ```
 
-mod claude_validation;
 mod git_ops;
 mod queue;
 mod status_tracker;
@@ -61,10 +60,6 @@ mod validation;
 
 pub mod claude_spawn_example;
 
-pub use claude_validation::{
-    format_validation_results, AgentValidationResult, ClaudeValidationConfig, ClaudeValidator,
-    FindingSeverity, ValidationFinding,
-};
 pub use git_ops::{GitOperations, SnapshotManager};
 pub use queue::{UpdateQueue, UpdateQueueStatus};
 pub use status_tracker::{ImplementationProgress, StatusTracker, UpdateType};
