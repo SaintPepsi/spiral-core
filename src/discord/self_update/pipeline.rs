@@ -6,9 +6,12 @@
 //! - Pipeline looping: ANY Phase 2 retry triggers return to Phase 1
 //! - Maximum 3 complete pipeline iterations
 
+use crate::claude_code::{ClaudeCodeClient, CodeGenerationRequest};
+use crate::config::ClaudeCodeConfig;
 use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 use tokio::time::timeout;
@@ -110,10 +113,39 @@ pub struct ExecutionPatterns {
     pub performance_bottlenecks: Option<Vec<String>>,
 }
 
+/// Response from Claude validation agents
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaudeValidationResponse {
+    pub fixes_applied: Vec<FixAction>,
+    pub explanation: String,
+    pub success: bool,
+}
+
+/// Actions that Claude can suggest to fix issues
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum FixAction {
+    FileEdit {
+        path: String,
+        old_content: String,
+        new_content: String,
+    },
+    FileCreate {
+        path: String,
+        content: String,
+    },
+    CommandRun {
+        command: String,
+        args: Vec<String>,
+    },
+}
+
 /// Main validation pipeline coordinator
 pub struct ValidationPipeline {
     context: PipelineContext,
     start_time: Instant,
+    claude_client: Option<ClaudeCodeClient>,
+    snapshot_id: Option<String>,
 }
 
 impl PipelineContext {
@@ -163,7 +195,128 @@ impl ValidationPipeline {
                 patterns: ExecutionPatterns::default(),
             },
             start_time: Instant::now(),
+            claude_client: None,
+            snapshot_id: None,
         }
+    }
+
+    /// Create a new validation pipeline with Claude client
+    pub async fn with_claude_client(config: ClaudeCodeConfig) -> Result<Self> {
+        let claude_client = ClaudeCodeClient::new(config).await?;
+
+        let mut pipeline = Self::new();
+        pipeline.claude_client = Some(claude_client);
+
+        Ok(pipeline)
+    }
+
+    /// Create a Git snapshot before making changes
+    async fn create_validation_snapshot(&mut self) -> Result<()> {
+        let snapshot_id = format!("validation-snapshot-{}", chrono::Utc::now().timestamp());
+
+        info!("[ValidationPipeline] Creating snapshot: {}", snapshot_id);
+
+        // Create a git stash with the snapshot ID
+        let output = Command::new("git")
+            .args(["stash", "push", "-m", &snapshot_id, "--include-untracked"])
+            .output()
+            .map_err(|e| {
+                crate::error::SpiralError::SystemError(format!("Failed to create snapshot: {}", e))
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            warn!("[ValidationPipeline] Failed to create snapshot: {}", stderr);
+            // Continue anyway - validation can proceed without snapshot
+        } else {
+            self.snapshot_id = Some(snapshot_id);
+            info!("[ValidationPipeline] Snapshot created successfully");
+        }
+
+        Ok(())
+    }
+
+    /// Rollback to the snapshot if validation fails
+    async fn rollback_to_snapshot(&self) -> Result<()> {
+        if let Some(snapshot_id) = &self.snapshot_id {
+            info!(
+                "[ValidationPipeline] Rolling back to snapshot: {}",
+                snapshot_id
+            );
+
+            // First, find the stash index
+            let stash_list = Command::new("git")
+                .args(["stash", "list"])
+                .output()
+                .map_err(|e| {
+                    crate::error::SpiralError::SystemError(format!("Failed to list stashes: {}", e))
+                })?;
+
+            let stash_output = String::from_utf8_lossy(&stash_list.stdout);
+            let stash_index = stash_output
+                .lines()
+                .position(|line| line.contains(snapshot_id))
+                .ok_or_else(|| {
+                    crate::error::SpiralError::SystemError(
+                        "Snapshot not found in stash list".to_string(),
+                    )
+                })?;
+
+            // Apply the stash
+            let output = Command::new("git")
+                .args(["stash", "pop", &format!("stash@{{{}}}", stash_index)])
+                .output()
+                .map_err(|e| {
+                    crate::error::SpiralError::SystemError(format!("Failed to apply stash: {}", e))
+                })?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                error!("[ValidationPipeline] Failed to rollback: {}", stderr);
+                return Err(crate::error::SpiralError::SystemError(format!(
+                    "Rollback failed: {}",
+                    stderr
+                )));
+            }
+
+            info!("[ValidationPipeline] Rollback completed successfully");
+        } else {
+            warn!("[ValidationPipeline] No snapshot to rollback to");
+        }
+
+        Ok(())
+    }
+
+    /// Clean up snapshot after successful validation
+    async fn cleanup_snapshot(&self) -> Result<()> {
+        if let Some(snapshot_id) = &self.snapshot_id {
+            info!("[ValidationPipeline] Cleaning up snapshot: {}", snapshot_id);
+
+            // Drop the stash
+            let stash_list = Command::new("git")
+                .args(["stash", "list"])
+                .output()
+                .map_err(|e| {
+                    crate::error::SpiralError::SystemError(format!("Failed to list stashes: {}", e))
+                })?;
+
+            let stash_output = String::from_utf8_lossy(&stash_list.stdout);
+            if let Some(index) = stash_output
+                .lines()
+                .position(|line| line.contains(snapshot_id))
+            {
+                Command::new("git")
+                    .args(["stash", "drop", &format!("stash@{{{}}}", index)])
+                    .output()
+                    .map_err(|e| {
+                        crate::error::SpiralError::SystemError(format!(
+                            "Failed to drop stash: {}",
+                            e
+                        ))
+                    })?;
+            }
+        }
+        Ok(())
     }
 
     /// Execute the complete validation pipeline
@@ -173,6 +326,14 @@ impl ValidationPipeline {
             "[ValidationPipeline] Max iterations: {}",
             MAX_PIPELINE_ITERATIONS
         );
+
+        // Create snapshot before making any changes
+        if let Err(e) = self.create_validation_snapshot().await {
+            warn!(
+                "[ValidationPipeline] Failed to create snapshot: {} - continuing anyway",
+                e
+            );
+        }
 
         // Main pipeline loop
         while self.context.pipeline_iterations < MAX_PIPELINE_ITERATIONS {
@@ -277,6 +438,23 @@ impl ValidationPipeline {
             "[ValidationPipeline] Warnings: {}",
             self.context.warnings.len()
         );
+
+        // Handle final result - rollback on failure, cleanup on success
+        match self.context.final_status {
+            PipelineStatus::Success | PipelineStatus::SuccessWithRetries => {
+                info!("[ValidationPipeline] Validation successful - keeping changes");
+                if let Err(e) = self.cleanup_snapshot().await {
+                    warn!("[ValidationPipeline] Failed to cleanup snapshot: {}", e);
+                }
+            }
+            PipelineStatus::Failure => {
+                error!("[ValidationPipeline] Validation failed - rolling back changes");
+                if let Err(e) = self.rollback_to_snapshot().await {
+                    error!("[ValidationPipeline] CRITICAL: Rollback failed: {}", e);
+                    self.add_critical_error(format!("Rollback failed: {}", e));
+                }
+            }
+        }
 
         Ok(self.context.clone())
     }
@@ -466,31 +644,36 @@ impl ValidationPipeline {
     }
 
     /// Run the appropriate analysis agent based on pipeline outcome
-    async fn run_analysis_agent(&self) -> Result<()> {
+    async fn run_analysis_agent(&mut self) -> Result<()> {
+        let context_clone = self.context.clone();
+
         match self.context.final_status {
             PipelineStatus::Success => {
                 info!("[ValidationPipeline] Running success analyzer agent");
-                self.spawn_claude_agent(
-                    ".claude/validation-agents/analysis/success-analyzer.md",
-                    &self.context,
-                )
-                .await?;
+                let _ = self
+                    .spawn_claude_agent(
+                        ".claude/validation-agents/analysis/success-analyzer.md",
+                        &context_clone,
+                    )
+                    .await;
             }
             PipelineStatus::SuccessWithRetries => {
                 info!("[ValidationPipeline] Running success-with-issues analyzer agent");
-                self.spawn_claude_agent(
-                    ".claude/validation-agents/analysis/success-with-issues-analyzer.md",
-                    &self.context,
-                )
-                .await?;
+                let _ = self
+                    .spawn_claude_agent(
+                        ".claude/validation-agents/analysis/success-with-issues-analyzer.md",
+                        &context_clone,
+                    )
+                    .await;
             }
             PipelineStatus::Failure => {
                 info!("[ValidationPipeline] Running failure analyzer agent");
-                self.spawn_claude_agent(
-                    ".claude/validation-agents/analysis/failure-analyzer.md",
-                    &self.context,
-                )
-                .await?;
+                let _ = self
+                    .spawn_claude_agent(
+                        ".claude/validation-agents/analysis/failure-analyzer.md",
+                        &context_clone,
+                    )
+                    .await;
             }
         }
         Ok(())
@@ -577,25 +760,216 @@ impl ValidationPipeline {
         self.context.critical_errors.push(error);
     }
 
-    /// Spawn a Claude Code agent with the given prompt file and context
-    async fn spawn_claude_agent(&self, agent_path: &str, _context: &PipelineContext) -> Result<()> {
-        // TODO: Implement actual Claude Code integration
-        // For now, this is a placeholder that logs the intent
-        let timeout = self.calculate_timeout();
-        info!(
-            "[ValidationPipeline] Would spawn Claude agent: {} with timeout: {:?}",
-            agent_path, timeout
-        );
+    /// Apply fixes suggested by Claude
+    async fn apply_claude_fixes(&mut self, fixes: &[FixAction]) -> Result<()> {
+        info!("[ValidationPipeline] Applying {} Claude fixes", fixes.len());
 
-        // In real implementation:
-        // 1. Read the agent prompt from agent_path
-        // 2. Serialize the context to JSON
-        // 3. Call Claude Code API with prompt + context (with timeout)
-        // 4. Process response and apply any recommended changes
-        // 5. Use tokio::time::timeout(timeout, async_operation) for timeout control
-        // 6. Track changes using self.track_change()
+        for (i, fix) in fixes.iter().enumerate() {
+            match fix {
+                FixAction::FileEdit {
+                    path,
+                    old_content,
+                    new_content,
+                } => {
+                    info!("[ValidationPipeline] Applying edit to: {}", path);
+
+                    // Verify file exists and has expected content
+                    match tokio::fs::read_to_string(path).await {
+                        Ok(current_content) => {
+                            if current_content.trim() != old_content.trim() {
+                                self.add_warning(format!(
+                                    "File {} has changed - skipping edit",
+                                    path
+                                ));
+                                continue;
+                            }
+
+                            // Apply the edit
+                            tokio::fs::write(path, new_content).await.map_err(|e| {
+                                crate::error::SpiralError::SystemError(format!(
+                                    "Failed to write {}: {}",
+                                    path, e
+                                ))
+                            })?;
+
+                            self.track_change(
+                                "claude_fix",
+                                &format!("Applied edit {}/{}", i + 1, fixes.len()),
+                                vec![path.clone()],
+                            );
+                        }
+                        Err(e) => {
+                            self.add_warning(format!("Failed to read {}: {}", path, e));
+                            continue;
+                        }
+                    }
+                }
+
+                FixAction::FileCreate { path, content } => {
+                    info!("[ValidationPipeline] Creating file: {}", path);
+
+                    // Ensure parent directory exists
+                    if let Some(parent) = Path::new(path).parent() {
+                        tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                            crate::error::SpiralError::SystemError(format!(
+                                "Failed to create directory: {}",
+                                e
+                            ))
+                        })?;
+                    }
+
+                    // Create the file
+                    tokio::fs::write(path, content).await.map_err(|e| {
+                        crate::error::SpiralError::SystemError(format!(
+                            "Failed to create {}: {}",
+                            path, e
+                        ))
+                    })?;
+
+                    self.track_change(
+                        "claude_fix",
+                        &format!("Created file {}/{}", i + 1, fixes.len()),
+                        vec![path.clone()],
+                    );
+                }
+
+                FixAction::CommandRun { command, args } => {
+                    info!(
+                        "[ValidationPipeline] Running command: {} {:?}",
+                        command, args
+                    );
+
+                    let output = Command::new(command).args(args).output().map_err(|e| {
+                        crate::error::SpiralError::SystemError(format!(
+                            "Failed to run {}: {}",
+                            command, e
+                        ))
+                    })?;
+
+                    if !output.status.success() {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        self.add_warning(format!(
+                            "Command failed: {} {:?} - {}",
+                            command, args, stderr
+                        ));
+                    } else {
+                        self.track_change(
+                            "claude_fix",
+                            &format!("Ran command {}/{}", i + 1, fixes.len()),
+                            vec![],
+                        );
+                    }
+                }
+            }
+        }
 
         Ok(())
+    }
+
+    /// Spawn a Claude Code agent with the given prompt file and context
+    async fn spawn_claude_agent(
+        &mut self,
+        agent_path: &str,
+        context: &PipelineContext,
+    ) -> Result<ClaudeValidationResponse> {
+        let timeout_duration = self.calculate_timeout();
+        info!(
+            "[ValidationPipeline] Spawning Claude agent: {} with timeout: {:?}",
+            agent_path, timeout_duration
+        );
+
+        // 1. Read the agent prompt from agent_path
+        let agent_prompt = tokio::fs::read_to_string(agent_path).await.map_err(|e| {
+            crate::error::SpiralError::SystemError(format!(
+                "Failed to read agent prompt {}: {}",
+                agent_path, e
+            ))
+        })?;
+
+        // 2. Serialize the context to JSON
+        let context_json = context.to_json()?;
+
+        // 3. Create full prompt with agent instructions + context
+        let full_prompt = format!(
+            "{}\n\n## Current Pipeline Context\n\n```json\n{}\n```\n\n## Task\n\nAnalyze the context and provide fixes in the following JSON format:\n\n```json\n{{\n  \"fixes_applied\": [\n    {{\n      \"type\": \"FileEdit\",\n      \"path\": \"path/to/file\",\n      \"old_content\": \"content to replace\",\n      \"new_content\": \"new content\"\n    }}\n  ],\n  \"explanation\": \"What was fixed and why\",\n  \"success\": true\n}}\n```",
+            agent_prompt,
+            context_json
+        );
+
+        // 4. Call Claude Code API (if client is available)
+        if let Some(claude_client) = &self.claude_client {
+            // Create code generation request
+            let request = CodeGenerationRequest {
+                language: "rust".to_string(),
+                description: full_prompt,
+                context: HashMap::new(),
+                existing_code: None,
+                requirements: vec![],
+                session_id: None,
+            };
+
+            // Execute with timeout
+            let result = timeout(timeout_duration, async {
+                claude_client.generate_code(request).await
+            })
+            .await;
+
+            match result {
+                Ok(Ok(generation_result)) => {
+                    // Parse the response as ClaudeValidationResponse
+                    match serde_json::from_str::<ClaudeValidationResponse>(&generation_result.code)
+                    {
+                        Ok(response) => {
+                            info!(
+                                "[ValidationPipeline] Claude provided {} fixes",
+                                response.fixes_applied.len()
+                            );
+
+                            // Apply the fixes
+                            self.apply_claude_fixes(&response.fixes_applied).await?;
+
+                            Ok(response)
+                        }
+                        Err(e) => {
+                            warn!(
+                                "[ValidationPipeline] Failed to parse Claude response: {}",
+                                e
+                            );
+                            // Return a mock response for now
+                            Ok(ClaudeValidationResponse {
+                                fixes_applied: vec![],
+                                explanation: "Failed to parse response".to_string(),
+                                success: false,
+                            })
+                        }
+                    }
+                }
+                Ok(Err(e)) => {
+                    warn!("[ValidationPipeline] Claude Code API error: {}", e);
+                    Ok(ClaudeValidationResponse {
+                        fixes_applied: vec![],
+                        explanation: format!("API error: {}", e),
+                        success: false,
+                    })
+                }
+                Err(_) => {
+                    warn!("[ValidationPipeline] Claude Code request timed out");
+                    Ok(ClaudeValidationResponse {
+                        fixes_applied: vec![],
+                        explanation: "Request timed out".to_string(),
+                        success: false,
+                    })
+                }
+            }
+        } else {
+            // No Claude client - return mock response
+            info!("[ValidationPipeline] No Claude client configured - returning mock response");
+            Ok(ClaudeValidationResponse {
+                fixes_applied: vec![],
+                explanation: "No Claude client configured".to_string(),
+                success: true, // Allow pipeline to continue
+            })
+        }
     }
 
     // Phase 1 check implementations (stubs for now)
@@ -654,32 +1028,98 @@ impl ValidationPipeline {
 
     // Phase 2 check implementations (stubs for now)
 
-    async fn run_compilation_check(&self) -> Result<ComplianceCheck> {
+    async fn run_compilation_check(&mut self) -> Result<ComplianceCheck> {
         info!("[Phase2] Running compilation check");
 
-        let output = self
-            .run_command_with_timeout("cargo", &["check", "--all-targets"])
-            .await?;
+        let mut retries = 0;
+        let mut errors = vec![];
 
-        if output.status.success() {
-            return Ok(ComplianceCheck {
-                passed: true,
-                retries: 0,
-                errors: None,
-            });
+        // Try up to 2 times (initial + 1 retry with Claude)
+        for attempt in 0..2 {
+            let output = self
+                .run_command_with_timeout("cargo", &["check", "--all-targets"])
+                .await?;
+
+            if output.status.success() {
+                return Ok(ComplianceCheck {
+                    passed: true,
+                    retries,
+                    errors: if errors.is_empty() {
+                        None
+                    } else {
+                        Some(errors)
+                    },
+                });
+            }
+
+            // Compilation failed
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            errors.push(error_msg.to_string());
+
+            if attempt == 0 {
+                // First failure - try to fix with Claude
+                warn!("[Phase2] Compilation check failed, attempting Claude fix");
+
+                // Update context with compilation errors
+                let mut fix_context = self.context.clone();
+                fix_context.phase2_attempts.push(Phase2Attempt {
+                    iteration: self.context.pipeline_iterations,
+                    checks: Phase2Checks {
+                        compilation: ComplianceCheck {
+                            passed: false,
+                            retries: 0,
+                            errors: Some(vec![error_msg.to_string()]),
+                        },
+                        tests: ComplianceCheck {
+                            passed: false,
+                            retries: 0,
+                            errors: None,
+                        },
+                        formatting: ComplianceCheck {
+                            passed: false,
+                            retries: 0,
+                            errors: None,
+                        },
+                        clippy: ComplianceCheck {
+                            passed: false,
+                            retries: 0,
+                            errors: None,
+                        },
+                        docs: ComplianceCheck {
+                            passed: false,
+                            retries: 0,
+                            errors: None,
+                        },
+                    },
+                    triggered_loop: false,
+                });
+
+                // Spawn Claude agent
+                let claude_response = self
+                    .spawn_claude_agent(
+                        ".claude/validation-agents/phase2/compilation-fixer.md",
+                        &fix_context,
+                    )
+                    .await?;
+
+                if claude_response.success && !claude_response.fixes_applied.is_empty() {
+                    info!(
+                        "[Phase2] Claude applied {} compilation fixes",
+                        claude_response.fixes_applied.len()
+                    );
+                    retries = 1;
+                    // Loop will retry cargo check
+                } else {
+                    // Claude couldn't fix it
+                    break;
+                }
+            }
         }
-
-        // Compilation failed - spawn Claude agent to fix
-        let errors = String::from_utf8_lossy(&output.stderr);
-        warn!("[Phase2] Compilation check failed: {}", errors);
-
-        // TODO: Actually spawn Claude agent with compilation-fixer.md
-        // For now, simulate that we tried once
 
         Ok(ComplianceCheck {
             passed: false,
-            retries: 1,
-            errors: Some(vec![errors.to_string()]),
+            retries,
+            errors: Some(errors),
         })
     }
 
