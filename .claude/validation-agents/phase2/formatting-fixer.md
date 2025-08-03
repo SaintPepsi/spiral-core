@@ -15,8 +15,20 @@ Apply Rust standard formatting using `cargo fmt`. This is the simplest Phase 2 t
 ## Process
 
 1. **Run Formatter**: Execute `cargo fmt` to fix all formatting issues
+
+   ```bash
+   cargo fmt
+   ```
+
 2. **Verify Success**: Run `cargo fmt --check` to confirm formatting is correct
+
+   ```bash
+   cargo fmt --check
+   ```
+
 3. **Report Changes**: List files that were reformatted
+   - Use `git diff --name-only` to see which files changed
+   - Report count of files modified
 
 ## What Gets Formatted
 
