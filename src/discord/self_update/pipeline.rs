@@ -11,7 +11,6 @@ use crate::config::ClaudeCodeConfig;
 use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 use tokio::time::timeout;
@@ -116,28 +115,8 @@ pub struct ExecutionPatterns {
 /// Response from Claude validation agents
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClaudeValidationResponse {
-    pub fixes_applied: Vec<FixAction>,
     pub explanation: String,
     pub success: bool,
-}
-
-/// Actions that Claude can suggest to fix issues
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum FixAction {
-    FileEdit {
-        path: String,
-        old_content: String,
-        new_content: String,
-    },
-    FileCreate {
-        path: String,
-        content: String,
-    },
-    CommandRun {
-        command: String,
-        args: Vec<String>,
-    },
 }
 
 /// Main validation pipeline coordinator
@@ -760,112 +739,6 @@ impl ValidationPipeline {
         self.context.critical_errors.push(error);
     }
 
-    /// Apply fixes suggested by Claude
-    async fn apply_claude_fixes(&mut self, fixes: &[FixAction]) -> Result<()> {
-        info!("[ValidationPipeline] Applying {} Claude fixes", fixes.len());
-
-        for (i, fix) in fixes.iter().enumerate() {
-            match fix {
-                FixAction::FileEdit {
-                    path,
-                    old_content,
-                    new_content,
-                } => {
-                    info!("[ValidationPipeline] Applying edit to: {}", path);
-
-                    // Verify file exists and has expected content
-                    match tokio::fs::read_to_string(path).await {
-                        Ok(current_content) => {
-                            if current_content.trim() != old_content.trim() {
-                                self.add_warning(format!(
-                                    "File {} has changed - skipping edit",
-                                    path
-                                ));
-                                continue;
-                            }
-
-                            // Apply the edit
-                            tokio::fs::write(path, new_content).await.map_err(|e| {
-                                crate::error::SpiralError::SystemError(format!(
-                                    "Failed to write {}: {}",
-                                    path, e
-                                ))
-                            })?;
-
-                            self.track_change(
-                                "claude_fix",
-                                &format!("Applied edit {}/{}", i + 1, fixes.len()),
-                                vec![path.clone()],
-                            );
-                        }
-                        Err(e) => {
-                            self.add_warning(format!("Failed to read {}: {}", path, e));
-                            continue;
-                        }
-                    }
-                }
-
-                FixAction::FileCreate { path, content } => {
-                    info!("[ValidationPipeline] Creating file: {}", path);
-
-                    // Ensure parent directory exists
-                    if let Some(parent) = Path::new(path).parent() {
-                        tokio::fs::create_dir_all(parent).await.map_err(|e| {
-                            crate::error::SpiralError::SystemError(format!(
-                                "Failed to create directory: {}",
-                                e
-                            ))
-                        })?;
-                    }
-
-                    // Create the file
-                    tokio::fs::write(path, content).await.map_err(|e| {
-                        crate::error::SpiralError::SystemError(format!(
-                            "Failed to create {}: {}",
-                            path, e
-                        ))
-                    })?;
-
-                    self.track_change(
-                        "claude_fix",
-                        &format!("Created file {}/{}", i + 1, fixes.len()),
-                        vec![path.clone()],
-                    );
-                }
-
-                FixAction::CommandRun { command, args } => {
-                    info!(
-                        "[ValidationPipeline] Running command: {} {:?}",
-                        command, args
-                    );
-
-                    let output = Command::new(command).args(args).output().map_err(|e| {
-                        crate::error::SpiralError::SystemError(format!(
-                            "Failed to run {}: {}",
-                            command, e
-                        ))
-                    })?;
-
-                    if !output.status.success() {
-                        let stderr = String::from_utf8_lossy(&output.stderr);
-                        self.add_warning(format!(
-                            "Command failed: {} {:?} - {}",
-                            command, args, stderr
-                        ));
-                    } else {
-                        self.track_change(
-                            "claude_fix",
-                            &format!("Ran command {}/{}", i + 1, fixes.len()),
-                            vec![],
-                        );
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     /// Spawn a Claude Code agent with the given prompt file and context
     async fn spawn_claude_agent(
         &mut self,
@@ -891,7 +764,7 @@ impl ValidationPipeline {
 
         // 3. Create full prompt with agent instructions + context
         let full_prompt = format!(
-            "{}\n\n## Current Pipeline Context\n\n```json\n{}\n```\n\n## Task\n\nAnalyze the context and provide fixes in the following JSON format:\n\n```json\n{{\n  \"fixes_applied\": [\n    {{\n      \"type\": \"FileEdit\",\n      \"path\": \"path/to/file\",\n      \"old_content\": \"content to replace\",\n      \"new_content\": \"new content\"\n    }}\n  ],\n  \"explanation\": \"What was fixed and why\",\n  \"success\": true\n}}\n```",
+            "{}\n\n## Current Pipeline Context\n\n```json\n{}\n```\n\n## Task\n\nAnalyze the context and directly fix the issues using your available tools (file editing, command execution, etc.).\n\nAfter making the fixes, respond with a summary of what was done.",
             agent_prompt,
             context_json
         );
@@ -916,38 +789,24 @@ impl ValidationPipeline {
 
             match result {
                 Ok(Ok(generation_result)) => {
-                    // Parse the response as ClaudeValidationResponse
-                    match serde_json::from_str::<ClaudeValidationResponse>(&generation_result.code)
-                    {
-                        Ok(response) => {
-                            info!(
-                                "[ValidationPipeline] Claude provided {} fixes",
-                                response.fixes_applied.len()
-                            );
+                    // Claude has made the fixes directly
+                    info!("[ValidationPipeline] Claude completed validation fixes");
 
-                            // Apply the fixes
-                            self.apply_claude_fixes(&response.fixes_applied).await?;
+                    // Track that Claude made changes (we don't know exactly what, but that's ok)
+                    self.track_change(
+                        "claude_validation",
+                        &format!("Claude applied fixes via {}", agent_path),
+                        vec![], // We don't track individual files since Claude handles it
+                    );
 
-                            Ok(response)
-                        }
-                        Err(e) => {
-                            warn!(
-                                "[ValidationPipeline] Failed to parse Claude response: {}",
-                                e
-                            );
-                            // Return a mock response for now
-                            Ok(ClaudeValidationResponse {
-                                fixes_applied: vec![],
-                                explanation: "Failed to parse response".to_string(),
-                                success: false,
-                            })
-                        }
-                    }
+                    Ok(ClaudeValidationResponse {
+                        explanation: generation_result.explanation,
+                        success: true,
+                    })
                 }
                 Ok(Err(e)) => {
                     warn!("[ValidationPipeline] Claude Code API error: {}", e);
                     Ok(ClaudeValidationResponse {
-                        fixes_applied: vec![],
                         explanation: format!("API error: {}", e),
                         success: false,
                     })
@@ -955,7 +814,6 @@ impl ValidationPipeline {
                 Err(_) => {
                     warn!("[ValidationPipeline] Claude Code request timed out");
                     Ok(ClaudeValidationResponse {
-                        fixes_applied: vec![],
                         explanation: "Request timed out".to_string(),
                         success: false,
                     })
@@ -965,7 +823,6 @@ impl ValidationPipeline {
             // No Claude client - return mock response
             info!("[ValidationPipeline] No Claude client configured - returning mock response");
             Ok(ClaudeValidationResponse {
-                fixes_applied: vec![],
                 explanation: "No Claude client configured".to_string(),
                 success: true, // Allow pipeline to continue
             })
@@ -1102,15 +959,13 @@ impl ValidationPipeline {
                     )
                     .await?;
 
-                if claude_response.success && !claude_response.fixes_applied.is_empty() {
-                    info!(
-                        "[Phase2] Claude applied {} compilation fixes",
-                        claude_response.fixes_applied.len()
-                    );
+                if claude_response.success {
+                    info!("[Phase2] Claude applied compilation fixes");
                     retries = 1;
                     // Loop will retry cargo check
                 } else {
                     // Claude couldn't fix it
+                    info!("[Phase2] Claude unable to fix compilation issues");
                     break;
                 }
             }
