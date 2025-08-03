@@ -980,9 +980,6 @@ impl SpiralConstellationBot {
         self.orchestrator.is_some()
     }
 
-    /// 🎮 COMMAND HANDLER: Handle special bot commands
-
-
     /// 🌌 LORDGENOME DESPAIR: Generate contextual despair quotes for unauthorized access
     fn generate_lordgenome_quote(&self, username: &str, user_action: &str) -> String {
         // Use our enhanced Lordgenome quote generator
@@ -1149,7 +1146,7 @@ impl EventHandler for ConstellationBotHandler {
             } else {
                 "general"
             };
-            let denial_quote = generator.generate_denial(&msg.author.name, &action_type);
+            let denial_quote = generator.generate_denial(&msg.author.name, action_type);
 
             if let Err(e) = msg.reply(&ctx.http, &denial_quote).await {
                 warn!(

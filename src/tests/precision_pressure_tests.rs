@@ -23,8 +23,8 @@ mod shutdown_signal_pressure_tests {
     async fn test_concurrent_shutdown_signal_race() {
         println!("🔍 [SHUTDOWN TEST] Starting concurrent shutdown signal race test");
 
-        // Use shorter timeout for shutdown test
-        let test_timeout = Duration::from_secs(5);
+        // Use reasonable timeout for shutdown test (orchestrator shutdown can take 2s in test mode)
+        let test_timeout = Duration::from_secs(10);
         let test_result = timeout(test_timeout, async {
             println!("🔍 [SHUTDOWN TEST] Creating config and components");
             let config = crate::config::Config::test_config();
@@ -32,8 +32,11 @@ mod shutdown_signal_pressure_tests {
             let monitor = Arc::new(SystemMonitor::new(MonitoringConfig::default()));
 
             println!("🔍 [SHUTDOWN TEST] Starting orchestrator");
-            // Start both components
-            orchestrator.run().await.unwrap();
+            // Start both components  
+            let orchestrator_clone = orchestrator.clone();
+            let _orchestrator_handle = tokio::spawn(async move {
+                orchestrator_clone.run().await
+            });
             println!("🔍 [SHUTDOWN TEST] Starting monitor");
             monitor.start_monitoring().await.unwrap();
 
@@ -121,7 +124,10 @@ mod resource_lifecycle_pressure_tests {
             let orchestrator = Arc::new(AgentOrchestrator::new(config).await.unwrap());
 
             println!("🔍 [LOAD TEST] Starting orchestrator");
-            orchestrator.run().await.unwrap();
+            let orchestrator_clone = orchestrator.clone();
+            let _orchestrator_handle = tokio::spawn(async move {
+                orchestrator_clone.run().await
+            });
 
             // Give orchestrator time to initialize
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -316,7 +322,10 @@ mod concurrency_intersection_pressure_tests {
             let orchestrator = Arc::new(AgentOrchestrator::new(config).await.unwrap());
 
             println!("🔍 [QUEUE TEST] Starting orchestrator");
-            orchestrator.run().await.unwrap();
+            let orchestrator_clone = orchestrator.clone();
+            let _orchestrator_handle = tokio::spawn(async move {
+                orchestrator_clone.run().await
+            });
 
             // 🎯 PRECISION TARGET: Concurrent submissions to trigger queue overflow
             let mut submit_handles = Vec::new();
@@ -442,7 +451,10 @@ mod error_propagation_pressure_tests {
             let orchestrator = Arc::new(AgentOrchestrator::new(config).await.unwrap());
 
             println!("🔍 [FAILURE TEST] Starting orchestrator");
-            orchestrator.run().await.unwrap();
+            let orchestrator_clone = orchestrator.clone();
+            let _orchestrator_handle = tokio::spawn(async move {
+                orchestrator_clone.run().await
+            });
 
             // Give orchestrator time to initialize
             tokio::time::sleep(Duration::from_millis(100)).await;

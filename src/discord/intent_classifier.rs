@@ -25,7 +25,7 @@ use super::message_security::RiskLevel;
 
 /// Intent pattern definitions with keywords, confidence, and risk levels
 const INTENT_PATTERNS: &[(&[&str], IntentType, f64, RiskLevel)] = &[
-    (&["help", "usage", "guide", "how", "what"], IntentType::Help, 0.8, RiskLevel::Low),
+    (&["help", "usage", "guide", "how to"], IntentType::Help, 0.8, RiskLevel::Low),
     (&["generate", "code", "create", "build", "implement", "write"], IntentType::CodeGeneration, 0.7, RiskLevel::Medium),
     (&["file", "read", "write", "save", "open", "edit"], IntentType::FileOperation, 0.7, RiskLevel::Medium),
     (&["admin", "system", "config", "settings", "setup"], IntentType::AdminAction, 0.6, RiskLevel::High),

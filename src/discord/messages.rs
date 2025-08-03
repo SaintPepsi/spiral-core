@@ -153,7 +153,7 @@ impl AuthHelper {
             use crate::discord::lordgenome_quotes::LordgenomeQuoteGenerator;
             let generator = LordgenomeQuoteGenerator::new();
             let action_type = LordgenomeQuoteGenerator::detect_action_type(command);
-            Some(generator.generate_denial(username, &action_type))
+            Some(generator.generate_denial(username, action_type))
         } else {
             None
         }
