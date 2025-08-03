@@ -729,11 +729,6 @@ impl ValidationPipeline {
         }
     }
 
-    /// Add a warning to the context
-    fn add_warning(&mut self, warning: String) {
-        self.context.warnings.push(warning);
-    }
-
     /// Add a critical error to the context
     fn add_critical_error(&mut self, error: String) {
         self.context.critical_errors.push(error);
