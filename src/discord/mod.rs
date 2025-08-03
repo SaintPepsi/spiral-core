@@ -1,3 +1,4 @@
+pub mod commands;
 pub mod intent_classifier;
 pub mod lordgenome_quotes;
 pub mod message_security;

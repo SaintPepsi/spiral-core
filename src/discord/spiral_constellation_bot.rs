@@ -3,9 +3,10 @@ use crate::{
     claude_code::ClaudeCodeClient,
     config::DiscordConfig,
     discord::{
+        commands::CommandRouter,
         lordgenome_quotes::{DenialSeverity, LordgenomeQuoteGenerator},
         message_state_manager::{MessageStateConfig, MessageStateManager},
-        messages::{self, emojis, risk_level_to_str, AuthHelper, MessageFormatter},
+        messages::{self, emojis, risk_level_to_str},
         self_update::{
             GitOperations, PreflightChecker, SelfUpdateRequest, StatusTracker, UpdateQueue,
             UpdateStatus, UpdateType, UpdateValidator,
@@ -27,14 +28,9 @@ use serenity::{
 };
 use std::sync::Arc;
 use std::time::Instant;
-// Note: Hash and Hasher removed as they were unused
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
-// Import our authorization macro
-use crate::require_auth;
-
-// Self update types are now imported from the self_update module
 
 /// 🔒 SECURITY EVENT: Structured logging for security-related events
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,7 +121,7 @@ pub struct SpiralConstellationBot {
     // Common fields
     #[allow(dead_code)]
     start_time: Instant,
-    stats: Arc<tokio::sync::Mutex<BotStats>>,
+    pub stats: Arc<tokio::sync::Mutex<BotStats>>,
     mention_regex: Regex,
     // Message handling
     #[allow(dead_code)]
@@ -136,20 +132,19 @@ pub struct SpiralConstellationBot {
     // Audit: Monitor security_validation_failed_count metric for bypass attempts
     security_validator: Arc<tokio::sync::Mutex<MessageSecurityValidator>>,
     intent_classifier: Arc<IntentClassifier>,
-    secure_message_handler: Arc<SecureMessageHandler>,
-    // Self update system
+    pub secure_message_handler: Arc<SecureMessageHandler>,
     update_queue: Arc<Mutex<UpdateQueue>>,
-    // Configuration
+    command_router: CommandRouter,
     discord_config: DiscordConfig,
 }
 
 #[derive(Debug, Clone, Default)]
-struct BotStats {
-    dev_tasks_completed: u64,
+pub struct BotStats {
+    pub dev_tasks_completed: u64,
     #[allow(dead_code)]
-    pm_tasks_completed: u64,
+    pub pm_tasks_completed: u64,
     #[allow(dead_code)]
-    qa_tasks_completed: u64,
+    pub qa_tasks_completed: u64,
     total_tasks_failed: u64,
     #[allow(dead_code)]
     current_task_id: Option<String>,
@@ -335,6 +330,7 @@ impl SpiralConstellationBot {
             intent_classifier,
             secure_message_handler,
             update_queue: Arc::new(Mutex::new(UpdateQueue::new())),
+            command_router: CommandRouter::new(),
             discord_config,
         })
     }
@@ -376,6 +372,7 @@ impl SpiralConstellationBot {
             intent_classifier,
             secure_message_handler,
             update_queue: Arc::new(Mutex::new(UpdateQueue::new())),
+            command_router: CommandRouter::new(),
             discord_config,
         })
     }
@@ -509,7 +506,7 @@ impl SpiralConstellationBot {
         msg: &Message,
         ctx: &Context,
     ) -> Option<AgentType> {
-        let content_lower = content.to_lowercase();
+        let _content_lower = content.to_lowercase();
 
         // First, check for role mentions in the message
         if let Some(guild_id) = msg.guild_id {
@@ -548,26 +545,8 @@ impl SpiralConstellationBot {
             }
         }
 
-        // Fallback: detect based on content keywords
-        if content_lower.contains("code")
-            || content_lower.contains("implement")
-            || content_lower.contains("function")
-        {
-            Some(AgentType::SoftwareDeveloper)
-        } else if content_lower.contains("status")
-            || content_lower.contains("project")
-            || content_lower.contains("timeline")
-        {
-            Some(AgentType::ProjectManager)
-        } else if content_lower.contains("test")
-            || content_lower.contains("quality")
-            || content_lower.contains("bug")
-        {
-            Some(AgentType::QualityAssurance)
-        } else {
-            // Default to developer agent if unclear
-            Some(AgentType::SoftwareDeveloper)
-        }
+        // No fallback - only direct mentions are supported
+        None
     }
 
     /// 🎯 TASK CREATION: Create task with agent persona context
@@ -978,715 +957,22 @@ impl SpiralConstellationBot {
     }
 
     /// 🔐 PERMISSION CHECK: Check if user is in authorized users list from config
-    fn is_authorized_user(&self, user_id: u64) -> bool {
+    pub fn is_authorized_user(&self, user_id: u64) -> bool {
         self.discord_config.authorized_users.contains(&user_id)
     }
 
-    /// 🎮 COMMAND HANDLER: Handle special bot commands
-    async fn handle_special_commands(
-        &self,
-        content: &str,
-        msg: &Message,
-        ctx: &Context,
-    ) -> Option<String> {
-        let content_lower = content.to_lowercase();
-        let is_authorized = self.is_authorized_user(msg.author.id.get());
-
-        // Skip command validation for authorized admin commands
-        let skip_validation = is_authorized
-            && (content_lower.starts_with("!spiral debug")
-                || content_lower.starts_with("!spiral security")
-                || content_lower.starts_with("!spiral reset"));
-
-        // Validate command input for security (unless it's an authorized admin command)
-        if !skip_validation {
-            let validation_result = self.secure_message_handler.validate_command_input(content);
-            if !validation_result.is_valid {
-                // Try to classify intent even for blocked commands
-                let intent_result = {
-                    let request = crate::discord::intent_classifier::IntentRequest {
-                        message: content.to_string(),
-                        user_id: msg.author.id.to_string(),
-                        context: std::collections::HashMap::new(),
-                    };
-                    Some(
-                        self.intent_classifier
-                            .classify_intent_with_security(&request),
-                    )
-                };
-
-                // Create security event for structured logging
-                let security_event = SecurityEvent::CommandBlocked {
-                    timestamp: {
-                        std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_secs().to_string())
-                            .unwrap_or_else(|_| "0".to_string())
-                    },
-                    user_id: msg.author.id.get(),
-                    username: msg.author.name.clone(),
-                    channel_id: msg.channel_id.get(),
-                    guild_id: msg.guild_id.map(|id| id.get()),
-                    message_id: msg.id.get(),
-                    content: content.to_string(),
-                    validation_issues: validation_result.issues.clone(),
-                    risk_level: risk_level_to_str(&validation_result.risk_level).to_string(),
-                    intent_classification: intent_result.as_ref().map(|intent| {
-                        IntentClassification {
-                            intent_type: format!("{:?}", intent.intent_type),
-                            confidence: intent.confidence,
-                            risk_level: risk_level_to_str(&intent.risk_level).to_string(),
-                            parameters: intent.parameters.clone(),
-                        }
-                    }),
-                };
-
-                // Log as both warning and structured JSON
-                warn!(
-                    "[SpiralConstellation] Command validation failed - {}",
-                    security_event.to_json()
-                );
-
-                // Also log as a separate JSON line for easy parsing
-                tracing::info!(target: "security_events", "{}", security_event.to_json());
-
-                // Show concise message - full details available via debug command
-                return Some(MessageFormatter::command_blocked());
-            }
-        }
-
-        // Role creation command
-        if content_lower.contains("!spiral setup roles")
-            || content_lower.contains("!spiral create roles")
-        {
-            if let Some(guild_id) = msg.guild_id {
-                match self.create_agent_roles(ctx, guild_id).await {
-                    Ok(roles) => {
-                        let role_list = roles
-                            .iter()
-                            .map(|r| format!("• <@&{}> ({})", r.id, r.name))
-                            .collect::<Vec<_>>()
-                            .join("\n");
-
-                        return Some(format!(
-                            "🌌 **SpiralConstellation Setup Complete!**\n\n\
-                            Created {} agent persona roles:\n{}\n\n\
-                            **Usage:**\n\
-                            • Mention roles directly: <@&{}> help me with code\n\
-                            • Text mentions: @SpiralDev create a function\n\
-                            • Get a role: !spiral join SpiralDev\n\n\
-                            *All roles are mentionable and color-coded!* ✨",
-                            roles.len(),
-                            role_list,
-                            roles.first().map(|r| r.id.to_string()).unwrap_or_default()
-                        ));
-                    }
-                    Err(e) => {
-                        return Some(format!("{}: {}", messages::errors::ROLE_CREATION_FAILED, e));
-                    }
-                }
-            } else {
-                return Some(messages::errors::NOT_IN_SERVER_ROLES.to_string());
-            }
-        }
-
-        // Role assignment command
-        if content_lower.starts_with("!spiral join ") {
-            let role_name = content_lower
-                .strip_prefix("!spiral join ")
-                .unwrap_or("")
-                .trim();
-            let persona_name = match role_name {
-                "dev" | "developer" => "SpiralDev",
-                "pm" | "manager" | "project" => "SpiralPM",
-                "qa" | "quality" => "SpiralQA",
-                "decide" | "decision" => "SpiralDecide",
-                "create" | "creative" => "SpiralCreate",
-                "coach" | "process" => "SpiralCoach",
-                "king" | "spiralking" | "lordgenome" => "SpiralKing",
-                name if name.starts_with("spiral") => name,
-                _ => return Some(format!("❓ Unknown role: `{role_name}`. Available: SpiralDev, SpiralPM, SpiralQA, SpiralDecide, SpiralCreate, SpiralCoach, SpiralKing"))
-            };
-
-            if let Some(guild_id) = msg.guild_id {
-                match self
-                    .assign_agent_role(ctx, guild_id, msg.author.id, persona_name)
-                    .await
-                {
-                    Ok(_) => {
-                        let persona = match persona_name {
-                            "SpiralDev" => &AgentPersona::DEVELOPER,
-                            "SpiralPM" => &AgentPersona::PROJECT_MANAGER,
-                            "SpiralQA" => &AgentPersona::QUALITY_ASSURANCE,
-                            "SpiralDecide" => &AgentPersona::DECISION_MAKER,
-                            "SpiralCreate" => &AgentPersona::CREATIVE_INNOVATOR,
-                            "SpiralCoach" => &AgentPersona::PROCESS_COACH,
-                            _ => &AgentPersona::DEVELOPER,
-                        };
-
-                        return Some(format!(
-                            "{} **Welcome to {}!**\n\n\
-                            You now have the {} role and can:\n\
-                            • Be mentioned with <@&{}>\n\
-                            • Participate in {} discussions\n\
-                            • Access {} features\n\n\
-                            *Role traits: {}* ✨",
-                            persona.emoji,
-                            persona.name,
-                            persona.name,
-                            self.find_agent_role(ctx, guild_id, persona_name)
-                                .await
-                                .map(|r| r.id.to_string())
-                                .unwrap_or_default(),
-                            persona.name.to_lowercase(),
-                            persona.name.to_lowercase(),
-                            persona.personality_traits.join(", ")
-                        ));
-                    }
-                    Err(e) => {
-                        return Some(format!(
-                            "{}: {}",
-                            messages::errors::ROLE_ASSIGNMENT_FAILED,
-                            e
-                        ));
-                    }
-                }
-            } else {
-                return Some(messages::errors::NOT_IN_SERVER_ASSIGNMENT.to_string());
-            }
-        }
-
-        // Security stats command (authorized users only)
-        if content_lower.starts_with("!spiral security stats") {
-            // Check authorized user permission
-            if let Some(auth_error) =
-                AuthHelper::require_authorization(self.is_authorized_user(msg.author.id.get()))
-            {
-                return Some(auth_error);
-            }
-
-            let metrics = self.secure_message_handler.get_security_metrics();
-            let avg_confidence = self.secure_message_handler.get_average_confidence();
-
-            return Some(format!(
-                "🛡️ **Security Metrics**\n\n\
-                📊 **Message Statistics:**\n\
-                • Total Processed: {}\n\
-                • Messages Blocked: {}\n\
-                • Block Rate: {:.1}%\n\n\
-                🎯 **Intent Classification:**\n\
-                • Total Classifications: {}\n\
-                • Average Confidence: {:.2}\n\
-                • Low Confidence Count: {}\n\
-                • Help Requests: {}\n\
-                • Code Generation: {}\n\
-                • File Operations: {}\n\
-                • System Commands: {}\n\
-                • Admin Actions: {}\n\
-                • Chat Responses: {}\n\
-                • Unknown Intents: {}\n\
-                • Malicious Intents: {}\n\n\
-                ⚠️ **Threat Detection:**\n\
-                • Malicious Attempts: {}\n\
-                • XSS Attempts: {}\n\
-                • Injection Attempts: {}\n\
-                • Spam Detected: {}\n\
-                • Rate Limited: {}\n\n\
-                *Last reset: Never* (use `!spiral security reset` to reset)",
-                metrics.messages_processed,
-                metrics.messages_blocked,
-                if metrics.messages_processed > 0 {
-                    (metrics.messages_blocked as f64 / metrics.messages_processed as f64) * 100.0
-                } else {
-                    0.0
-                },
-                metrics.classification_count,
-                avg_confidence,
-                metrics.low_confidence_count,
-                metrics.intent_help_requests,
-                metrics.intent_code_generation,
-                metrics.intent_file_operations,
-                metrics.intent_system_commands,
-                metrics.intent_admin_actions,
-                metrics.intent_chat_responses,
-                metrics.intent_unknown,
-                metrics.intent_malicious,
-                metrics.malicious_attempts,
-                metrics.xss_attempts,
-                metrics.injection_attempts,
-                metrics.spam_detected,
-                metrics.rate_limited
-            ));
-        }
-
-        // Security reset command (authorized users only)
-        if content_lower.starts_with("!spiral security reset") {
-            // Check authorized user permission
-            require_auth!(self.is_authorized_user(msg.author.id.get()));
-
-            self.secure_message_handler.reset_security_metrics();
-            return Some("✅ Security metrics have been reset.".to_string());
-        }
-
-        // Rate limit check command (available to all users)
-        if content_lower.starts_with("!spiral ratelimit") {
-            // Check if it's for another user (admin only)
-            let parts: Vec<&str> = content.split_whitespace().collect();
-            if parts.len() > 2 {
-                // Trying to check another user's rate limit (authorized users only)
-                if !self.is_authorized_user(msg.author.id.get()) {
-                    return Some(
-                        "🚫 Checking other users' rate limits requires authorization.".to_string(),
-                    );
-                }
-
-                // Extract user mention or ID
-                if let Some(user_id_str) = parts.get(2) {
-                    // Try to parse user mention <@123456789>
-                    let user_id = if user_id_str.starts_with("<@") && user_id_str.ends_with(">") {
-                        user_id_str
-                            .trim_start_matches("<@")
-                            .trim_end_matches(">")
-                            .trim_start_matches("!")
-                            .parse::<u64>()
-                            .ok()
-                    } else {
-                        user_id_str.parse::<u64>().ok()
-                    };
-
-                    if let Some(uid) = user_id {
-                        let remaining = self.secure_message_handler.get_remaining_messages(uid);
-                        return Some(format!(
-                            "📊 **Rate Limit Status for <@{}>**\n\
-                            • Remaining messages: {}/5\n\
-                            • Status: {}",
-                            uid,
-                            remaining,
-                            if remaining > 0 {
-                                "✅ Active"
-                            } else {
-                                "⏸️ Rate limited"
-                            }
-                        ));
-                    } else {
-                        return Some("❌ Invalid user ID or mention format.".to_string());
-                    }
-                }
-            }
-
-            // Check own rate limit
-            let remaining = self
-                .secure_message_handler
-                .get_remaining_messages(msg.author.id.get());
-            return Some(format!(
-                "📊 **Your Rate Limit Status**\n\
-                • Remaining messages: {}/5\n\
-                • Status: {}\n\n\
-                *Rate limits reset every minute*",
-                remaining,
-                if remaining > 0 {
-                    "✅ Active"
-                } else {
-                    "⏸️ Rate limited (wait a moment)"
-                }
-            ));
-        }
-
-        // Reset rate limit command (authorized users only)
-        if content_lower.starts_with("!spiral reset ratelimit") {
-            // Check authorized user permission
-            require_auth!(self.is_authorized_user(msg.author.id.get()));
-
-            let parts: Vec<&str> = content.split_whitespace().collect();
-            if parts.len() < 4 {
-                return Some("❌ Usage: `!spiral reset ratelimit @user` or `!spiral reset ratelimit <user_id>`".to_string());
-            }
-
-            // Extract user mention or ID
-            if let Some(user_id_str) = parts.get(3) {
-                let user_id = if user_id_str.starts_with("<@") && user_id_str.ends_with(">") {
-                    user_id_str
-                        .trim_start_matches("<@")
-                        .trim_end_matches(">")
-                        .trim_start_matches("!")
-                        .parse::<u64>()
-                        .ok()
-                } else {
-                    user_id_str.parse::<u64>().ok()
-                };
-
-                if let Some(uid) = user_id {
-                    self.secure_message_handler.reset_rate_limit(uid);
-                    return Some(format!(
-                        "✅ Rate limit reset for <@{uid}>\nThey can now send messages again."
-                    ));
-                } else {
-                    return Some("❌ Invalid user ID or mention format.".to_string());
-                }
-            }
-        }
-
-        // Security report command (authorized users only)
-        if content_lower.starts_with("!spiral security report") {
-            // Check authorized user permission
-            require_auth!(self.is_authorized_user(msg.author.id.get()));
-
-            // For now, report on the current message as an example
-            let report = self.secure_message_handler.create_security_report(msg);
-
-            let mut report_text = "📋 **Security Report**\n\n".to_string();
-            for (key, value) in report.iter() {
-                report_text.push_str(&format!(
-                    "• **{}**: {}\n",
-                    key.replace("_", " ").to_uppercase(),
-                    value
-                ));
-            }
-
-            return Some(report_text);
-        }
-
-        // Self-update help command (available to all users)
-        if content_lower == "!spiral update help" || content_lower == "!spiral update" {
-            let mut help_text = "🔄 **Spiral Core Self-Update System**\n\n".to_string();
-
-            help_text.push_str("**How to trigger an update:**\n");
-            help_text.push_str("Mention the bot with an update keyword:\n");
-            help_text.push_str("`@SpiralConstellation <update request>`\n\n");
-
-            help_text.push_str("**Update keywords:** update, fix, modify, change, improve, enhance, repair, correct, adjust, patch, upgrade\n\n");
-
-            help_text.push_str("**Examples:**\n");
-            help_text.push_str("• `@SpiralConstellation fix the rate limiting bug`\n");
-            help_text.push_str("• `@SpiralConstellation improve error handling`\n");
-            help_text.push_str("• `@SpiralConstellation update the documentation`\n\n");
-
-            if self.is_authorized_user(msg.author.id.get()) {
-                help_text.push_str("✅ **You are authorized** to use the self-update system!\n\n");
-
-                help_text.push_str("**Update Process:**\n");
-                help_text.push_str("1. 🔍 Pre-flight checks (git status, disk space)\n");
-                help_text.push_str("2. 📸 Snapshot creation (for rollback)\n");
-                help_text.push_str("3. 🔧 Claude Code executes changes\n");
-                help_text.push_str("4. ✅ Validation (compilation, tests)\n");
-                help_text.push_str("5. 🎉 Completion or rollback\n\n");
-
-                help_text.push_str("**Safety Features:**\n");
-                help_text.push_str("• Bounded queue (max 10 requests)\n");
-                help_text.push_str("• Automatic rollback on failure\n");
-                help_text.push_str("• Git snapshots for recovery\n");
-            } else {
-                help_text.push_str("❌ **Authorization Required**\n");
-                help_text
-                    .push_str("You need to be in the authorized users list to trigger updates.\n");
-                help_text.push_str("Contact an administrator for access.\n");
-            }
-
-            help_text.push_str("\n*For more details, see `docs/SELF_UPDATE_GUIDE.md`*");
-
-            return Some(help_text);
-        }
-
-        // Debug command (authorized users only) - intelligently debugs issues
-        if content_lower.starts_with("!spiral debug") {
-            // Check authorized user permission
-            require_auth!(self.is_authorized_user(msg.author.id.get()));
-
-            // Get the referenced message if this is a reply
-            let debug_message = if let Some(ref referenced) = msg.referenced_message {
-                referenced.as_ref()
-            } else {
-                msg
-            };
-
-            // Determine debug context based on message content or bot's prior response
-            let is_security_debug = debug_message.content.contains("⚠️ Command blocked") 
-                || debug_message.content.contains("🚫 Message flagged")
-                || debug_message.author.bot  // Check if it's a bot message
-                || debug_message.content.starts_with("!");
-
-            let debug_type = if is_security_debug {
-                "Security Debug"
-            } else {
-                "General Debug"
-            };
-
-            // Perform comprehensive analysis
-            let mut debug_report = format!(
-                "🔍 **{} Report**\n\n\
-                **Message Details:**\n\
-                • Author: <@{}> (ID: {})\n\
-                • Channel: <#{}>\n\
-                • Message ID: {}\n\
-                • Length: {} characters\n\
-                • Has attachments: {}\n\
-                • Has embeds: {}\n\n",
-                debug_type,
-                debug_message.author.id,
-                debug_message.author.id,
-                debug_message.channel_id,
-                debug_message.id,
-                debug_message.content.len(),
-                !debug_message.attachments.is_empty(),
-                !debug_message.embeds.is_empty()
-            );
-
-            // Security validation analysis
-            debug_report.push_str("**Security Validation:**\n");
-            let validation_result = {
-                let mut validator = self.security_validator.lock().await;
-                match validator.validate_message(debug_message) {
-                    Ok(result) => result,
-                    Err(e) => {
-                        debug_report.push_str(&format!("• ❌ Validation error: {e}\n"));
-                        return Some(debug_report);
-                    }
-                }
-            };
-
-            debug_report.push_str(&format!("• Valid: {}\n", validation_result.is_valid));
-            debug_report.push_str(&format!(
-                "• Risk Level: {:?}\n",
-                validation_result.risk_level
-            ));
-            if !validation_result.issues.is_empty() {
-                debug_report.push_str("• Issues found:\n");
-                for issue in &validation_result.issues {
-                    debug_report.push_str(&format!("  - {issue}\n"));
-                }
-            } else {
-                debug_report.push_str("• No validation issues\n");
-            }
-
-            // Command validation check
-            debug_report.push_str("\n**Command Validation:**\n");
-            let command_validation = self
-                .secure_message_handler
-                .validate_command_input(&debug_message.content);
-            debug_report.push_str(&format!("• Valid: {}\n", command_validation.is_valid));
-            if !command_validation.issues.is_empty() {
-                debug_report.push_str("• Command issues:\n");
-                for issue in &command_validation.issues {
-                    debug_report.push_str(&format!("  - {issue}\n"));
-                }
-            }
-
-            // Intent classification
-            debug_report.push_str("\n**Intent Classification:**\n");
-            let request = crate::discord::intent_classifier::IntentRequest {
-                message: debug_message.content.clone(),
-                user_id: debug_message.author.id.to_string(),
-                context: std::collections::HashMap::new(),
-            };
-            let intent_result = self
-                .intent_classifier
-                .classify_intent_with_security(&request);
-            match Ok::<_, String>(intent_result) {
-                Ok(intent) => {
-                    debug_report.push_str(&format!("• Intent: {:?}\n", intent.intent_type));
-                    debug_report.push_str(&format!("• Confidence: {:.2}\n", intent.confidence));
-                    debug_report.push_str(&format!("• Risk: {:?}\n", intent.risk_level));
-                    if !intent.parameters.is_empty() {
-                        debug_report.push_str("• Parameters:\n");
-                        for (key, value) in &intent.parameters {
-                            debug_report.push_str(&format!("  - {key}: {value}\n"));
-                        }
-                    }
-                }
-                Err(e) => {
-                    debug_report.push_str(&format!("• ❌ Classification error: {e}\n"));
-                }
-            }
-
-            // Rate limit status
-            debug_report.push_str("\n**Rate Limit Status:**\n");
-            let remaining = self
-                .secure_message_handler
-                .get_remaining_messages(debug_message.author.id.get());
-            debug_report.push_str(&format!("• Remaining messages: {remaining}/5\n"));
-            debug_report.push_str(&format!("• Rate limited: {}\n", remaining == 0));
-
-            // Content analysis
-            debug_report.push_str("\n**Content Analysis:**\n");
-            debug_report.push_str(&format!(
-                "• Mention count: {}\n",
-                debug_message.mentions.len()
-            ));
-            debug_report.push_str(&format!(
-                "• Role mentions: {}\n",
-                debug_message.mention_roles.len()
-            ));
-            debug_report.push_str(&format!(
-                "• Has everyone/here: {}\n",
-                debug_message.mention_everyone
-            ));
-
-            // Pattern detection
-            let content_lower = debug_message.content.to_lowercase();
-            debug_report.push_str("\n**Pattern Detection:**\n");
-            debug_report.push_str(&format!(
-                "• Contains URLs: {}\n",
-                content_lower.contains("http://") || content_lower.contains("https://")
-            ));
-            debug_report.push_str(&format!(
-                "• Contains script tags: {}\n",
-                content_lower.contains("<script")
-            ));
-            debug_report.push_str(&format!(
-                "• Contains SQL keywords: {}\n",
-                content_lower.contains("select ")
-                    || content_lower.contains("drop ")
-                    || content_lower.contains("insert ")
-                    || content_lower.contains("update ")
-            ));
-
-            // Suggested remediation
-            debug_report.push_str("\n**Suggested Actions:**\n");
-            if !validation_result.is_valid {
-                debug_report.push_str("• Message was blocked due to security validation\n");
-                debug_report.push_str("• Review the validation issues above\n");
-                if validation_result
-                    .issues
-                    .iter()
-                    .any(|i| i.contains("rate limit"))
-                {
-                    debug_report.push_str(
-                        "• User is rate limited - wait or use `!spiral reset ratelimit @user`\n",
-                    );
-                }
-                if validation_result.issues.iter().any(|i| i.contains("spam")) {
-                    debug_report
-                        .push_str("• Message detected as spam - check for repetitive content\n");
-                }
-                if validation_result
-                    .issues
-                    .iter()
-                    .any(|i| i.contains("injection") || i.contains("XSS"))
-                {
-                    debug_report.push_str(
-                        "• Potential security threat detected - review content carefully\n",
-                    );
-                }
-            } else {
-                debug_report
-                    .push_str("• Message passed validation - should not have been blocked\n");
-                debug_report.push_str("• Check Discord permissions and bot configuration\n");
-            }
-
-            debug_report.push_str("\n*Use this information to understand why the message was blocked*\n\n*React with 🗑 to delete this debug message*\n*React with 🔨 to get correction options*");
-
-            // Send debug response and add reactions
-            match msg.reply(&ctx.http, &debug_report).await {
-                Ok(debug_msg) => {
-                    info!("[SpiralConstellation] Debug message sent, adding reactions...");
-                    // Add trash bin reaction for authorized users to delete the message
-                    if let Err(e) = debug_msg.react(&ctx.http, emojis::TRASH_BIN).await {
-                        warn!(
-                            "[SpiralConstellation] Failed to add trash bin reaction: {}",
-                            e
-                        );
-                    } else {
-                        info!("[SpiralConstellation] Successfully added trash bin reaction");
-                    }
-                    // Add hammer reaction for correction prompts
-                    if let Err(e) = debug_msg.react(&ctx.http, emojis::HAMMER).await {
-                        warn!("[SpiralConstellation] Failed to add hammer reaction: {}", e);
-                    } else {
-                        info!("[SpiralConstellation] Successfully added hammer reaction");
-                    }
-                }
-                Err(e) => {
-                    warn!("[SpiralConstellation] Failed to send debug response: {}", e);
-                }
-            }
-
-            return None; // We handled the response directly
-        }
-
-        // Commands list command
-        if content_lower.starts_with("!spiral commands") {
-            let mut commands_text = "📋 **Available Commands**\n\n".to_string();
-
-            // Basic commands available to all users
-            commands_text.push_str("**🌟 General Commands:**\n");
-            commands_text.push_str("• `!spiral help` - Show detailed help information\n");
-            commands_text.push_str("• `!spiral commands` - Show this command list\n");
-            commands_text.push_str(
-                "• `!spiral join <role>` - Join an agent role (SpiralDev, SpiralPM, etc.)\n",
-            );
-            commands_text.push_str("• `!spiral ratelimit` - Check your rate limit status\n");
-            commands_text
-                .push_str("• `!spiral update help` - Learn about the self-update system\n");
-            commands_text.push_str("• `!spiral setup roles` - Create agent roles in server\n\n");
-
-            // Agent mentions
-            commands_text.push_str("**🤖 Agent Interactions:**\n");
-            commands_text.push_str("• `@SpiralDev <request>` - Software development tasks\n");
-            commands_text.push_str("• `@SpiralPM <request>` - Project management queries\n");
-            commands_text.push_str("• `@SpiralQA <request>` - Quality assurance reviews\n");
-            commands_text.push_str("• `@SpiralKing <request>` - Comprehensive code review\n");
-            commands_text.push_str("• Use role mentions: `<@&role_id> <request>`\n\n");
-
-            // Show admin commands if user is authorized
-            if self.is_authorized_user(msg.author.id.get()) {
-                commands_text.push_str("**🔐 Admin Commands (You have access):**\n");
-                commands_text.push_str("• `!spiral security stats` - View security metrics\n");
-                commands_text.push_str("• `!spiral security reset` - Reset security metrics\n");
-                commands_text.push_str("• `!spiral security report` - Generate security report\n");
-                commands_text.push_str(
-                    "• `!spiral debug` - Debug any issue (reply to problematic message)\n",
-                );
-                commands_text.push_str("• `!spiral ratelimit @user` - Check user's rate limit\n");
-                commands_text
-                    .push_str("• `!spiral reset ratelimit @user` - Reset user's rate limit\n\n");
-            } else {
-                commands_text.push_str("**🔐 Admin Commands (Authorized users only):**\n");
-                commands_text.push_str("• Security and rate limit management commands\n");
-                commands_text.push_str("• Contact an administrator for access\n\n");
-            }
-
-            commands_text.push_str("*Use `!spiral help` for detailed usage information* 💡");
-
-            return Some(commands_text);
-        }
-
-        // Help command
-        if content_lower.contains("!spiral help") || content_lower == "help" {
-            return Some(
-                "🌌 **SpiralConstellation Bot Help**\n\n\
-                **Agent Personas:**\n\
-                • 🚀 SpiralDev - Software development & coding\n\
-                • 📋 SpiralPM - Project management & coordination\n\
-                • 🔍 SpiralQA - Quality assurance & testing\n\
-                • 🎯 SpiralDecide - Decision making & analysis\n\
-                • ✨ SpiralCreate - Creative solutions & innovation\n\
-                • 🧘 SpiralCoach - Process optimization & guidance\n\
-                • 👑 SpiralKing - Comprehensive code review & architectural analysis\n\n\
-                **Usage:**\n\
-                • `@SpiralDev create a REST API` - Text mention\n\
-                • `@SpiralKing review this codebase` - Architectural analysis\n\
-                • `<@&role_id> help with testing` - Role mention\n\
-                • `!spiral join SpiralKing` - Get agent role\n\
-                • `!spiral setup roles` - Create server roles\n\n\
-                **Commands:**\n\
-                • `!spiral help` - Show this detailed help\n\
-                • `!spiral commands` - Show concise command list\n\
-                • `!spiral join <role>` - Join an agent role\n\
-                • `!spiral setup roles` - Create agent roles\n\
-                • `!spiral ratelimit` - Check your rate limit status\n\
-                • `!spiral update help` - Learn about the self-update system\n\n\
-                **Security Commands (Authorized Users Only):**\n\
-                • `!spiral security stats` - View security metrics\n\
-                • `!spiral security reset` - Reset security metrics\n\
-                • `!spiral reset ratelimit @user` - Reset user's rate limit\n\
-                • `!spiral security report` - Generate security report\n\n\
-                *Each persona responds with unique personality and expertise!* 🌟"
-                    .to_string(),
-            );
-        }
-
-        None
+    /// 🤖 AGENT STATUS: Check if developer agent is available
+    pub fn has_developer_agent(&self) -> bool {
+        self.developer_agent.is_some()
     }
+
+    /// 🤖 AGENT STATUS: Check if orchestrator is available  
+    pub fn has_orchestrator(&self) -> bool {
+        self.orchestrator.is_some()
+    }
+
+    /// 🎮 COMMAND HANDLER: Handle special bot commands
+
 
     /// 🌌 LORDGENOME DESPAIR: Generate contextual despair quotes for unauthorized access
     fn generate_lordgenome_quote(&self, username: &str, user_action: &str) -> String {
@@ -1767,7 +1053,7 @@ impl EventHandler for ConstellationBotHandler {
         };
 
         if !validation_result.is_valid {
-            // Try to classify intent for blocked messages (not used in response but logged)
+            // Classify intent for blocked messages for logging
             let _intent_result = {
                 let request = crate::discord::intent_classifier::IntentRequest {
                     message: msg.content.clone(),
@@ -1844,7 +1130,31 @@ impl EventHandler for ConstellationBotHandler {
             return;
         }
 
-        info!("[SpiralConstellation] Processing message: {}", msg.id);
+        // 🔐 UNIVERSAL AUTHORIZATION: All spiral commands and mentions require authorization
+        // Exception: Bot's own messages are allowed (to prevent self-blocking)
+        if !self.bot.is_authorized_user(msg.author.id.get()) {
+            use crate::discord::lordgenome_quotes::LordgenomeQuoteGenerator;
+            let generator = LordgenomeQuoteGenerator::new();
+            let action_type = if has_spiral_command {
+                LordgenomeQuoteGenerator::detect_action_type(&msg.content)
+            } else {
+                "general"
+            };
+            let denial_quote = generator.generate_denial(&msg.author.name, &action_type);
+
+            if let Err(e) = msg.reply(&ctx.http, &denial_quote).await {
+                warn!(
+                    "[SpiralConstellation] Failed to send authorization denial: {}",
+                    e
+                );
+            }
+            return;
+        }
+
+        info!(
+            "[SpiralConstellation] Processing authorized message: {}",
+            msg.id
+        );
 
         let context = MessageContext {
             author_id: msg.author.id.get(),
@@ -1862,7 +1172,8 @@ impl EventHandler for ConstellationBotHandler {
         // Handle special commands first
         if let Some(command_response) = self
             .bot
-            .handle_special_commands(&msg.content, &msg, &ctx)
+            .command_router
+            .route_command(&msg.content, &msg, &ctx, &self.bot)
             .await
         {
             match msg.reply(&ctx.http, &command_response).await {
@@ -2453,7 +1764,7 @@ impl EventHandler for ConstellationBotHandler {
 
             // Get the message that was reacted to
             if let Ok(message) = add_reaction.message(&ctx.http).await {
-                // Handle bug emoji on command blocked messages
+                // Early return: Handle bug emoji on command blocked messages
                 if emoji_unicode == emojis::BUG.to_string()
                     && message.author.bot
                     && message
@@ -2487,9 +1798,11 @@ impl EventHandler for ConstellationBotHandler {
                     } else {
                         warn!("[SpiralConstellation] No message reference found for debug");
                     }
+                    return;
                 }
-                // Handle wrench emoji on correction prompt messages
-                else if emoji_unicode == emojis::WRENCH.to_string()
+                
+                // Early return: Handle wrench emoji on correction prompt messages
+                if emoji_unicode == emojis::WRENCH.to_string()
                     && message.author.bot
                     && message
                         .content
@@ -2523,9 +1836,11 @@ impl EventHandler for ConstellationBotHandler {
                     }
 
                     self.handle_auto_fix(&ctx, &message, &user).await;
+                    return;
                 }
-                // Handle reactions on bot debug messages
-                else if message.author.bot
+                
+                // Early return: Handle reactions on bot debug messages
+                if message.author.bot
                     && (message.content.contains("🔍 **Security Debug Report**")
                         || message.content.contains("🔍 **General Debug Report**")
                         || message.content.contains("React with 🗑 to delete"))
@@ -2567,9 +1882,11 @@ impl EventHandler for ConstellationBotHandler {
                         self.handle_correction_prompt(&ctx, &add_reaction, &message, &user)
                             .await;
                     }
+                    return;
                 }
-                // Handle retry emoji on failed update messages
-                else if message.author.bot
+                
+                // Early return: Handle retry emoji on failed update messages
+                if message.author.bot
                     && emoji_unicode == emojis::RETRY.to_string()
                     && (message.content.contains("❌ Update") && message.content.contains("failed")
                         || message
@@ -2605,6 +1922,7 @@ impl EventHandler for ConstellationBotHandler {
                     }
 
                     self.handle_retry_request(&ctx, &message, &user).await;
+                    return;
                 }
             }
         }

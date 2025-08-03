@@ -14,7 +14,7 @@ We've intentionally disabled certain markdownlint rules that conflict with our d
 
 **Disabled** - We allow flexible spacing around headings for better visual organization.
 
-### MD032 - Blanks around lists  
+### MD032 - Blanks around lists
 
 **Disabled** - We allow flexible spacing around lists for better readability.
 
@@ -53,7 +53,7 @@ We've intentionally disabled certain markdownlint rules that conflict with our d
 
 ### Structure
 
-```
+````
 # Main Title
 
 Brief introduction paragraph.
@@ -76,7 +76,7 @@ Use language-specific code blocks when the language is relevant:
 fn example() {
     println!("Language specified for syntax highlighting");
 }
-```
+````
 
 Use plain code blocks for general examples, configs, or directory structures:
 
@@ -91,12 +91,12 @@ src/
 
 - Use consistent list formatting
 - Allow flexible spacing for visual organization
-- Prefer bullet points (-) over asterisks (*) for consistency
+- Prefer bullet points (-) over asterisks (\*) for consistency
 
 ### Emphasis
 
 - Use **bold** for important concepts and file names
-- Use *italics* for emphasis and variable names
+- Use _italics_ for emphasis and variable names
 - Use `inline code` for code elements, commands, and file paths
 
 ### Links

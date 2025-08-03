@@ -67,7 +67,9 @@
       "Bash(RUST_BACKTRACE=* cargo test * | grep *)",
       "Bash(*cargo*2>&1|*grep*)",
       "Bash(RUST_LOG=debug cargo test test_concurrent_shutdown_signal_race -- --nocapture)",
-      "Bash(./scripts/validate.sh:*)"
+      "Bash(./scripts/validate.sh:*)",
+      "Bash(touch:*)",
+      "Bash(awk:*)"
     ],
     "deny": [
       "Bash(npm install -g:*)",

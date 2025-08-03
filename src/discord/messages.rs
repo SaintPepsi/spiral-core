@@ -142,6 +142,22 @@ impl AuthHelper {
             None
         }
     }
+
+    /// Check if user is authorized, return Lordgenome quote if not
+    pub fn require_authorization_with_quote(
+        is_authorized: bool,
+        username: &str,
+        command: &str,
+    ) -> Option<String> {
+        if !is_authorized {
+            use crate::discord::lordgenome_quotes::LordgenomeQuoteGenerator;
+            let generator = LordgenomeQuoteGenerator::new();
+            let action_type = LordgenomeQuoteGenerator::detect_action_type(command);
+            Some(generator.generate_denial(username, &action_type))
+        } else {
+            None
+        }
+    }
 }
 
 /// Macro for early return on authorization failure
@@ -150,6 +166,19 @@ macro_rules! require_auth {
     ($authorized:expr) => {
         if !$authorized {
             return Some($crate::discord::messages::security::UNAUTHORIZED.to_string());
+        }
+    };
+}
+
+/// Macro for early return on authorization failure with Lordgenome quote
+#[macro_export]
+macro_rules! require_auth_with_quote {
+    ($authorized:expr, $username:expr, $command:expr) => {
+        if !$authorized {
+            use $crate::discord::lordgenome_quotes::LordgenomeQuoteGenerator;
+            let generator = LordgenomeQuoteGenerator::new();
+            let action_type = LordgenomeQuoteGenerator::detect_action_type($command);
+            return Some(generator.generate_denial($username, &action_type));
         }
     };
 }

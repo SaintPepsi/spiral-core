@@ -1,6 +1,6 @@
-# Claude Task Execution Checklist
+# Task Execution Checklist
 
-Use this checklist before starting any development task to ensure adherence to project standards.
+Check these items before coding to avoid common mistakes.
 
 ## 📋 Pre-Task Documentation Review
 
@@ -23,6 +23,9 @@ Use this checklist before starting any development task to ensure adherence to p
 - [ ] **DRY Principle**: Not duplicating logic or information
 - [ ] **SID Naming**: Short, Intuitive, Descriptive names
 - [ ] **Early Return Pattern**: Using early returns with negative conditions ([details](CODING_STANDARDS.md#early-return-pattern-required))
+- [ ] **Flow Comments**: Does this method have a clear flow of action? Then it needs flow comments at the top
+- [ ] **Clutter Prevention**: Am I breaking up large functions/files? Are responsibilities clear?
+- [ ] **No Bullshit Code**: Am I faking any status, metrics, or functionality?
 - [ ] **Security**: Following established security patterns
 - [ ] **Error Handling**: Using project error handling patterns
 
@@ -56,6 +59,31 @@ Use this checklist before starting any development task to ensure adherence to p
 - Cross-team coordination needed
 - Architecture decision explanations
 
+### Decluttering Checkpoints
+
+**Before implementing, ask:**
+
+- [ ] **Function Size**: Is this function >50 lines? Should it be broken down?
+- [ ] **Single Responsibility**: Does this function/module do one thing well?
+- [ ] **Repetition**: Am I copy-pasting similar logic instead of creating a helper?
+- [ ] **Clear Purpose**: Can I explain what this does in one sentence?
+
+**Stop immediately if you see these problems:**
+
+- Functions >100 lines (break into smaller functions)
+- Files >500 lines (consider module separation)
+- Copy-paste code (extract common functionality)
+- Mixed concerns (UI logic + business logic)
+- Unclear naming (variables like `data`, `temp`, `result`)
+
+**Red flags for bullshit code:**
+
+- Hardcoded status messages ("🟢 Active" without checks)
+- Fake metrics ("Memory: Efficient" without measurement)
+- Placeholder data (returning static values as if they're dynamic)
+- Mock implementations in production code
+- Features that look functional but do nothing
+
 ## 🚨 Red Flags (Stop and Check Docs)
 
 - Creating files outside established patterns
@@ -64,15 +92,15 @@ Use this checklist before starting any development task to ensure adherence to p
 - Documentation that duplicates existing info
 - Security implementations that bypass established patterns
 
-## 📚 Quick Documentation Index
+## 📚 Documentation Quick Reference
 
-| Topic | Document | When to Read |
-|-------|----------|-------------|
-| Project Architecture | `CLAUDE.md` | Every task |
-| Code Organization | `CLAUDE-colocation-patterns.md` | File/test creation |
-| Coding Standards | `CODING_STANDARDS.md` | Writing code |
-| API Patterns | `src/api/API_REFERENCE.md` | API work |
-| Agent Development | `docs/CLAUDE-agents-*.md` | Agent features |
-| Security Patterns | `SECURITY.md` | Security-related work |
+**Read this when working on:**
 
-This checklist should become second nature - internalize these patterns to maintain project consistency.
+- **Any task**: `CLAUDE.md`
+- **File organization**: `COLOCATION_PATTERNS.md`
+- **Writing code**: `CODING_STANDARDS.md`
+- **API work**: `src/api/API_REFERENCE.md`
+- **Agent features**: `docs/CLAUDE-agents-*.md`
+- **Security work**: `SECURITY_POLICY.md`
+
+Internalize these patterns - they prevent most common problems.

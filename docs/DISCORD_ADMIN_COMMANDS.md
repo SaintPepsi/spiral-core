@@ -39,6 +39,10 @@ Commands are only accessible to users in the authorized list. Discord role permi
 
 ### Authorized Users Only Commands
 
+#### Admin Dashboard
+
+- `!spiral admin` - Display comprehensive admin dashboard with system overview
+
 #### Security Monitoring
 
 - `!spiral security stats` - View comprehensive security metrics

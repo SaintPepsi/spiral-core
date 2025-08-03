@@ -123,6 +123,19 @@ impl AgentOrchestrator {
         }
 
         info!("Agent Orchestrator started with managed task lifecycle");
+
+        // Wait indefinitely for shutdown signal (via external shutdown() call)
+        // This keeps the orchestrator running until explicitly shut down
+        loop {
+            if let Some(sender) = &*self.shutdown_signal_sender.lock().await {
+                if sender.is_closed() {
+                    info!("Orchestrator shutdown signal detected");
+                    break;
+                }
+            }
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+
         Ok(())
     }
 

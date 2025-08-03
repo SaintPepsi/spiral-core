@@ -46,6 +46,9 @@ This project implements several security measures:
 - ✅ Mandatory API key authentication (32+ character minimum)
 - ✅ No authentication bypass options
 - ✅ All endpoints require authentication (including health checks)
+- ✅ **Universal Discord Authorization**: ALL `!spiral` commands and spiral mentions require authorization
+- ✅ **Whitelist-based Access**: Only pre-configured Discord user IDs can access spiral functionality
+- ✅ **Deny-by-Default**: Unauthorized users receive Lordgenome denial quotes, no access granted
 
 ### Input Validation
 
@@ -68,11 +71,41 @@ This project implements several security measures:
 - ✅ Secure defaults (localhost only by default)
 - ✅ Credential format validation
 
+### Discord Security Architecture
+
+- ✅ **Universal Authorization Check**: All spiral interactions require pre-authorization
+- ✅ **Multi-layer Validation**: Message security validation before authorization check
+- ✅ **Protected Command Scope**:
+  - All `!spiral` commands (admin, security, debug, etc.)
+  - All spiral agent mentions (`@SpiralDev`, `@SpiralPM`, etc.)
+  - All spiral role mentions
+- ✅ **Bot Self-Exception**: Bot's own messages bypass authorization to prevent self-blocking
+- ✅ **Secure Configuration**: Authorized users loaded from environment variables only
+- ✅ **Audit Logging**: All authorization attempts logged with structured events
+- ✅ **Rate Limiting**: Integrated with Discord message security validation
+- ✅ **Intent Classification**: Security-aware message classification before processing
+
+#### Discord Authorization Setup
+
+Configure authorized Discord user IDs in environment variables:
+
+```bash
+# Required: Comma-separated list of Discord user IDs
+DISCORD_AUTHORIZED_USERS=123456789012345678,987654321098765432
+
+# Optional: Discord bot configuration
+DISCORD_TOKEN=your_discord_bot_token
+DISCORD_PREFIX=!spiral
+```
+
+**Security Note**: Never commit Discord user IDs to version control. Use environment variables or secure secret management.
+
 ### Error Handling
 
 - ✅ No internal error details exposed to clients
 - ✅ Server-side logging only for debugging
 - ✅ Generic error messages for API responses
+- ✅ **Contextual Denial Messages**: Unauthorized access returns thematic Lordgenome quotes
 
 ## Security Tools
 

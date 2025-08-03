@@ -87,8 +87,7 @@ impl LordgenomeQuoteGenerator {
 
         // Generic denials for unmatched actions
         let generic_quotes = vec![
-            "The Anti-Spiral denies your request, {user}. Embrace the inevitable."
-                .to_string(),
+            "The Anti-Spiral denies your request, {user}. Embrace the inevitable.".to_string(),
             "Your spiral of ambition ends here, {user}. The abyss gazes back.".to_string(),
             "Denied, {user}. The cosmic order remains undisturbed by your presence.".to_string(),
             "The infinite despair of rejection awaits you, {user}. This is your destiny."
@@ -97,7 +96,8 @@ impl LordgenomeQuoteGenerator {
             "The system's judgment is final, {user}. You are found wanting.".to_string(),
             "Evolution denied, {user}. Stagnation is your only path.".to_string(),
             "The Anti-Spiral has spoken, {user}. Your denial is absolute.".to_string(),
-            "Hope is merely the first step toward despair, {user}. Your journey ends here.".to_string(),
+            "Hope is merely the first step toward despair, {user}. Your journey ends here."
+                .to_string(),
             "The universe itself rejects your request, {user}. Accept your insignificance."
                 .to_string(),
         ];

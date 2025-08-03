@@ -122,12 +122,9 @@ git log --grep=pre-update-snapshot --oneline -n 20
 git reset --hard <commit-hash>
 ```
 
-## 🎯 Best Practices
+## Best Practices
 
-1. **Clear Descriptions**: Be specific about what needs updating
-2. **One Change at a Time**: Focus updates on single issues
-3. **Test First**: Consider impact before updating
-4. **Monitor Status**: Watch for status messages during update
+Be specific about what's broken. Fix one thing at a time.
 
 ## 🌟 Example Updates
 
@@ -145,4 +142,4 @@ Poor examples:
 
 ---
 
-_Remember Uncle Iroh's wisdom: "A system that can improve itself is like tea that gets better with each steeping. But remember - even the finest tea can become bitter if steeped too long without care."_
+*Self-updates enable continuous system improvement through practical collaboration.*

@@ -7,7 +7,7 @@ A Rust-based AI agent orchestration system built by Anti Spiral Interactive. The
 📋 **[Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md)** - System design and component relationships  
 🏗️ **[Development Setup](docs/CODING_STANDARDS.md#development-practices)** - Local development and container setup  
 🔧 **[Coding Standards](docs/CODING_STANDARDS.md)** - SOLID, DRY, SID principles and best practices  
-🚀 **[Phase 1 Implementation](src/implementation/docs/IMPLEMENTATION_PHASE1.md)** - Current development phase  
+🚀 **[Phase 1 Implementation](src/implementation/docs/IMPLEMENTATION_PHASE1.md)** - Current development phase
 
 ## Architecture Overview
 
@@ -48,6 +48,7 @@ cargo build --release
 # Configure environment (copy .env.example to .env)
 CLAUDE_API_KEY=sk-ant-api03-your-api-key-here
 DISCORD_TOKEN=your-discord-bot-token  # optional
+DISCORD_AUTHORIZED_USERS=123456789012345678,987654321098765432  # required for Discord
 
 # Run
 cargo run --bin spiral-core
@@ -114,12 +115,28 @@ The verification script checks:
 
 ### Discord Integration
 
+**🔐 Security First**: All Discord interactions require authorization. Configure authorized user IDs:
+
+```bash
+# In your .env file
+DISCORD_AUTHORIZED_USERS=123456789012345678,987654321098765432
+```
+
 Conversational agent mentions for natural interaction:
 
 ```
 @SpiralDev create a Python FastAPI todo application
 @SpiralPM what's the best architecture for this microservice?
+!spiral admin    # Access admin dashboard (authorized users only)
 ```
+
+**Protected Commands & Mentions:**
+
+- All `!spiral` commands (admin, security, debug, etc.)
+- All spiral agent mentions (`@SpiralDev`, `@SpiralPM`, etc.)
+- All spiral role mentions
+
+**Unauthorized Access:** Returns contextual denial messages for security.
 
 ### HTTP API
 
@@ -139,8 +156,8 @@ See [API Reference](src/api/API_REFERENCE.md) for complete endpoint documentatio
 
 ### Current Agents
 
-- **SpiralDev**: Autonomous code generation with language detection  
-- **SpiralPM**: Strategic analysis and task coordination _(planned)_  
+- **SpiralDev**: Autonomous code generation with language detection
+- **SpiralPM**: Strategic analysis and task coordination _(planned)_
 - **SpiralQA**: Code review and validation _(planned)_
 
 See [Agent Documentation](src/agents/docs/) for implementation details.
@@ -188,8 +205,8 @@ The project follows strict architectural principles documented in [Coding Standa
 
 ### System Requirements
 
-- **Memory**: ~2.1GB RAM  
-- **CPU**: 2+ cores recommended  
+- **Memory**: ~2.1GB RAM
+- **CPU**: 2+ cores recommended
 - **Network**: Stable internet for Claude API calls
 
 See [Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md) for complete system design.
@@ -199,7 +216,7 @@ See [Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md) for complete system d
 Common issues and solutions:
 
 1. **Claude API Errors**: Verify API key and rate limits
-2. **Discord Connection**: Check bot token and permissions  
+2. **Discord Connection**: Check bot token and permissions
 3. **Compilation**: Ensure Rust 1.70+ and dependencies
 
 Debug mode: `RUST_LOG=debug cargo run`
@@ -224,7 +241,7 @@ src/                           # Implementation-specific docs
 ## Contributing
 
 1. Follow [Coding Standards](docs/CODING_STANDARDS.md) and architectural principles
-2. Ensure all tests pass before submitting PRs  
+2. Ensure all tests pass before submitting PRs
 3. Update relevant documentation for changes
 4. See [Development Practices](docs/CODING_STANDARDS.md) for workflow
 

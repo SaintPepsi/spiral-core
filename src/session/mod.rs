@@ -88,7 +88,6 @@ pub struct Session {
     pub expires_at: DateTime<Utc>,
     /// Session metadata for extensibility
     pub metadata: HashMap<String, String>,
-    /// Session state
     pub state: SessionState,
 }
 

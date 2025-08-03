@@ -1,15 +1,11 @@
 # Coding Standards and Development Practices
 
-**Purpose**: Single source of truth for all Spiral Core development standards and practices  
+Development patterns that work well for this project  
 **Updated**: 2024-08-01
 
 ## Quick Reference
 
-- **Architecture**: SOLID principles, DRY, SID naming
-- **Code Style**: Early returns, Rust idioms, type safety
-- **Development**: Local-only packages, no destructive commands
-- **Testing**: Colocated tests, comprehensive coverage
-- **Documentation**: Inline docs for public APIs, examples where beneficial
+Write code that compiles fast, tests easily, and reads clearly.
 
 ## Core Principles
 
@@ -160,6 +156,41 @@ pub const SIZE: usize = 1000;      // Not descriptive
 ```
 
 ## Code Style Requirements
+
+### Flow Comments (Required)
+
+Complex methods must have flow comments at the top explaining the action sequence.
+
+```rust
+/// Handle Discord message processing with security validation
+async fn handle_message(&self, msg: &Message, ctx: &Context) {
+    // FLOW: Check relevance → Authorize → Validate → Process → Respond
+    // 1. Check if message needs processing (mentions/commands)
+    // 2. Verify user authorization immediately
+    // 3. Validate message content for security
+    // 4. Route to appropriate handler
+    // 5. Send response with error handling
+
+    if !self.needs_processing(&msg.content) {
+        return;
+    }
+
+    if !self.is_authorized_user(msg.author.id.get()) {
+        self.send_denial_quote(&msg).await;
+        return;
+    }
+
+    // Rest of implementation...
+}
+```
+
+**When to add flow comments:**
+
+- Methods with >30 lines or >3 logical steps
+- Security-critical code paths
+- Complex business logic
+- Methods with multiple early returns
+- Integration points between modules
 
 ### Early Return Pattern (Required)
 
@@ -359,14 +390,16 @@ pub async fn validate_session(&self, session_id: &SessionId) -> Result<Session> 
 
 ## Code Review Checklist
 
+Before merging, verify these basics work as expected:
+
 - [ ] Follows SOLID principles
 - [ ] No code duplication (DRY)
 - [ ] SID naming convention used
 - [ ] Early return pattern for validation
+- [ ] Flow comments for complex methods
 - [ ] Proper error handling (no unwrap in production)
 - [ ] Tests included for new functionality
 - [ ] Public APIs documented
-- [ ] No prohibited commands used
 
 ## Related Documentation
 
