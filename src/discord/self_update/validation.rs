@@ -19,7 +19,7 @@
 use super::types::SelfUpdateRequest;
 use crate::error::{Result, SpiralError};
 use std::process::Command;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 pub struct UpdateValidator;
 
@@ -61,12 +61,36 @@ impl UpdateValidator {
         Ok(true)
     }
 
-    /// Temporary stub for validate_changes - will be replaced with two-phase pipeline
+    /// Run the two-phase validation pipeline
     pub async fn validate_changes() -> Result<()> {
-        info!("[UpdateValidator] Two-phase validation pipeline not yet implemented");
-        Err(SpiralError::Validation(
-            "New two-phase validation pipeline is being implemented".to_string(),
-        ))
+        info!("[UpdateValidator] Starting two-phase validation pipeline");
+
+        let mut pipeline = super::pipeline::ValidationPipeline::new();
+        let context = pipeline.execute().await?;
+
+        match context.final_status {
+            super::pipeline::PipelineStatus::Success => {
+                info!("[UpdateValidator] Validation passed on first attempt");
+                Ok(())
+            }
+            super::pipeline::PipelineStatus::SuccessWithRetries => {
+                info!(
+                    "[UpdateValidator] Validation passed after {} iterations",
+                    context.pipeline_iterations
+                );
+                Ok(())
+            }
+            super::pipeline::PipelineStatus::Failure => {
+                error!(
+                    "[UpdateValidator] Validation failed after {} iterations",
+                    context.pipeline_iterations
+                );
+                Err(SpiralError::Validation(format!(
+                    "Validation failed: {:?}",
+                    context.critical_errors
+                )))
+            }
+        }
     }
 }
 
