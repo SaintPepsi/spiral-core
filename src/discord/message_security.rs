@@ -12,6 +12,40 @@ pub const MAX_MESSAGE_LENGTH: usize = 4000;
 /// Maximum attachment size for processing
 pub const MAX_ATTACHMENT_SIZE: usize = 25 * 1024 * 1024; // 25MB
 
+/// Security validation patterns with their issue descriptions and risk levels
+const SECURITY_PATTERNS: &[(&str, &str, RiskLevel)] = &[
+    ("<script", "Contains script tags (XSS attempt)", RiskLevel::Critical),
+    ("../", "Contains path traversal patterns", RiskLevel::High),
+    ("..\\", "Contains path traversal patterns", RiskLevel::High),
+    ("$(", "Contains command injection patterns", RiskLevel::High),
+    ("`", "Contains command injection patterns", RiskLevel::High),
+    ("${", "Contains command injection patterns", RiskLevel::High),
+    ("@everyone", "Contains Discord mass mentions", RiskLevel::Medium),
+    ("@here", "Contains Discord mass mentions", RiskLevel::Medium),
+];
+
+/// Security prefix patterns with their issue descriptions and risk levels
+const SECURITY_PREFIX_PATTERNS: &[(&str, &str, RiskLevel)] = &[
+    ("javascript:", "Contains JavaScript protocol", RiskLevel::High),
+    ("data:", "Contains data URI", RiskLevel::Medium),
+];
+
+/// SQL injection patterns (case-insensitive)
+const SQL_INJECTION_PATTERNS: &[&str] = &[
+    "drop table",
+    "delete from", 
+    "insert into",
+    "update set",
+    "select * from",
+];
+
+/// Malicious file patterns
+const MALICIOUS_FILE_PATTERNS: &[(&str, &str)] = &[
+    (".exe", "Potential malicious executable"),
+    (".bat", "Potential batch script"),
+    (".cmd", "Potential command script"),
+];
+
 /// Risk level for security assessment
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum RiskLevel {
@@ -106,7 +140,7 @@ impl MessageSecurityValidator {
         }
     }
 
-    /// Validate message content for security issues
+    /// Validate message content for security issues using const patterns
     pub fn validate_message_content(&self, content: &str) -> MessageValidationResult {
         let mut issues = Vec::new();
         let mut risk_level = RiskLevel::Low;
@@ -121,34 +155,27 @@ impl MessageSecurityValidator {
             risk_level = RiskLevel::High;
         }
 
-        // Check for script tags
-        if content.to_lowercase().contains("<script") {
-            issues.push("Contains script tags (XSS attempt)".to_string());
-            risk_level = RiskLevel::Critical;
+        let content_lower = content.to_lowercase();
+
+        // Check prefix patterns
+        for (pattern, issue, pattern_risk) in SECURITY_PREFIX_PATTERNS {
+            if content_lower.starts_with(pattern) {
+                issues.push(issue.to_string());
+                if *pattern_risk > risk_level {
+                    risk_level = pattern_risk.clone();
+                }
+            }
         }
 
-        // Check for JavaScript protocol
-        if content.to_lowercase().starts_with("javascript:") {
-            issues.push("Contains JavaScript protocol".to_string());
-            risk_level = RiskLevel::High;
-        }
-
-        // Check for data URIs
-        if content.to_lowercase().starts_with("data:") {
-            issues.push("Contains data URI".to_string());
-            risk_level = RiskLevel::Medium;
-        }
-
-        // Check for path traversal
-        if content.contains("../") || content.contains("..\\") {
-            issues.push("Contains path traversal patterns".to_string());
-            risk_level = RiskLevel::High;
-        }
-
-        // Check for command injection patterns
-        if content.contains("$(") || content.contains("`") || content.contains("${") {
-            issues.push("Contains command injection patterns".to_string());
-            risk_level = RiskLevel::Critical;
+        // Check general security patterns  
+        for (pattern, issue, pattern_risk) in SECURITY_PATTERNS {
+            if (pattern == &"<script" && content_lower.contains(pattern)) || 
+               (pattern != &"<script" && content.contains(pattern)) {
+                issues.push(issue.to_string());
+                if *pattern_risk > risk_level {
+                    risk_level = pattern_risk.clone();
+                }
+            }
         }
 
         // Check for control characters
@@ -160,25 +187,23 @@ impl MessageSecurityValidator {
             risk_level = RiskLevel::High;
         }
 
-        // Check for SQL injection patterns
-        if content.to_lowercase().contains("drop table")
-            || content.to_lowercase().contains("delete from")
-            || content.to_lowercase().contains("insert into")
-        {
-            issues.push("Contains SQL injection patterns".to_string());
-            risk_level = RiskLevel::Critical;
+        // Check SQL injection patterns (case-insensitive)
+        for pattern in SQL_INJECTION_PATTERNS {
+            if content_lower.contains(pattern) {
+                issues.push("Contains SQL injection patterns".to_string());
+                risk_level = RiskLevel::Critical;
+                break; // Only report once
+            }
         }
 
-        // Check for mass mentions
-        if content.contains("@everyone") || content.contains("@here") {
-            issues.push("Contains mass mention attempts".to_string());
-            risk_level = RiskLevel::Medium;
-        }
-
-        // Check for suspicious URLs
-        if content.contains(".exe") && content.contains("http") {
-            issues.push("Contains suspicious executable URLs".to_string());
-            risk_level = RiskLevel::High;
+        // Check for malicious file patterns with URLs
+        for (file_ext, description) in MALICIOUS_FILE_PATTERNS {
+            if content.contains(file_ext) && content.contains("http") {
+                issues.push(format!("Contains suspicious URLs: {}", description));
+                if RiskLevel::High > risk_level {
+                    risk_level = RiskLevel::High;
+                }
+            }
         }
 
         // Sanitize content by removing dangerous patterns

@@ -5,6 +5,15 @@
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
 
+/// Action detection patterns for quote categorization
+const ACTION_PATTERNS: &[(&[&str], &str)] = &[
+    (&["security", "bypass", "hack"], "security"),
+    (&["config", "setting", "parameter"], "config"), 
+    (&["role", "admin", "permission"], "role"),
+    (&["!spiral", "command"], "command"),
+    (&["update", "fix", "change"], "self_update"),
+];
+
 /// Anti-Spiral denial quote generator
 pub struct LordgenomeQuoteGenerator {
     /// Action-specific quote templates
@@ -215,32 +224,15 @@ impl LordgenomeQuoteGenerator {
     pub fn detect_action_type(content: &str) -> &'static str {
         let content_lower = content.to_lowercase();
 
-        // Check more specific patterns first
-        if content_lower.contains("security")
-            || content_lower.contains("bypass")
-            || content_lower.contains("hack")
-        {
-            "security"
-        } else if content_lower.contains("config")
-            || content_lower.contains("setting")
-            || content_lower.contains("parameter")
-        {
-            "config"
-        } else if content_lower.contains("role")
-            || content_lower.contains("admin")
-            || content_lower.contains("permission")
-        {
-            "role"
-        } else if content_lower.contains("!spiral") || content_lower.contains("command") {
-            "command"
-        } else if content_lower.contains("update")
-            || content_lower.contains("fix")
-            || content_lower.contains("change")
-        {
-            "self_update"
-        } else {
-            "general"
+        // Match against defined action patterns using const definitions
+        for (keywords, action_type) in ACTION_PATTERNS {
+            if keywords.iter().any(|keyword| content_lower.contains(keyword)) {
+                return action_type;
+            }
         }
+
+        // Default to general if no patterns match
+        "general"
     }
 }
 

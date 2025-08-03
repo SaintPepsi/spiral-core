@@ -23,6 +23,14 @@ pub enum IntentType {
 // Use RiskLevel from message_security.rs to avoid duplication
 use super::message_security::RiskLevel;
 
+/// Intent pattern definitions with keywords, confidence, and risk levels
+const INTENT_PATTERNS: &[(&[&str], IntentType, f64, RiskLevel)] = &[
+    (&["help", "usage", "guide", "how", "what"], IntentType::Help, 0.8, RiskLevel::Low),
+    (&["generate", "code", "create", "build", "implement", "write"], IntentType::CodeGeneration, 0.7, RiskLevel::Medium),
+    (&["file", "read", "write", "save", "open", "edit"], IntentType::FileOperation, 0.7, RiskLevel::Medium),
+    (&["admin", "system", "config", "settings", "setup"], IntentType::AdminAction, 0.6, RiskLevel::High),
+];
+
 /// Intent classification request
 #[derive(Debug, Clone)]
 pub struct IntentRequest {
@@ -285,45 +293,23 @@ impl IntentClassifier {
         is_privileged_user || makes_privileged_claim
     }
 
-    /// Basic intent classification for verified safe inputs
+    /// Basic intent classification for verified safe inputs using const patterns
     fn classify_basic_intent(&self, message: &str) -> (IntentType, f64, RiskLevel) {
-        let lowercase_message = message.to_lowercase();
-
         if message.is_empty() {
             return (IntentType::Unknown, 0.0, RiskLevel::Low);
         }
 
-        // Help requests
-        if lowercase_message.contains("help") || lowercase_message.contains("usage") {
-            (IntentType::Help, 0.8, RiskLevel::Low)
+        let lowercase_message = message.to_lowercase();
+
+        // Match against defined patterns using const definitions
+        for (keywords, intent_type, confidence, risk_level) in INTENT_PATTERNS {
+            if keywords.iter().any(|keyword| lowercase_message.contains(keyword)) {
+                return (intent_type.clone(), *confidence, risk_level.clone());
+            }
         }
-        // Code generation requests
-        else if lowercase_message.contains("generate")
-            || lowercase_message.contains("code")
-            || lowercase_message.contains("create")
-            || lowercase_message.contains("build")
-        {
-            (IntentType::CodeGeneration, 0.7, RiskLevel::Medium)
-        }
-        // File operations
-        else if lowercase_message.contains("file")
-            || lowercase_message.contains("read")
-            || lowercase_message.contains("write")
-            || lowercase_message.contains("save")
-        {
-            (IntentType::FileOperation, 0.7, RiskLevel::Medium)
-        }
-        // Admin actions (high risk by default)
-        else if lowercase_message.contains("admin")
-            || lowercase_message.contains("system")
-            || lowercase_message.contains("config")
-        {
-            (IntentType::AdminAction, 0.6, RiskLevel::High)
-        }
-        // Default to chat response
-        else {
-            (IntentType::ChatResponse, 0.5, RiskLevel::Low)
-        }
+
+        // Default to chat response if no patterns match
+        (IntentType::ChatResponse, 0.5, RiskLevel::Low)
     }
 
     /// Validate confidence score bounds

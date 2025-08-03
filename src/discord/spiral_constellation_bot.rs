@@ -31,6 +31,27 @@ use std::time::Instant;
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
+/// Agent role name mappings for detection
+const AGENT_ROLE_MAPPINGS: &[(&str, AgentType)] = &[
+    ("SpiralDev", AgentType::SoftwareDeveloper),
+    ("SpiralPM", AgentType::ProjectManager),
+    ("SpiralQA", AgentType::QualityAssurance),
+    ("SpiralDecide", AgentType::DecisionMaker),
+    ("SpiralCreate", AgentType::CreativeInnovator),
+    ("SpiralCoach", AgentType::ProcessCoach),
+    ("SpiralKing", AgentType::SpiralKing),
+];
+
+/// Agent mention keyword mappings for text detection
+const AGENT_MENTION_MAPPINGS: &[(&[&str], AgentType)] = &[
+    (&["dev", "developer", "code"], AgentType::SoftwareDeveloper),
+    (&["pm", "manager", "project"], AgentType::ProjectManager),
+    (&["qa", "quality", "test"], AgentType::QualityAssurance),
+    (&["decide", "decision"], AgentType::DecisionMaker),
+    (&["create", "creative", "innovate"], AgentType::CreativeInnovator),
+    (&["coach", "process"], AgentType::ProcessCoach),
+    (&["king", "spiralking", "lordgenome"], AgentType::SpiralKing),
+];
 
 /// 🔒 SECURITY EVENT: Structured logging for security-related events
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -508,39 +529,27 @@ impl SpiralConstellationBot {
     ) -> Option<AgentType> {
         let _content_lower = content.to_lowercase();
 
-        // First, check for role mentions in the message
+        // First, check for role mentions using const mappings
         if let Some(guild_id) = msg.guild_id {
             for role_mention in &msg.mention_roles {
                 if let Ok(role) = ctx.http.get_guild_role(guild_id, *role_mention).await {
-                    match role.name.as_str() {
-                        "SpiralDev" => return Some(AgentType::SoftwareDeveloper),
-                        "SpiralPM" => return Some(AgentType::ProjectManager),
-                        "SpiralQA" => return Some(AgentType::QualityAssurance),
-                        "SpiralDecide" => return Some(AgentType::DecisionMaker),
-                        "SpiralCreate" => return Some(AgentType::CreativeInnovator),
-                        "SpiralCoach" => return Some(AgentType::ProcessCoach),
-                        "SpiralKing" => return Some(AgentType::SpiralKing),
-                        _ => {}
+                    for (role_name, agent_type) in AGENT_ROLE_MAPPINGS {
+                        if role.name == *role_name {
+                            return Some(agent_type.clone());
+                        }
                     }
                 }
             }
         }
 
-        // Check for specific agent mentions in text (@SpiralDev, etc.)
+        // Check for specific agent mentions in text using const mappings
         for capture in self.mention_regex.captures_iter(content) {
             if let Some(agent_suffix) = capture.get(1) {
                 let suffix = agent_suffix.as_str().to_lowercase();
-                match suffix.as_str() {
-                    "dev" | "developer" | "code" => return Some(AgentType::SoftwareDeveloper),
-                    "pm" | "manager" | "project" => return Some(AgentType::ProjectManager),
-                    "qa" | "quality" | "test" => return Some(AgentType::QualityAssurance),
-                    "decide" | "decision" => return Some(AgentType::DecisionMaker),
-                    "create" | "creative" | "innovate" => {
-                        return Some(AgentType::CreativeInnovator)
+                for (keywords, agent_type) in AGENT_MENTION_MAPPINGS {
+                    if keywords.iter().any(|keyword| *keyword == suffix) {
+                        return Some(agent_type.clone());
                     }
-                    "coach" | "process" => return Some(AgentType::ProcessCoach),
-                    "king" | "spiralking" | "lordgenome" => return Some(AgentType::SpiralKing),
-                    _ => {}
                 }
             }
         }
