@@ -89,16 +89,16 @@
 
 ### Testing Requirements
 
-- **Standard**: Follow `.claude/agents/ty-lee-precision-tester.md` guidelines
+- **Standard**: Run comprehensive testing validation
 - **Execution**: Claude runs test commands (automated testing)
 - **Threshold**: Zero test failures accepted
 - **Failure Response**: Do NOT aggressively delete failing tests; investigate and fix
 
 ### Audit Procedures
 
-1. **Testing**: Follow `.claude/agents/ty-lee-precision-tester.md` guidelines
-2. **Security Audit**: Use `.claude/agents/security-inquisitor.md` for security checks
-3. **Code Review**: Use `.claude/agents/lordgenome-spiral-king.md` for comprehensive code review
+1. **Testing**: Run comprehensive testing validation
+2. **Security Audit**: Perform security vulnerability analysis
+3. **Code Review**: Execute comprehensive code review
 4. **System Integration**: Verify changes don't break existing functionality
 
 ### Timeout Handling
@@ -119,7 +119,7 @@
 
 ### Failure Path
 
-1. **Problem Analysis**: Use `.claude/agents/coach-iroh-dev-mentor.md` to analyse issues using generated logs
+1. **Problem Analysis**: Analyze issues using generated logs
 2. **Immediate Rollback**: Revert to pre-update snapshot
 3. **System Restart**: Reboot to last known good state (if the server got shut down)
 4. **Failure Report**: Comprehensive analysis of what succeeded/failed (include Coach Iroh's analysis)
