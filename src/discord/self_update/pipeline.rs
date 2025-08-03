@@ -116,6 +116,15 @@ pub struct ValidationPipeline {
     start_time: Instant,
 }
 
+impl PipelineContext {
+    /// Serialize context to JSON for passing to Claude agents
+    pub fn to_json(&self) -> Result<String> {
+        serde_json::to_string_pretty(self).map_err(|e| {
+            crate::error::SpiralError::SystemError(format!("Failed to serialize context: {}", e))
+        })
+    }
+}
+
 impl ValidationPipeline {
     /// Create a new validation pipeline instance
     pub fn new() -> Self {
@@ -486,6 +495,32 @@ impl ValidationPipeline {
         }
     }
 
+    /// Track a change made during validation
+    fn track_change(&mut self, phase: &str, description: &str, files: Vec<String>) {
+        self.context.changes_applied.push(ChangeRecord {
+            phase: phase.to_string(),
+            description: description.to_string(),
+            files: files.clone(),
+        });
+
+        // Add files to modified list (deduplicated)
+        for file in files {
+            if !self.context.files_modified.contains(&file) {
+                self.context.files_modified.push(file);
+            }
+        }
+    }
+
+    /// Add a warning to the context
+    fn add_warning(&mut self, warning: String) {
+        self.context.warnings.push(warning);
+    }
+
+    /// Add a critical error to the context
+    fn add_critical_error(&mut self, error: String) {
+        self.context.critical_errors.push(error);
+    }
+
     /// Spawn a Claude Code agent with the given prompt file and context
     async fn spawn_claude_agent(&self, agent_path: &str, _context: &PipelineContext) -> Result<()> {
         // TODO: Implement actual Claude Code integration
@@ -502,6 +537,7 @@ impl ValidationPipeline {
         // 3. Call Claude Code API with prompt + context (with timeout)
         // 4. Process response and apply any recommended changes
         // 5. Use tokio::time::timeout(timeout, async_operation) for timeout control
+        // 6. Track changes using self.track_change()
 
         Ok(())
     }
