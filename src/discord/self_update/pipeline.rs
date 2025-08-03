@@ -9,6 +9,7 @@
 use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::process::Command;
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
@@ -500,60 +501,160 @@ impl ValidationPipeline {
     async fn run_compilation_check(&self) -> Result<ComplianceCheck> {
         info!("[Phase2] Running compilation check");
 
-        // TODO: Run cargo check, if fails spawn Claude agent
+        let output = Command::new("cargo")
+            .args(["check", "--all-targets"])
+            .output()
+            .map_err(|e| {
+                crate::error::SpiralError::SystemError(format!("Failed to run cargo check: {}", e))
+            })?;
+
+        if output.status.success() {
+            return Ok(ComplianceCheck {
+                passed: true,
+                retries: 0,
+                errors: None,
+            });
+        }
+
+        // Compilation failed - spawn Claude agent to fix
+        let errors = String::from_utf8_lossy(&output.stderr);
+        warn!("[Phase2] Compilation check failed: {}", errors);
+
+        // TODO: Actually spawn Claude agent with compilation-fixer.md
+        // For now, simulate that we tried once
 
         Ok(ComplianceCheck {
-            passed: true,
-            retries: 0,
-            errors: None,
+            passed: false,
+            retries: 1,
+            errors: Some(vec![errors.to_string()]),
         })
     }
 
     async fn run_test_check(&self) -> Result<ComplianceCheck> {
         info!("[Phase2] Running test check");
 
-        // TODO: Run cargo test, if fails spawn Claude agent
+        let output = Command::new("cargo").arg("test").output().map_err(|e| {
+            crate::error::SpiralError::SystemError(format!("Failed to run cargo test: {}", e))
+        })?;
+
+        if output.status.success() {
+            return Ok(ComplianceCheck {
+                passed: true,
+                retries: 0,
+                errors: None,
+            });
+        }
+
+        // Tests failed - spawn Claude agent to fix
+        let errors = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        warn!("[Phase2] Test check failed");
+
+        // TODO: Actually spawn Claude agent with test-failure-analyzer.md
+        // For now, simulate that we tried once
 
         Ok(ComplianceCheck {
-            passed: true,
-            retries: 0,
-            errors: None,
+            passed: false,
+            retries: 1,
+            errors: Some(vec![format!("stdout: {}\nstderr: {}", stdout, errors)]),
         })
     }
 
     async fn run_formatting_check(&self) -> Result<ComplianceCheck> {
         info!("[Phase2] Running formatting check");
 
-        // TODO: Run cargo fmt --check, if fails spawn Claude agent
+        let output = Command::new("cargo")
+            .args(["fmt", "--", "--check"])
+            .output()
+            .map_err(|e| {
+                crate::error::SpiralError::SystemError(format!("Failed to run cargo fmt: {}", e))
+            })?;
+
+        if output.status.success() {
+            return Ok(ComplianceCheck {
+                passed: true,
+                retries: 0,
+                errors: None,
+            });
+        }
+
+        // Formatting incorrect - spawn Claude agent to fix
+        warn!("[Phase2] Formatting check failed");
+
+        // TODO: Actually spawn Claude agent with formatting-fixer.md
+        // For now, simulate that we tried once and fixed it
+
+        // Run cargo fmt to fix
+        let _ = Command::new("cargo").arg("fmt").output();
 
         Ok(ComplianceCheck {
-            passed: true,
-            retries: 0,
-            errors: None,
+            passed: false,
+            retries: 1,
+            errors: Some(vec!["Formatting issues detected and fixed".to_string()]),
         })
     }
 
     async fn run_clippy_check(&self) -> Result<ComplianceCheck> {
         info!("[Phase2] Running clippy check");
 
-        // TODO: Run cargo clippy, if fails spawn Claude agent
+        let output = Command::new("cargo")
+            .args(["clippy", "--all-targets", "--", "-D", "warnings"])
+            .output()
+            .map_err(|e| {
+                crate::error::SpiralError::SystemError(format!("Failed to run cargo clippy: {}", e))
+            })?;
+
+        if output.status.success() {
+            return Ok(ComplianceCheck {
+                passed: true,
+                retries: 0,
+                errors: None,
+            });
+        }
+
+        // Clippy warnings/errors - spawn Claude agent to fix
+        let errors = String::from_utf8_lossy(&output.stderr);
+        warn!("[Phase2] Clippy check failed");
+
+        // TODO: Actually spawn Claude agent with clippy-resolver.md
+        // For now, simulate that we tried once
 
         Ok(ComplianceCheck {
-            passed: true,
-            retries: 0,
-            errors: None,
+            passed: false,
+            retries: 1,
+            errors: Some(vec![errors.to_string()]),
         })
     }
 
     async fn run_doc_check(&self) -> Result<ComplianceCheck> {
         info!("[Phase2] Running documentation check");
 
-        // TODO: Run cargo doc, if fails spawn Claude agent
+        let output = Command::new("cargo")
+            .args(["doc", "--no-deps", "--quiet"])
+            .output()
+            .map_err(|e| {
+                crate::error::SpiralError::SystemError(format!("Failed to run cargo doc: {}", e))
+            })?;
+
+        if output.status.success() {
+            return Ok(ComplianceCheck {
+                passed: true,
+                retries: 0,
+                errors: None,
+            });
+        }
+
+        // Doc build failed - spawn Claude agent to fix
+        let errors = String::from_utf8_lossy(&output.stderr);
+        warn!("[Phase2] Documentation check failed");
+
+        // TODO: Actually spawn Claude agent with doc-builder.md
+        // For now, simulate that we tried once
 
         Ok(ComplianceCheck {
-            passed: true,
-            retries: 0,
-            errors: None,
+            passed: false,
+            retries: 1,
+            errors: Some(vec![errors.to_string()]),
         })
     }
 }
