@@ -14,26 +14,38 @@ pub const MAX_ATTACHMENT_SIZE: usize = 25 * 1024 * 1024; // 25MB
 
 /// Security validation patterns with their issue descriptions and risk levels
 const SECURITY_PATTERNS: &[(&str, &str, RiskLevel)] = &[
-    ("<script", "Contains script tags (XSS attempt)", RiskLevel::Critical),
+    (
+        "<script",
+        "Contains script tags (XSS attempt)",
+        RiskLevel::Critical,
+    ),
     ("../", "Contains path traversal patterns", RiskLevel::High),
     ("..\\", "Contains path traversal patterns", RiskLevel::High),
     ("$(", "Contains command injection patterns", RiskLevel::High),
     ("`", "Contains command injection patterns", RiskLevel::High),
     ("${", "Contains command injection patterns", RiskLevel::High),
-    ("@everyone", "Contains Discord mass mentions", RiskLevel::Medium),
+    (
+        "@everyone",
+        "Contains Discord mass mentions",
+        RiskLevel::Medium,
+    ),
     ("@here", "Contains Discord mass mentions", RiskLevel::Medium),
 ];
 
 /// Security prefix patterns with their issue descriptions and risk levels
 const SECURITY_PREFIX_PATTERNS: &[(&str, &str, RiskLevel)] = &[
-    ("javascript:", "Contains JavaScript protocol", RiskLevel::High),
+    (
+        "javascript:",
+        "Contains JavaScript protocol",
+        RiskLevel::High,
+    ),
     ("data:", "Contains data URI", RiskLevel::Medium),
 ];
 
 /// SQL injection patterns (case-insensitive)
 const SQL_INJECTION_PATTERNS: &[&str] = &[
     "drop table",
-    "delete from", 
+    "delete from",
     "insert into",
     "update set",
     "select * from",
@@ -167,10 +179,11 @@ impl MessageSecurityValidator {
             }
         }
 
-        // Check general security patterns  
+        // Check general security patterns
         for (pattern, issue, pattern_risk) in SECURITY_PATTERNS {
-            if (pattern == &"<script" && content_lower.contains(pattern)) || 
-               (pattern != &"<script" && content.contains(pattern)) {
+            if (pattern == &"<script" && content_lower.contains(pattern))
+                || (pattern != &"<script" && content.contains(pattern))
+            {
                 issues.push(issue.to_string());
                 if *pattern_risk > risk_level {
                     risk_level = pattern_risk.clone();

@@ -48,7 +48,10 @@ const AGENT_MENTION_MAPPINGS: &[(&[&str], AgentType)] = &[
     (&["pm", "manager", "project"], AgentType::ProjectManager),
     (&["qa", "quality", "test"], AgentType::QualityAssurance),
     (&["decide", "decision"], AgentType::DecisionMaker),
-    (&["create", "creative", "innovate"], AgentType::CreativeInnovator),
+    (
+        &["create", "creative", "innovate"],
+        AgentType::CreativeInnovator,
+    ),
     (&["coach", "process"], AgentType::ProcessCoach),
     (&["king", "spiralking", "lordgenome"], AgentType::SpiralKing),
 ];
@@ -1806,7 +1809,7 @@ impl EventHandler for ConstellationBotHandler {
                     }
                     return;
                 }
-                
+
                 // Early return: Handle wrench emoji on correction prompt messages
                 if emoji_unicode == emojis::WRENCH.to_string()
                     && message.author.bot
@@ -1844,7 +1847,7 @@ impl EventHandler for ConstellationBotHandler {
                     self.handle_auto_fix(&ctx, &message, &user).await;
                     return;
                 }
-                
+
                 // Early return: Handle reactions on bot debug messages
                 if message.author.bot
                     && (message.content.contains("🔍 **Security Debug Report**")
@@ -1890,7 +1893,7 @@ impl EventHandler for ConstellationBotHandler {
                     }
                     return;
                 }
-                
+
                 // Early return: Handle retry emoji on failed update messages
                 if message.author.bot
                     && emoji_unicode == emojis::RETRY.to_string()

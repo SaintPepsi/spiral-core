@@ -218,7 +218,7 @@ impl CommandHandler for SecurityCommand {
         const SECURITY_STATS: &str = "!spiral security stats";
         const SECURITY_REPORT: &str = "!spiral security report";
         const SECURITY_RESET: &str = "!spiral security reset";
-        
+
         let content_lower = content.to_lowercase();
 
         // Match security command type using const patterns
@@ -226,21 +226,24 @@ impl CommandHandler for SecurityCommand {
             cmd if cmd.starts_with(SECURITY_STATS) => {
                 info!(
                     "[SecurityCommand] Security stats for admin {} ({})",
-                    msg.author.name, msg.author.id.get()
+                    msg.author.name,
+                    msg.author.id.get()
                 );
                 Some(self.generate_security_stats(bot))
             }
             cmd if cmd.starts_with(SECURITY_REPORT) => {
                 info!(
                     "[SecurityCommand] Security report for admin {} ({})",
-                    msg.author.name, msg.author.id.get()
+                    msg.author.name,
+                    msg.author.id.get()
                 );
                 Some(self.generate_security_report(bot))
             }
             cmd if cmd.starts_with(SECURITY_RESET) => {
                 warn!(
                     "[SecurityCommand] Security reset by admin {} ({})",
-                    msg.author.name, msg.author.id.get()
+                    msg.author.name,
+                    msg.author.id.get()
                 );
                 bot.secure_message_handler.reset_security_metrics();
                 Some(self.generate_reset_confirmation(bot))

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 /// Action detection patterns for quote categorization
 const ACTION_PATTERNS: &[(&[&str], &str)] = &[
     (&["security", "bypass", "hack"], "security"),
-    (&["config", "setting", "parameter"], "config"), 
+    (&["config", "setting", "parameter"], "config"),
     (&["role", "admin", "permission"], "role"),
     (&["!spiral", "command"], "command"),
     (&["update", "fix", "change"], "self_update"),
@@ -226,7 +226,10 @@ impl LordgenomeQuoteGenerator {
 
         // Match against defined action patterns using const definitions
         for (keywords, action_type) in ACTION_PATTERNS {
-            if keywords.iter().any(|keyword| content_lower.contains(keyword)) {
+            if keywords
+                .iter()
+                .any(|keyword| content_lower.contains(keyword))
+            {
                 return action_type;
             }
         }

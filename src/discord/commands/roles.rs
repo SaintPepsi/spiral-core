@@ -222,10 +222,10 @@ impl CommandHandler for RolesCommand {
         // 2. Validate Discord server context
         // 3. Execute the role operation
         // 4. Return formatted response
-        
+
         const ROLES_SETUP: &str = "!spiral roles setup";
         const ROLES_JOIN: &str = "!spiral roles join ";
-        
+
         let content_lower = content.to_lowercase();
 
         // Match roles command type using const patterns
@@ -274,10 +274,7 @@ impl CommandHandler for RolesCommand {
                 }
             }
             cmd if cmd.starts_with(ROLES_JOIN) => {
-                let role_name = content_lower
-                    .strip_prefix(ROLES_JOIN)
-                    .unwrap_or("")
-                    .trim();
+                let role_name = content_lower.strip_prefix(ROLES_JOIN).unwrap_or("").trim();
 
                 if role_name.is_empty() {
                     return Some(

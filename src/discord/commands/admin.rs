@@ -76,13 +76,21 @@ impl AdminCommand {
 
         // Agent status - Check actual agent availability
         panel.push_str("**🤖 Agent Status**\n");
-        
-        let dev_status = if bot.has_developer_agent() { "🟢 Available" } else { "🔴 Not Available" };
+
+        let dev_status = if bot.has_developer_agent() {
+            "🟢 Available"
+        } else {
+            "🔴 Not Available"
+        };
         panel.push_str(&format!("• SpiralDev: {}\n", dev_status));
-        
-        let orchestrator_status = if bot.has_orchestrator() { "🟢 Available" } else { "🔴 Not Available" };
+
+        let orchestrator_status = if bot.has_orchestrator() {
+            "🟢 Available"
+        } else {
+            "🔴 Not Available"
+        };
         panel.push_str(&format!("• Orchestrator: {}\n", orchestrator_status));
-        
+
         // Other agents not yet implemented
         panel.push_str("• SpiralPM: 🔴 Not Implemented\n");
         panel.push_str("• SpiralQA: 🔴 Not Implemented\n");
@@ -97,11 +105,11 @@ impl AdminCommand {
             "• Dashboard Generation: {:.2}ms\n",
             generation_time.as_millis()
         ));
-        
+
         // Basic memory usage (process RSS)
         if let Ok(usage) = std::process::Command::new("ps")
             .args(["-o", "rss=", "-p", &std::process::id().to_string()])
-            .output() 
+            .output()
         {
             if let Ok(output) = String::from_utf8(usage.stdout) {
                 if let Ok(rss_kb) = output.trim().parse::<u64>() {
@@ -116,7 +124,7 @@ impl AdminCommand {
         } else {
             panel.push_str("• Memory Usage: ❓ Monitoring not available\n");
         }
-        
+
         panel.push_str("• Response Time: ❓ Historical metrics not implemented\n\n");
 
         // Quick actions
@@ -141,14 +149,12 @@ impl CommandHandler for AdminCommand {
         bot: &SpiralConstellationBot,
     ) -> Option<String> {
         const ADMIN_PANEL: &str = "!spiral admin";
-        
+
         let content_lower = content.to_lowercase();
 
         // Match admin command using const pattern
         match content_lower.as_str() {
-            cmd if cmd.starts_with(ADMIN_PANEL) => {
-                Some(self.generate_admin_panel(bot).await)
-            }
+            cmd if cmd.starts_with(ADMIN_PANEL) => Some(self.generate_admin_panel(bot).await),
             _ => None,
         }
     }

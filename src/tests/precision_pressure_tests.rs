@@ -32,11 +32,9 @@ mod shutdown_signal_pressure_tests {
             let monitor = Arc::new(SystemMonitor::new(MonitoringConfig::default()));
 
             println!("🔍 [SHUTDOWN TEST] Starting orchestrator");
-            // Start both components  
+            // Start both components
             let orchestrator_clone = orchestrator.clone();
-            let _orchestrator_handle = tokio::spawn(async move {
-                orchestrator_clone.run().await
-            });
+            let _orchestrator_handle = tokio::spawn(async move { orchestrator_clone.run().await });
             println!("🔍 [SHUTDOWN TEST] Starting monitor");
             monitor.start_monitoring().await.unwrap();
 
@@ -125,9 +123,7 @@ mod resource_lifecycle_pressure_tests {
 
             println!("🔍 [LOAD TEST] Starting orchestrator");
             let orchestrator_clone = orchestrator.clone();
-            let _orchestrator_handle = tokio::spawn(async move {
-                orchestrator_clone.run().await
-            });
+            let _orchestrator_handle = tokio::spawn(async move { orchestrator_clone.run().await });
 
             // Give orchestrator time to initialize
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -323,9 +319,7 @@ mod concurrency_intersection_pressure_tests {
 
             println!("🔍 [QUEUE TEST] Starting orchestrator");
             let orchestrator_clone = orchestrator.clone();
-            let _orchestrator_handle = tokio::spawn(async move {
-                orchestrator_clone.run().await
-            });
+            let _orchestrator_handle = tokio::spawn(async move { orchestrator_clone.run().await });
 
             // 🎯 PRECISION TARGET: Concurrent submissions to trigger queue overflow
             let mut submit_handles = Vec::new();
@@ -452,9 +446,7 @@ mod error_propagation_pressure_tests {
 
             println!("🔍 [FAILURE TEST] Starting orchestrator");
             let orchestrator_clone = orchestrator.clone();
-            let _orchestrator_handle = tokio::spawn(async move {
-                orchestrator_clone.run().await
-            });
+            let _orchestrator_handle = tokio::spawn(async move { orchestrator_clone.run().await });
 
             // Give orchestrator time to initialize
             tokio::time::sleep(Duration::from_millis(100)).await;

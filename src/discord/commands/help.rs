@@ -1,4 +1,4 @@
-use super::{CommandHandler, get_commands_by_auth};
+use super::{get_commands_by_auth, CommandHandler};
 use crate::discord::spiral_constellation_bot::SpiralConstellationBot;
 use serenity::{model::channel::Message, prelude::Context};
 use tracing::info;
@@ -92,7 +92,10 @@ impl HelpCommand {
         if !public_commands.is_empty() {
             commands_text.push_str("**🌐 General Commands**\n");
             for command in public_commands {
-                commands_text.push_str(&format!("• `{}` - {}\n", command.prefix, command.description));
+                commands_text.push_str(&format!(
+                    "• `{}` - {}\n",
+                    command.prefix, command.description
+                ));
             }
             commands_text.push_str("\n");
         }
@@ -103,7 +106,10 @@ impl HelpCommand {
             if !admin_commands.is_empty() {
                 commands_text.push_str("**🔐 Admin Commands**\n");
                 for command in admin_commands {
-                    commands_text.push_str(&format!("• `{}` - {}\n", command.prefix, command.description));
+                    commands_text.push_str(&format!(
+                        "• `{}` - {}\n",
+                        command.prefix, command.description
+                    ));
                 }
                 commands_text.push_str("\n");
             }
@@ -124,7 +130,7 @@ impl CommandHandler for HelpCommand {
     ) -> Option<String> {
         const COMMANDS_PREFIX: &str = "!spiral commands";
         const HELP_PREFIX: &str = "!spiral help";
-        
+
         let content_lower = content.to_lowercase();
         let is_authorized = bot.is_authorized_user(msg.author.id.get());
 
@@ -133,14 +139,16 @@ impl CommandHandler for HelpCommand {
             cmd if cmd.starts_with(COMMANDS_PREFIX) => {
                 info!(
                     "[HelpCommand] Commands list for user {} ({})",
-                    msg.author.name, msg.author.id.get()
+                    msg.author.name,
+                    msg.author.id.get()
                 );
                 Some(self.generate_commands_list(is_authorized))
             }
             cmd if cmd.starts_with(HELP_PREFIX) || cmd == "help" => {
                 info!(
                     "[HelpCommand] Detailed help for user {} ({})",
-                    msg.author.name, msg.author.id.get()
+                    msg.author.name,
+                    msg.author.id.get()
                 );
                 Some(self.generate_help_content(is_authorized))
             }

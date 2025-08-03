@@ -132,7 +132,7 @@ impl CommandHandler for SelfUpdateCommand {
     ) -> Option<String> {
         const UPDATE_HELP: &str = "!spiral update help";
         const UPDATE_MANUAL: &str = "!spiral update";
-        
+
         let content_lower = content.to_lowercase();
 
         // Match update command type using const patterns
@@ -140,14 +140,16 @@ impl CommandHandler for SelfUpdateCommand {
             UPDATE_HELP => {
                 info!(
                     "[SelfUpdateCommand] Update help for user {} ({})",
-                    msg.author.name, msg.author.id.get()
+                    msg.author.name,
+                    msg.author.id.get()
                 );
                 Some(self.generate_update_help())
             }
             UPDATE_MANUAL => {
                 info!(
                     "[SelfUpdateCommand] Manual update for user {} ({})",
-                    msg.author.name, msg.author.id.get()
+                    msg.author.name,
+                    msg.author.id.get()
                 );
                 Some(self.generate_manual_update_status())
             }

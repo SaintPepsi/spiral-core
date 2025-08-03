@@ -13,7 +13,13 @@ impl DebugCommand {
     }
 
     /// Generate comprehensive debug report for a message or system state
-    async fn generate_debug_report(&self, _content: &str, msg: &Message, _ctx: &Context, bot: &SpiralConstellationBot) -> String {
+    async fn generate_debug_report(
+        &self,
+        _content: &str,
+        msg: &Message,
+        _ctx: &Context,
+        bot: &SpiralConstellationBot,
+    ) -> String {
         let mut report = "🔍 **Spiral Debug Report**\n\n".to_string();
 
         // Extract target message if replying to one
@@ -48,23 +54,35 @@ impl DebugCommand {
 
             // Security validation analysis using bot's secure message handler
             report.push_str("**🛡️ Security Analysis**\n");
-            
-            let validation_result = bot.secure_message_handler.validate_command_input(&target_msg.content);
-            let validation_status = if validation_result.is_valid { "🟢 Clean" } else { "🔴 Issues Found" };
+
+            let validation_result = bot
+                .secure_message_handler
+                .validate_command_input(&target_msg.content);
+            let validation_status = if validation_result.is_valid {
+                "🟢 Clean"
+            } else {
+                "🔴 Issues Found"
+            };
             report.push_str(&format!("• Message Validation: {}\n", validation_status));
-            
+
             if !validation_result.is_valid {
-                report.push_str(&format!("• Issues: {}\n", validation_result.issues.join(", ")));
+                report.push_str(&format!(
+                    "• Issues: {}\n",
+                    validation_result.issues.join(", ")
+                ));
             }
-            
+
             let risk_level = &validation_result.risk_level;
             let risk_emoji = match risk_level {
                 crate::discord::message_security::RiskLevel::Low => "🟢",
-                crate::discord::message_security::RiskLevel::Medium => "🟡", 
+                crate::discord::message_security::RiskLevel::Medium => "🟡",
                 crate::discord::message_security::RiskLevel::High => "🔴",
                 crate::discord::message_security::RiskLevel::Critical => "🚨",
             };
-            report.push_str(&format!("• Risk Assessment: {} {:?}\n\n", risk_emoji, risk_level));
+            report.push_str(&format!(
+                "• Risk Assessment: {} {:?}\n\n",
+                risk_emoji, risk_level
+            ));
         } else {
             // System debug information
             report.push_str("**🖥️ System Debug Information**\n");
@@ -97,7 +115,11 @@ impl DebugCommand {
 
         // Authorization status
         let is_authorized = bot.is_authorized_user(msg.author.id.get());
-        let auth_status = if is_authorized { "🟢 Authorized" } else { "🔴 Not Authorized" };
+        let auth_status = if is_authorized {
+            "🟢 Authorized"
+        } else {
+            "🔴 Not Authorized"
+        };
         report.push_str(&format!("• Authorization: {}\n\n", auth_status));
 
         // System status summary
@@ -105,7 +127,7 @@ impl DebugCommand {
         report.push_str("• Overall Health: 🟢 Operational\n");
         report.push_str("• Security Layer: 🟢 Active\n");
         report.push_str("• Command Processing: 🟢 Functional\n");
-        
+
         // Rate limiting status from security metrics
         let security_metrics = bot.secure_message_handler.get_security_metrics();
         let rate_limited_count = security_metrics.rate_limited;
@@ -132,7 +154,7 @@ impl CommandHandler for DebugCommand {
         bot: &SpiralConstellationBot,
     ) -> Option<String> {
         const DEBUG_PREFIX: &str = "!spiral debug";
-        
+
         let content_lower = content.to_lowercase();
 
         // Match debug command using const pattern
@@ -140,7 +162,8 @@ impl CommandHandler for DebugCommand {
             cmd if cmd.starts_with(DEBUG_PREFIX) => {
                 info!(
                     "[DebugCommand] Debug report for user {} ({})",
-                    msg.author.name, msg.author.id.get()
+                    msg.author.name,
+                    msg.author.id.get()
                 );
                 let debug_report = self.generate_debug_report(content, msg, ctx, bot).await;
                 Some(debug_report)

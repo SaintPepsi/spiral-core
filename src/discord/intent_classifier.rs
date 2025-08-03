@@ -25,10 +25,30 @@ use super::message_security::RiskLevel;
 
 /// Intent pattern definitions with keywords, confidence, and risk levels
 const INTENT_PATTERNS: &[(&[&str], IntentType, f64, RiskLevel)] = &[
-    (&["help", "usage", "guide", "how to"], IntentType::Help, 0.8, RiskLevel::Low),
-    (&["generate", "code", "create", "build", "implement", "write"], IntentType::CodeGeneration, 0.7, RiskLevel::Medium),
-    (&["file", "read", "write", "save", "open", "edit"], IntentType::FileOperation, 0.7, RiskLevel::Medium),
-    (&["admin", "system", "config", "settings", "setup"], IntentType::AdminAction, 0.6, RiskLevel::High),
+    (
+        &["help", "usage", "guide", "how to"],
+        IntentType::Help,
+        0.8,
+        RiskLevel::Low,
+    ),
+    (
+        &["generate", "code", "create", "build", "implement", "write"],
+        IntentType::CodeGeneration,
+        0.7,
+        RiskLevel::Medium,
+    ),
+    (
+        &["file", "read", "write", "save", "open", "edit"],
+        IntentType::FileOperation,
+        0.7,
+        RiskLevel::Medium,
+    ),
+    (
+        &["admin", "system", "config", "settings", "setup"],
+        IntentType::AdminAction,
+        0.6,
+        RiskLevel::High,
+    ),
 ];
 
 /// Intent classification request
@@ -303,7 +323,10 @@ impl IntentClassifier {
 
         // Match against defined patterns using const definitions
         for (keywords, intent_type, confidence, risk_level) in INTENT_PATTERNS {
-            if keywords.iter().any(|keyword| lowercase_message.contains(keyword)) {
+            if keywords
+                .iter()
+                .any(|keyword| lowercase_message.contains(keyword))
+            {
                 return (intent_type.clone(), *confidence, risk_level.clone());
             }
         }

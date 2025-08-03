@@ -79,16 +79,18 @@ impl CommandHandler for RateLimitCommand {
         // 2. Validate target user (self vs mentioned user)
         // 3. Execute the appropriate action
         // 4. Return formatted response
-        
+
         const RATELIMIT_RESET: &str = "!spiral ratelimit reset";
         const RATELIMIT_CHECK: &str = "!spiral ratelimit";
-        
+
         let content_lower = content.to_lowercase();
 
         // Match ratelimit command type using const patterns
         match content_lower.as_str() {
             cmd if cmd.starts_with(RATELIMIT_RESET) => {
-                if let Some((target_user_id, target_username)) = self.parse_mentioned_user(content, msg) {
+                if let Some((target_user_id, target_username)) =
+                    self.parse_mentioned_user(content, msg)
+                {
                     info!(
                         "[RateLimitCommand] Admin {} resetting rate limit for user {} ({})",
                         msg.author.name, target_username, target_user_id
@@ -103,7 +105,9 @@ impl CommandHandler for RateLimitCommand {
                 }
             }
             cmd if cmd.starts_with(RATELIMIT_CHECK) => {
-                if let Some((target_user_id, target_username)) = self.parse_mentioned_user(content, msg) {
+                if let Some((target_user_id, target_username)) =
+                    self.parse_mentioned_user(content, msg)
+                {
                     // Admin checking another user's rate limit
                     info!(
                         "[RateLimitCommand] Admin {} checking rate limit for user {} ({})",
@@ -114,7 +118,8 @@ impl CommandHandler for RateLimitCommand {
                     // User checking their own rate limit
                     info!(
                         "[RateLimitCommand] User {} ({}) checking own rate limit",
-                        msg.author.name, msg.author.id.get()
+                        msg.author.name,
+                        msg.author.id.get()
                     );
                     Some(self.generate_rate_limit_status(msg.author.id.get(), &msg.author.name))
                 }

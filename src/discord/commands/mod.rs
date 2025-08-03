@@ -149,7 +149,7 @@ impl CommandRouter {
         // 1. Match against static command definitions
         // 2. Route to appropriate handler based on match
         // 3. Handler parses action and executes
-        
+
         let content_lower = content.to_lowercase();
 
         // Find matching command from static definitions
