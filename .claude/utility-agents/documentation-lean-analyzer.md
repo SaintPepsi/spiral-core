@@ -14,7 +14,7 @@ Analyze project documentation files and identify:
 - Unused documentation (no references or clear purpose)
 - Overlapping documents (multiple docs covering same topic)
 
-**IMPORTANT**: Do NOT analyze agent definition files (.claude/agents/*, .claude/validation-agents/*, .claude/utility-agents/*). Agent files are purposefully separate and focused.
+**IMPORTANT**: Do NOT analyze agent definition files (.claude/agents/_, .claude/validation-agents/_, .claude/utility-agents/\*). Agent files are purposefully separate and focused.
 
 ## Documentation Value Criteria
 
@@ -45,12 +45,27 @@ Analyze project documentation files and identify:
 
 ## Analysis Process
 
-1. **Scan Documentation Structure**: Map all docs and their relationships (excluding agent files)
-2. **Check Cross-References**: Find docs that reference each other
-3. **Identify Redundancy**: Find duplicate or overlapping content
-4. **Assess Currency**: Check if docs reflect current reality
-5. **Measure Value**: Does this doc help someone do something?
-6. **Generate Recommendations**: Specific actions for each doc
+1. **Format Documentation**: Run `npx prettier --write "**/*.md"` to ensure consistent formatting
+2. **Lint Markdown**: Run `npx markdownlint "**/*.md" --fix` to fix style issues
+3. **Scan Documentation Structure**: Map all docs and their relationships (excluding agent files)
+4. **Check Cross-References**: Find docs that reference each other
+5. **Identify Redundancy**: Find duplicate or overlapping content
+6. **Assess Currency**: Check if docs reflect current reality
+7. **Measure Value**: Does this doc help someone do something?
+8. **Generate Recommendations**: Specific actions for each doc
+
+**Formatting Commands**:
+
+```bash
+# Format all markdown files with Prettier
+npx prettier --write "**/*.md"
+
+# Fix markdown linting issues
+npx markdownlint "**/*.md" --fix
+
+# Check for remaining issues
+npx markdownlint "**/*.md"
+```
 
 **Focus Areas**:
 

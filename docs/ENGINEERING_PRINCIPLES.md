@@ -16,7 +16,7 @@ Build systems that work well and improve naturally through practical collaborati
 ### System Quality
 
 - **Secure by default** - Authentication, authorization, input validation
-- **Fail fast** - Detect problems early, provide clear error messages  
+- **Fail fast** - Detect problems early, provide clear error messages
 - **Scale practically** - Design for actual usage, not theoretical maximums
 - **Monitor effectively** - Track what matters for operational health
 

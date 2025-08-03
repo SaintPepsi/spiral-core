@@ -12,12 +12,10 @@ This guide walks you through setting up the Spiral Core Discord bot for your ser
 ## Step 1: Create Discord Application
 
 1. **Visit Discord Developer Portal**
-
    - Go to [Discord Developer Portal](https://discord.com/developers/applications)
    - Log in with your Discord account
 
 2. **Create New Application**
-
    - Click "New Application"
    - Give it a name like "Spiral Core Bot" or "Agent Orchestrator"
    - Add a description (optional): "AI agent orchestration system with Claude Code integration"
@@ -31,12 +29,10 @@ This guide walks you through setting up the Spiral Core Discord bot for your ser
 ## Step 2: Create Bot User
 
 1. **Navigate to Bot Section**
-
    - In your application, click "Bot" in the left sidebar
    - Click "Add Bot" to create a bot user
 
 2. **Configure Bot Settings**
-
    - **Username**: Set a memorable name like "SpiralCore" or "AgentOrchestrator"
    - **Avatar**: Upload a distinctive bot avatar
    - **Public Bot**: ✅ Enable if you want others to add your bot to their servers
@@ -50,7 +46,6 @@ This guide walks you through setting up the Spiral Core Discord bot for your ser
 ## Step 3: Get Bot Token
 
 1. **Copy Bot Token**
-
    - In the Bot section, find the "Token" field
    - Click "Copy" to copy your bot token
    - ⚠️ **IMPORTANT**: Keep this token secret! It's like a password for your bot
@@ -63,19 +58,15 @@ This guide walks you through setting up the Spiral Core Discord bot for your ser
 ## Step 4: Configure Bot Permissions
 
 1. **Navigate to OAuth2 > URL Generator**
-
    - Click "OAuth2" in the left sidebar
    - Select "URL Generator"
 
 2. **Select Scopes**
-
    - ✅ `bot` - Required for bot functionality
    - ✅ `applications.commands` - For slash commands (future feature)
 
 3. **Select Bot Permissions**
-
    - **Text Permissions**:
-
      - ✅ `Send Messages` - Post responses
      - ✅ `Send Messages in Threads` - Respond in threads
      - ✅ `Embed Links` - Rich responses
@@ -95,13 +86,11 @@ This guide walks you through setting up the Spiral Core Discord bot for your ser
 ## Step 5: Invite Bot to Server
 
 1. **Use Generated URL**
-
    - Open the URL from Step 4 in a new browser tab
    - Select the server you want to add the bot to
    - Ensure you have "Manage Server" permissions
 
 2. **Authorize Bot**
-
    - Review the permissions
    - Click "Authorize"
    - Complete any captcha if prompted
@@ -164,7 +153,6 @@ This guide walks you through setting up the Spiral Core Discord bot for your ser
    ```
 
    This creates mentionable Discord roles for each agent persona:
-
    - 🚀 **SpiralDev** (Green) - Software Developer
    - 📋 **SpiralPM** (Blue) - Project Manager
    - 🔍 **SpiralQA** (Orange) - Quality Assurance
@@ -248,7 +236,6 @@ This guide walks you through setting up the Spiral Core Discord bot for your ser
    ```
 
 2. **Check Permissions**
-
    - Ensure Message Content Intent is enabled
    - Verify bot has required permissions in server
 
@@ -262,7 +249,6 @@ This guide walks you through setting up the Spiral Core Discord bot for your ser
 ### Bot Online But Not Responding
 
 1. **Check Channel Permissions**
-
    - Bot needs "View Channels" and "Send Messages" in target channels
    - Check channel-specific permission overrides
 
@@ -284,19 +270,16 @@ This guide walks you through setting up the Spiral Core Discord bot for your ser
 ### Role Management Issues
 
 1. **"Failed to create roles" Error**
-
    - Ensure bot has "Manage Roles" permission
    - Bot must have higher role hierarchy than roles it creates
    - Check server role limits (max 250 roles per server)
 
 2. **Role Assignment Failures**
-
    - Verify bot can manage the target role
    - Check if user already has the role
    - Ensure role exists before assignment
 
 3. **Role Mentions Not Working**
-
    - Verify roles are set as mentionable
    - Check role permissions in target channels
    - Ensure role IDs are correct in mention format
@@ -344,13 +327,11 @@ AGENT_MENTION_PATTERN="!Spiral(\w+)"  # Use ! instead of @
 ## Security Considerations
 
 1. **Token Security**
-
    - Never share your bot token
    - Use environment variables, not hardcoded values
    - Regenerate token if compromised
 
 2. **Server Permissions**
-
    - Grant minimum required permissions
    - Regularly audit bot permissions
    - Monitor bot activity logs
@@ -363,13 +344,11 @@ AGENT_MENTION_PATTERN="!Spiral(\w+)"  # Use ! instead of @
 ## Next Steps
 
 1. **Customize Bot Behavior**
-
    - Modify agent response patterns
    - Add custom commands
    - Configure response formatting
 
 2. **Monitor Usage**
-
    - Set up logging and monitoring
    - Track agent performance metrics
    - Monitor API usage costs

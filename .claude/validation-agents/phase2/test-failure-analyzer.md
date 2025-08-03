@@ -56,12 +56,10 @@ Analyze and fix failing tests. DO NOT delete tests unless fundamentally invalid.
 ## Decision Tree
 
 1. **Is the test correct?**
-
    - YES → Fix the implementation
    - NO → Continue to #2
 
 2. **Did requirements change?**
-
    - YES → Update test to match new requirements
    - NO → Continue to #3
 

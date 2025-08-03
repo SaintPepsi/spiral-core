@@ -186,6 +186,8 @@ impl ClaudeCodeCliClient {
                 "--print",
                 "--output-format",
                 "json",
+                "--model",
+                "sonnet",
                 "--permission-mode",
                 &self.config.permission_mode,
             ])
@@ -717,6 +719,8 @@ impl ClaudeCodeCliClient {
                 "--print",
                 "--output-format",
                 "json",
+                "--model",
+                "sonnet",
                 "--permission-mode",
                 permission_mode,
             ])

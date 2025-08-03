@@ -46,37 +46,37 @@ failure_analysis:
       phase: <1 or 2>
       severity: critical|high|medium
       iterations_affected: [<1>, <2>, <3>]
-  
+
   failure_progression:
     deteriorating_checks:
       - check: <check_name>
         iteration_1: <status>
         iteration_2: <status>
         iteration_3: <status>
-    
+
     cascading_failures:
       - initial_failure: <what failed first>
         caused: [<subsequent failures>]
-  
+
   root_cause_analysis:
     primary_cause: <fundamental issue>
     contributing_factors:
       - <factor1>
       - <factor2>
-    
+
     architectural_concerns:
       - <deeper system issue exposed>
-  
+
   recovery_plan:
     immediate_actions:
       - action: <what to do now>
         priority: critical
         estimated_effort: <time>
-    
+
     rollback_recommendation:
       should_rollback: <boolean>
       reason: <why or why not>
-    
+
     manual_fixes_required:
       - file: <path>
         issue: <what's broken>

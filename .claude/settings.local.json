@@ -70,7 +70,8 @@
       "Bash(./scripts/validate.sh:*)",
       "Bash(touch:*)",
       "Bash(awk:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npx prettier:*)"
     ],
     "deny": [
       "Bash(npm install -g:*)",

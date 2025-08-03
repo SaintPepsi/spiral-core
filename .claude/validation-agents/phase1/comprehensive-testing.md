@@ -17,28 +17,24 @@ Perform comprehensive testing analysis focused on pressure points and critical f
 ### What TO Test (High-Value)
 
 1. **Error Boundaries**
-
    - Network failures at critical moments
    - Resource exhaustion scenarios
    - Unexpected input that could crash the system
    - Race conditions in concurrent code
 
 2. **Security Boundaries**
-
    - Input validation edge cases
    - Authorization bypass attempts
    - Injection attack vectors
    - Resource limit violations
 
 3. **Integration Points**
-
    - Discord API failures
    - Claude API timeouts/errors
    - Git operation failures
    - Database connection issues
 
 4. **State Transitions**
-
    - Queue state corruption
    - Update pipeline state machine edge cases
    - Rollback scenarios

@@ -75,7 +75,7 @@ To use Claude validation in your self-update workflow:
    ```rust
    // Run standard validation
    UpdateValidator::validate_changes().await?;
-   
+
    // Optionally add Claude validation
    if should_run_claude_validation(request) {
        spawn_claude_with_custom_prompt(prompt).await?;

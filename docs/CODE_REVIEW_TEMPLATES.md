@@ -218,7 +218,6 @@ impl Clone for DataProcessor {  // ❓ Why Clone instead of Arc?
 **Alternative Approaches**:
 
 1. **Current Approach**: [Brief description]
-
    - Pros: [List advantages]
    - Cons: [List disadvantages]
 

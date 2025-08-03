@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. **Read this CLAUDE.md file completely** to understand project context
 2. **Check relevant modular documentation** listed in the "Modular Documentation Architecture" section
 3. **Follow established patterns** from existing code and documented conventions
-4. **Verify naming conventions** match the established CLAUDE-* pattern for docs
+4. **Verify naming conventions** match the established CLAUDE-\* pattern for docs
 5. **Apply colocation patterns** from [COLOCATION_PATTERNS.md](docs/COLOCATION_PATTERNS.md)
 
 **Key Documentation to Reference:**
@@ -90,7 +90,7 @@ The simplified architecture focuses on Claude Code orchestration with Discord as
 
 - **Active Development**: Core Discord bot and self-update system implemented
 - **Simplified Architecture**: Removed local LLM complexity, focusing on Claude Code orchestration
-- **Resource Efficient**: ~2.1GB memory usage (vs 8GB+ with local models)  
+- **Resource Efficient**: ~2.1GB memory usage (vs 8GB+ with local models)
 - **M2 Optimized**: Native Apple Silicon compilation without GPU model management
 - Heavy emphasis on agent coordination via Claude Code
 - Discord serves as the primary human interface for the system
@@ -100,12 +100,37 @@ The simplified architecture focuses on Claude Code orchestration with Discord as
 
 Following Uncle Iroh's wisdom: "A system that can improve itself is like tea that gets better with each steeping." The self-update system embodies careful, incremental improvement with robust safety mechanisms. See [Iroh's Wisdom](docs/IROH_WISDOM.md) for philosophical guidance.
 
+### Two-Phase Validation Pipeline
+
+The self-update system uses a sophisticated two-phase validation pipeline to ensure code quality:
+
+#### Phase 1: Advanced Quality Assurance (AQA)
+
+- **Code Review & Standards**: Comprehensive review against project standards
+- **Comprehensive Testing**: Focus on pressure points and critical scenarios
+- **Security Audit**: Identify vulnerabilities and unsafe patterns
+- **System Integration**: Verify no regressions or breaking changes
+
+#### Phase 2: Core Rust Compliance Checks (CRCC)
+
+- **Compilation**: `cargo check --all-targets`
+- **Test Execution**: `cargo test`
+- **Formatting**: `cargo fmt`
+- **Linting**: `cargo clippy`
+- **Documentation**: `cargo doc`
+
+**Pipeline Flow Logic**: If ANY check in Phase 2 requires a retry, the entire pipeline loops back to Phase 1. Maximum 3 complete iterations before failure analysis.
+
+**Validation Agents**: The pipeline uses 15+ specialized Claude Code agents located in `.claude/validation-agents/` for different validation aspects, including analysis agents that provide detailed reports on success, partial success, or failure scenarios.
+
+See [Self-Update Pipeline](docs/SELF_UPDATE_PIPELINE_IMPROVEMENT.md) for detailed specifications.
+
 ## Coding Standards and Architecture Principles
 
 The Spiral Core system follows strict architectural principles to ensure maintainability and extensibility. All development must adhere to:
 
 - **SOLID Principles**: Single Responsibility, Open-Closed, Liskov Substitution, Interface Segregation, Dependency Inversion
-- **DRY Principle**: Don't Repeat Yourself - single source of truth for all knowledge  
+- **DRY Principle**: Don't Repeat Yourself - single source of truth for all knowledge
 - **SID Naming**: Short, Intuitive, Descriptive naming conventions
 - **Early Return Pattern**: Use negative conditions with early returns for all validation and error handling
 - **Clutter Prevention**: Maintain clean, organized code by preventing complexity accumulation through modular design and consistent patterns
@@ -132,7 +157,7 @@ The Spiral Core system follows strict architectural principles to ensure maintai
 **Examples of Clutter to Avoid**:
 
 - Monolithic functions (300+ lines like the old `handle_special_commands`)
-- Mixed responsibilities (UI logic mixed with business logic)  
+- Mixed responsibilities (UI logic mixed with business logic)
 - Scattered similar code (copy-paste programming)
 - Unclear naming (variables like `data`, `temp`, `thing`)
 - Dead code (unused imports, functions, variables)
@@ -146,7 +171,7 @@ The Spiral Core system follows strict architectural principles to ensure maintai
 **Violations to Eliminate**:
 
 - **Fake Status**: `"SpiralDev: 🟢 Active"` without checking if agent is actually running
-- **Hardcoded Metrics**: `"Memory Usage: Efficient"` without measuring actual memory usage  
+- **Hardcoded Metrics**: `"Memory Usage: Efficient"` without measuring actual memory usage
 - **Placeholder Values**: `"Response Time: Fast"` without timing real operations
 - **Mock Data**: Returning static data when real data source is unavailable
 - **Pretend Features**: UI elements that suggest functionality that doesn't exist
@@ -162,7 +187,7 @@ The Spiral Core system follows strict architectural principles to ensure maintai
 **Priority Hierarchy**:
 
 1. **Quality** - Code correctness, security, maintainability, and user experience
-2. **Urgency** - Time-sensitive user needs and system stability issues  
+2. **Urgency** - Time-sensitive user needs and system stability issues
 3. **Importance to Business** - Strategic value and long-term impact
 
 **Principles**:
@@ -231,7 +256,7 @@ This CLAUDE.md file serves as the orchestrator for specialized documentation mod
 - **[Engineering Principles](docs/ENGINEERING_PRINCIPLES.md)** - Practical engineering guidelines and quality standards
 - **[Dutch Agent Communication](docs/DUTCH_AGENT_COMMUNICATION.md)** - Direct, pragmatic agent interaction patterns based on Dutch cultural communication
 
-### Agent System Modules  
+### Agent System Modules
 
 - **[Developer Agent](src/agents/docs/AGENTS_DEVELOPER.md)** - Code generation, language detection, and Claude Code integration
 - **[Project Manager Agent](src/agents/docs/AGENTS_PM.md)** - Strategic analysis and coordination patterns
@@ -239,7 +264,7 @@ This CLAUDE.md file serves as the orchestrator for specialized documentation mod
 ### Integration Modules
 
 - **[Discord Integration](src/integrations/docs/INTEGRATIONS_DISCORD.md)** - Conversational agent mentions and Discord bot patterns
-- **[GitHub Integration](src/integrations/docs/INTEGRATIONS_GITHUB.md)** - Automated repository management and PR creation  
+- **[GitHub Integration](src/integrations/docs/INTEGRATIONS_GITHUB.md)** - Automated repository management and PR creation
 - **[Claude Code Integration](src/integrations/docs/INTEGRATIONS_CLAUDE_CODE.md)** - Primary intelligence engine patterns
 
 ### Implementation Modules
@@ -255,7 +280,7 @@ This CLAUDE.md file serves as the orchestrator for specialized documentation mod
 3. **Claude Code Client** - Primary intelligence engine integration
 4. **Minimal HTTP API** - Agent communication endpoints
 
-### Phase 2: Enhanced Coordination (High Priority)  
+### Phase 2: Enhanced Coordination (High Priority)
 
 1. **Project Manager Agent** - Strategic analysis and task coordination
 2. **GitHub Integration** - Automated repository management

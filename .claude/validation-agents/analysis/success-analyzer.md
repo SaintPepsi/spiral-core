@@ -47,15 +47,15 @@ success_analysis:
       - name: <check_name>
         duration_ms: <number>
         percentage: <number>
-  
+
   quality_strengths:
     - <area where code excels>
-  
+
   optimization_opportunities:
     - operation: <what to optimize>
       current_duration_ms: <number>
       suggestion: <how to improve>
-  
+
   recommendations:
     - <actionable improvement>
 ```

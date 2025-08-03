@@ -48,26 +48,26 @@ retry_analysis:
       - iteration: <number>
         failed_check: <check_name>
         reason: <why it failed>
-  
+
   failure_patterns:
     consistent_failures:
       - check: <check_name>
         failure_rate: <percentage>
         common_causes: [<cause1>, <cause2>]
-    
+
     flaky_checks:
       - check: <check_name>
         intermittent_issues: [<issue1>, <issue2>]
-  
+
   fix_analysis:
     effective_fixes:
       - issue: <what failed>
         fix: <what fixed it>
         files_changed: <number>
-    
+
     problematic_areas:
       - <code area needing attention>
-  
+
   prevention_recommendations:
     - issue: <recurring problem>
       prevention: <how to avoid>

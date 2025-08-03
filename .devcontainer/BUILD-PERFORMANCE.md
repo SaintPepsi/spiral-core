@@ -5,13 +5,11 @@
 ### Primary Bottlenecks
 
 1. **Cargo Tool Compilation (90% of build time)**
-
    - `cargo install hurl` - Compiles 100+ dependencies (~2-5 minutes)
    - `cargo install cargo-watch` - Heavy dependencies (~3-8 minutes)
    - `cargo install cargo-edit` - Complex tool chain (~2-5 minutes)
 
 2. **ARM64 Architecture**
-
    - Most tools don't have pre-built ARM64 binaries
    - Everything must be compiled from source
    - Cross-compilation adds overhead

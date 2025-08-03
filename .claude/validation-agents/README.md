@@ -9,10 +9,10 @@ All analysis agents receive a structured context object with the following infor
 ```typescript
 interface PipelineContext {
   // Overall execution
-  pipelineIterations: number;      // 1-3
+  pipelineIterations: number; // 1-3
   totalDurationMs: number;
   finalStatus: "success" | "success_with_retries" | "failure";
-  
+
   // Phase 1 results (same for all iterations)
   phase1Results: {
     codeReview: { passed: boolean; findings: string[]; duration: number };
@@ -20,7 +20,7 @@ interface PipelineContext {
     security: { passed: boolean; findings: string[]; duration: number };
     integration: { passed: boolean; findings: string[]; duration: number };
   };
-  
+
   // Phase 2 attempts (one per pipeline iteration)
   phase2Attempts: Array<{
     iteration: number;
@@ -31,26 +31,26 @@ interface PipelineContext {
       clippy: { passed: boolean; retries: number; warnings?: string[] };
       docs: { passed: boolean; retries: number; issues?: string[] };
     };
-    triggeredLoop: boolean;  // Did this attempt cause return to Phase 1?
+    triggeredLoop: boolean; // Did this attempt cause return to Phase 1?
   }>;
-  
+
   // Changes made
-  filesModified: string[];       // Absolute paths
+  filesModified: string[]; // Absolute paths
   changesApplied: Array<{
     phase: string;
     description: string;
     files: string[];
   }>;
-  
+
   // Issues encountered
-  criticalErrors: string[];      // Errors that blocked progress
-  warnings: string[];            // Non-blocking issues
-  
+  criticalErrors: string[]; // Errors that blocked progress
+  warnings: string[]; // Non-blocking issues
+
   // Improvement areas identified
   patterns: {
-    consistentFailures?: string[];  // Checks that failed every iteration
-    flakeyChecks?: string[];        // Checks that sometimes pass/fail
-    performanceBottlenecks?: string[];  // Slow operations
+    consistentFailures?: string[]; // Checks that failed every iteration
+    flakeyChecks?: string[]; // Checks that sometimes pass/fail
+    performanceBottlenecks?: string[]; // Slow operations
   };
 }
 ```
