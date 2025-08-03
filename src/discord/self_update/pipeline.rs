@@ -11,13 +11,20 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::process::Command;
 use std::time::{Duration, Instant};
+use tokio::time::timeout;
 use tracing::{info, warn};
 
 /// Maximum number of complete pipeline iterations allowed
 const MAX_PIPELINE_ITERATIONS: u8 = 3;
 
-/// Timeout for individual agent operations (5 minutes)
-const AGENT_TIMEOUT: Duration = Duration::from_secs(300);
+/// Base timeout for individual agent operations (2 minutes)
+const BASE_AGENT_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Maximum timeout after exponential backoff (10 minutes)
+const MAX_AGENT_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// Timeout multiplier for exponential backoff
+const TIMEOUT_MULTIPLIER: f64 = 1.5;
 
 /// Pipeline execution context passed between phases and to analysis agents
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -424,20 +431,77 @@ impl ValidationPipeline {
         Ok(())
     }
 
+    /// Calculate timeout for current iteration using exponential backoff
+    fn calculate_timeout(&self) -> Duration {
+        let backoff_factor = TIMEOUT_MULTIPLIER.powi((self.context.pipeline_iterations - 1) as i32);
+        let timeout_secs = (BASE_AGENT_TIMEOUT.as_secs() as f64 * backoff_factor) as u64;
+
+        // Cap at maximum timeout
+        if timeout_secs > MAX_AGENT_TIMEOUT.as_secs() {
+            MAX_AGENT_TIMEOUT
+        } else {
+            Duration::from_secs(timeout_secs)
+        }
+    }
+
+    /// Run a command with timeout
+    async fn run_command_with_timeout(
+        &self,
+        cmd: &str,
+        args: &[&str],
+    ) -> Result<std::process::Output> {
+        let timeout_duration = Duration::from_secs(30); // 30 seconds for cargo commands
+
+        let cmd_str = format!("{} {}", cmd, args.join(" "));
+        info!(
+            "[ValidationPipeline] Running command with timeout: {}",
+            cmd_str
+        );
+
+        // Run command in blocking task with timeout
+        let result = timeout(
+            timeout_duration,
+            tokio::task::spawn_blocking({
+                let cmd = cmd.to_string();
+                let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+                move || Command::new(cmd).args(&args).output()
+            }),
+        )
+        .await;
+
+        match result {
+            Ok(Ok(Ok(output))) => Ok(output),
+            Ok(Ok(Err(e))) => Err(crate::error::SpiralError::SystemError(format!(
+                "Failed to run {}: {}",
+                cmd_str, e
+            ))),
+            Ok(Err(e)) => Err(crate::error::SpiralError::SystemError(format!(
+                "Command panicked: {}",
+                e
+            ))),
+            Err(_) => Err(crate::error::SpiralError::SystemError(format!(
+                "Command timed out after {:?}: {}",
+                timeout_duration, cmd_str
+            ))),
+        }
+    }
+
     /// Spawn a Claude Code agent with the given prompt file and context
     async fn spawn_claude_agent(&self, agent_path: &str, _context: &PipelineContext) -> Result<()> {
         // TODO: Implement actual Claude Code integration
         // For now, this is a placeholder that logs the intent
+        let timeout = self.calculate_timeout();
         info!(
-            "[ValidationPipeline] Would spawn Claude agent: {} with context",
-            agent_path
+            "[ValidationPipeline] Would spawn Claude agent: {} with timeout: {:?}",
+            agent_path, timeout
         );
 
         // In real implementation:
         // 1. Read the agent prompt from agent_path
         // 2. Serialize the context to JSON
-        // 3. Call Claude Code API with prompt + context
+        // 3. Call Claude Code API with prompt + context (with timeout)
         // 4. Process response and apply any recommended changes
+        // 5. Use tokio::time::timeout(timeout, async_operation) for timeout control
 
         Ok(())
     }
@@ -501,12 +565,9 @@ impl ValidationPipeline {
     async fn run_compilation_check(&self) -> Result<ComplianceCheck> {
         info!("[Phase2] Running compilation check");
 
-        let output = Command::new("cargo")
-            .args(["check", "--all-targets"])
-            .output()
-            .map_err(|e| {
-                crate::error::SpiralError::SystemError(format!("Failed to run cargo check: {}", e))
-            })?;
+        let output = self
+            .run_command_with_timeout("cargo", &["check", "--all-targets"])
+            .await?;
 
         if output.status.success() {
             return Ok(ComplianceCheck {
