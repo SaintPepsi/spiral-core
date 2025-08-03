@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::process::Command;
 use std::time::{Duration, Instant};
 use tokio::time::timeout;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 /// Maximum number of complete pipeline iterations allowed
 const MAX_PIPELINE_ITERATIONS: u8 = 3;
@@ -168,33 +168,48 @@ impl ValidationPipeline {
 
     /// Execute the complete validation pipeline
     pub async fn execute(&mut self) -> Result<PipelineContext> {
-        info!("[ValidationPipeline] Starting two-phase validation pipeline");
+        info!("[ValidationPipeline] ====== STARTING TWO-PHASE VALIDATION PIPELINE ======");
+        info!(
+            "[ValidationPipeline] Max iterations: {}",
+            MAX_PIPELINE_ITERATIONS
+        );
 
         // Main pipeline loop
         while self.context.pipeline_iterations < MAX_PIPELINE_ITERATIONS {
             self.context.pipeline_iterations += 1;
             info!(
-                "[ValidationPipeline] Starting pipeline iteration {}",
-                self.context.pipeline_iterations
+                "[ValidationPipeline] ┌─── PIPELINE ITERATION {} / {} ───┐",
+                self.context.pipeline_iterations, MAX_PIPELINE_ITERATIONS
             );
 
             // Phase 1: Advanced Quality Assurance
+            info!("[ValidationPipeline] ├── Phase 1: Advanced Quality Assurance");
             self.execute_phase1().await?;
 
             // Check if Phase 1 failed critically
             if self.has_critical_phase1_failures() {
+                error!("[ValidationPipeline] ├── CRITICAL: Phase 1 failures detected");
                 self.context.final_status = PipelineStatus::Failure;
+                self.add_critical_error(
+                    "Phase 1 critical failures prevented Phase 2 execution".to_string(),
+                );
                 break;
             }
 
             // Phase 2: Core Rust Compliance Checks
+            info!("[ValidationPipeline] ├── Phase 2: Core Rust Compliance Checks");
             let phase2_passed = self.execute_phase2().await?;
 
             if phase2_passed {
                 // Success!
                 self.context.final_status = if self.context.pipeline_iterations == 1 {
+                    info!("[ValidationPipeline] └── SUCCESS: All checks passed on first attempt!");
                     PipelineStatus::Success
                 } else {
+                    info!(
+                        "[ValidationPipeline] └── SUCCESS: All checks passed after {} iterations",
+                        self.context.pipeline_iterations
+                    );
                     PipelineStatus::SuccessWithRetries
                 };
                 break;
@@ -202,24 +217,65 @@ impl ValidationPipeline {
 
             // Phase 2 failed - loop back to Phase 1 if we have iterations left
             if self.context.pipeline_iterations >= MAX_PIPELINE_ITERATIONS {
-                warn!("[ValidationPipeline] Maximum iterations reached - pipeline failed");
+                error!("[ValidationPipeline] └── FAILURE: Maximum iterations exhausted");
                 self.context.final_status = PipelineStatus::Failure;
+                self.add_critical_error(format!(
+                    "Pipeline failed after {} iterations",
+                    MAX_PIPELINE_ITERATIONS
+                ));
                 break;
+            } else {
+                warn!("[ValidationPipeline] └── Phase 2 failed, looping back to Phase 1");
             }
         }
 
         // Calculate total duration
         self.context.total_duration_ms = self.start_time.elapsed().as_millis() as u64;
+        info!(
+            "[ValidationPipeline] Total execution time: {}ms",
+            self.context.total_duration_ms
+        );
 
         // Analyze patterns
+        info!("[ValidationPipeline] Analyzing execution patterns...");
         self.analyze_patterns();
 
         // Run appropriate analysis agent based on outcome
+        info!(
+            "[ValidationPipeline] Running analysis agent for outcome: {:?}",
+            self.context.final_status
+        );
         self.run_analysis_agent().await?;
 
+        // Final summary
+        info!("[ValidationPipeline] ====== PIPELINE SUMMARY ======");
         info!(
-            "[ValidationPipeline] Pipeline completed with status: {:?}",
+            "[ValidationPipeline] Status: {:?}",
             self.context.final_status
+        );
+        info!(
+            "[ValidationPipeline] Iterations: {}",
+            self.context.pipeline_iterations
+        );
+        info!(
+            "[ValidationPipeline] Duration: {}ms",
+            self.context.total_duration_ms
+        );
+        info!(
+            "[ValidationPipeline] Files modified: {}",
+            self.context.files_modified.len()
+        );
+        info!(
+            "[ValidationPipeline] Changes applied: {}",
+            self.context.changes_applied.len()
+        );
+        info!(
+            "[ValidationPipeline] Critical errors: {}",
+            self.context.critical_errors.len()
+        );
+        info!(
+            "[ValidationPipeline] Warnings: {}",
+            self.context.warnings.len()
         );
 
         Ok(self.context.clone())
@@ -246,7 +302,7 @@ impl ValidationPipeline {
 
     /// Execute Phase 2: Core Rust Compliance Checks
     async fn execute_phase2(&mut self) -> Result<bool> {
-        info!("[ValidationPipeline] Executing Phase 2: Core Rust Compliance Checks");
+        info!("[Phase2] ┌─── CORE RUST COMPLIANCE CHECKS ───┐");
 
         let mut phase2_attempt = Phase2Attempt {
             iteration: self.context.pipeline_iterations,
