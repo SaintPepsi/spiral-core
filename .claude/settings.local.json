@@ -69,7 +69,8 @@
       "Bash(RUST_LOG=debug cargo test test_concurrent_shutdown_signal_race -- --nocapture)",
       "Bash(./scripts/validate.sh:*)",
       "Bash(touch:*)",
-      "Bash(awk:*)"
+      "Bash(awk:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [
       "Bash(npm install -g:*)",
