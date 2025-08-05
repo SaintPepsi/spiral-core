@@ -7,6 +7,7 @@ use crate::{
         lordgenome_quotes::{DenialSeverity, LordgenomeQuoteGenerator},
         message_state_manager::{MessageStateConfig, MessageStateManager},
         messages::{self, emojis, risk_level_to_str},
+        reaction_handler,
         self_update::{
             ApprovalManager, GitOperations, PreflightChecker, SelfUpdateRequest, StatusTracker,
             UpdateExecutor, UpdateQueue, UpdateStatus, UpdateType, UpdateValidator,
@@ -21,14 +22,18 @@ use serde::{Deserialize, Serialize};
 use serenity::{
     async_trait,
     model::{
-        channel::Message, gateway::Ready, guild::Role, id::GuildId, permissions::Permissions,
-        user::OnlineStatus,
+        channel::{Message, Reaction}, 
+        gateway::Ready, 
+        guild::Role, 
+        id::GuildId, 
+        permissions::Permissions,
+        user::{OnlineStatus, User},
     },
     prelude::*,
 };
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Agent role name mappings for detection
 const AGENT_ROLE_MAPPINGS: &[(&str, AgentType)] = &[
@@ -160,6 +165,7 @@ pub struct SpiralConstellationBot {
     approval_manager: Arc<ApprovalManager>,
     command_router: CommandRouter,
     discord_config: DiscordConfig,
+    reaction_handler_manager: Arc<reaction_handler::ReactionHandlerManager>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -357,6 +363,7 @@ impl SpiralConstellationBot {
             approval_manager: Arc::new(ApprovalManager::new()),
             command_router: CommandRouter::new(),
             discord_config,
+            reaction_handler_manager: Arc::new(reaction_handler::ReactionHandlerManager::new()),
         })
     }
 
@@ -400,6 +407,7 @@ impl SpiralConstellationBot {
             approval_manager: Arc::new(ApprovalManager::new()),
             command_router: CommandRouter::new(),
             discord_config,
+            reaction_handler_manager: Arc::new(reaction_handler::ReactionHandlerManager::new()),
         })
     }
 
@@ -1003,6 +1011,267 @@ impl SpiralConstellationBot {
 
         // Generate a contextual quote
         generator.generate_by_severity(username, action_type, severity)
+    }
+
+    /// 📋 Setup reaction handlers for the bot
+    pub async fn setup_reaction_handlers(&self) {
+        let manager = &self.reaction_handler_manager;
+        
+        // Register approval handlers for self-update
+        self.register_approval_handlers(manager).await;
+        
+        // Register cleanup handlers
+        self.register_cleanup_handlers(manager).await;
+        
+        // Register error recovery handlers
+        self.register_error_recovery_handlers(manager).await;
+        
+        info!("[SpiralConstellation] Reaction handlers registered: {:?}", 
+              manager.registered_emojis().await);
+    }
+    
+    /// Register handlers for self-update approval
+    async fn register_approval_handlers(&self, manager: &reaction_handler::ReactionHandlerManager) {
+        let approval_manager = self.approval_manager.clone();
+        
+        // Check mark for approval
+        manager.register_simple(
+            messages::emojis::CHECK.to_string(),
+            "Self-update approval",
+            false, // No auth check here - we check pending approvals instead
+            {
+                let approval_manager = approval_manager.clone();
+                move |ctx, reaction, user| {
+                    let approval_manager = approval_manager.clone();
+                    Box::pin(async move {
+                        // Check inside the handler
+                        if approval_manager.has_pending_approval(user.id.get(), reaction.channel_id.get()).await {
+                            Self::handle_approval_reaction(
+                                &approval_manager,
+                                ctx,
+                                reaction,
+                                user,
+                                "approve"
+                            ).await
+                        } else {
+                            Ok(())
+                        }
+                    })
+                }
+            }
+        ).await;
+        
+        // Cross mark for rejection
+        manager.register_simple(
+            messages::emojis::CROSS.to_string(),
+            "Self-update rejection",
+            false,
+            {
+                let approval_manager = approval_manager.clone();
+                move |ctx, reaction, user| {
+                    let approval_manager = approval_manager.clone();
+                    Box::pin(async move {
+                        if approval_manager.has_pending_approval(user.id.get(), reaction.channel_id.get()).await {
+                            Self::handle_approval_reaction(
+                                &approval_manager,
+                                ctx,
+                                reaction,
+                                user,
+                                "reject"
+                            ).await
+                        } else {
+                            Ok(())
+                        }
+                    })
+                }
+            }
+        ).await;
+        
+        // Pencil for modification request
+        manager.register_simple(
+            messages::emojis::PENCIL.to_string(),
+            "Self-update modification request",
+            false,
+            {
+                let approval_manager = approval_manager.clone();
+                move |ctx, reaction, user| {
+                    let approval_manager = approval_manager.clone();
+                    Box::pin(async move {
+                        if approval_manager.has_pending_approval(user.id.get(), reaction.channel_id.get()).await {
+                            Self::handle_approval_reaction(
+                                &approval_manager,
+                                ctx,
+                                reaction,
+                                user,
+                                "modify"
+                            ).await
+                        } else {
+                            Ok(())
+                        }
+                    })
+                }
+            }
+        ).await;
+    }
+    
+    /// Register cleanup handlers (trash bin, etc.)
+    async fn register_cleanup_handlers(&self, manager: &reaction_handler::ReactionHandlerManager) {
+        // Trash bin to delete messages
+        manager.register_simple(
+            messages::emojis::TRASH_BIN.to_string(),
+            "Delete message",
+            true, // Requires authorization
+            |ctx, reaction, _user| {
+                Box::pin(async move {
+                    let message = reaction
+                        .message(&ctx.http)
+                        .await
+                        .map_err(|e| format!("Failed to get message: {}", e))?;
+                    
+                    message
+                        .delete(&ctx.http)
+                        .await
+                        .map_err(|e| format!("Failed to delete message: {}", e))?;
+                    
+                    Ok(())
+                })
+            }
+        ).await;
+    }
+    
+    /// Register error recovery handlers
+    async fn register_error_recovery_handlers(&self, manager: &reaction_handler::ReactionHandlerManager) {
+        // Retry emoji for retrying failed operations
+        manager.register_simple(
+            messages::emojis::RETRY.to_string(),
+            "Retry operation",
+            true,
+            |ctx, reaction, _user| {
+                Box::pin(async move {
+                    let message = reaction
+                        .message(&ctx.http)
+                        .await
+                        .map_err(|e| format!("Failed to get message: {}", e))?;
+                    
+                    // For now, just acknowledge the retry request
+                    message
+                        .reply(&ctx.http, "🔄 Retrying the operation...")
+                        .await
+                        .map_err(|e| format!("Failed to send reply: {}", e))?;
+                    
+                    Ok(())
+                })
+            }
+        ).await;
+        
+        // Bug emoji for reporting issues - simplified without condition
+        // The condition check is done inside the handler
+        manager.register_simple(
+            messages::emojis::BUG.to_string(),
+            "Report command issue",
+            true,
+            |ctx, reaction, user| {
+                Box::pin(async move {
+                    // Check if this is a bot message with command blocked pattern
+                    if let Ok(message) = reaction.message(&ctx.http).await {
+                        if message.author.bot && 
+                           message.content.contains(messages::patterns::COMMAND_BLOCKED_PATTERN) {
+                            return Self::handle_bug_reaction(ctx, reaction, user).await;
+                        }
+                    }
+                    Ok(())
+                })
+            }
+        ).await;
+    }
+    
+    /// Handle approval reactions
+    async fn handle_approval_reaction(
+        approval_manager: &ApprovalManager,
+        ctx: Context,
+        reaction: Reaction,
+        user: User,
+        response: &str,
+    ) -> std::result::Result<(), String> {
+        // Check if this user has the right pending approval for this message
+        if let Some(pending) = approval_manager
+            .get_pending_approval(user.id.get(), reaction.channel_id.get())
+            .await 
+        {
+            if pending.plan_message_id == reaction.message_id.get() {
+                // Process the approval
+                if let Some((_request_id, result)) = approval_manager
+                    .process_approval_response(user.id.get(), reaction.channel_id.get(), response)
+                    .await 
+                {
+                    info!(
+                        "[ReactionHandler] Processed approval reaction from user {}: {:?}",
+                        user.id, result
+                    );
+                    
+                    // Send confirmation
+                    let confirmation = match &result {
+                        crate::discord::self_update::ApprovalResult::Approved => {
+                            "✅ Plan approved! Proceeding with implementation..."
+                        }
+                        crate::discord::self_update::ApprovalResult::Rejected(_) => {
+                            "❌ Plan rejected. Update cancelled."
+                        }
+                        crate::discord::self_update::ApprovalResult::ModifyRequested(_) => {
+                            "📝 Modifications requested. Please create a new update request with your changes."
+                        }
+                        _ => "Approval response processed."
+                    };
+                    
+                    if let Ok(message) = reaction.message(&ctx.http).await {
+                        message.reply(&ctx.http, confirmation).await
+                            .map_err(|e| format!("Failed to send confirmation: {}", e))?;
+                    }
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Handle bug reaction for debugging
+    async fn handle_bug_reaction(
+        ctx: Context,
+        reaction: Reaction,
+        user: User,
+    ) -> std::result::Result<(), String> {
+        let message = reaction
+            .message(&ctx.http)
+            .await
+            .map_err(|e| format!("Failed to get message: {}", e))?;
+            
+        // Extract the original command from the blocked message
+        let original_command = message
+            .content
+            .lines()
+            .find(|line| line.starts_with("Command: `"))
+            .and_then(|line| line.strip_prefix("Command: `"))
+            .and_then(|cmd| cmd.strip_suffix("`"))
+            .unwrap_or("Unknown command");
+            
+        let debug_info = format!(
+            "🐛 **Debug Information**\n\n\
+            **User**: <@{}>\n\
+            **Command**: `{}`\n\
+            **Time**: {}\n\
+            **Channel**: <#{}>\n\n\
+            This command was blocked. If you believe this is an error, \
+            please report it with the above information.",
+            user.id,
+            original_command,
+            message.timestamp,
+            reaction.channel_id
+        );
+        
+        message.reply(&ctx.http, debug_info).await
+            .map_err(|e| format!("Failed to send debug info: {}", e))?;
+            
+        Ok(())
     }
 }
 
@@ -1774,6 +2043,28 @@ impl EventHandler for ConstellationBotHandler {
     }
 
     async fn reaction_add(&self, ctx: Context, add_reaction: serenity::model::channel::Reaction) {
+        // Don't handle reactions from bots
+        if let Ok(user) = add_reaction.user(&ctx.http).await {
+            if user.bot {
+                return;
+            }
+            
+            // Check if user is authorized
+            let is_authorized = self.bot.is_authorized_user(user.id.get());
+            
+            // Use the reaction handler manager
+            let handled = self.bot.reaction_handler_manager
+                .handle_reaction(ctx.clone(), add_reaction.clone(), user.clone(), is_authorized)
+                .await;
+                
+            if handled {
+                debug!("[SpiralConstellation] Reaction handled by registered handler");
+                return;
+            }
+        }
+        
+        // Keep the original reaction_add implementation below for backwards compatibility
+        // This will be removed once all reactions are migrated to the new system
         // Use the unicode emoji directly from the reaction instead of as_data()
         let emoji_unicode = match &add_reaction.emoji {
             serenity::model::channel::ReactionType::Unicode(name) => name.clone(),
@@ -1788,66 +2079,6 @@ impl EventHandler for ConstellationBotHandler {
             emojis::HAMMER
         );
 
-        // Handle approval reactions first (before authorization check for these specific emojis)
-        if emoji_unicode == messages::emojis::CHECK.to_string() 
-            || emoji_unicode == messages::emojis::CROSS.to_string()
-            || emoji_unicode == messages::emojis::PENCIL.to_string() {
-            
-            // Don't handle reactions from bots
-            if let Ok(user) = add_reaction.user(&ctx.http).await {
-                if user.bot {
-                    return;
-                }
-                
-                // Check if this user has a pending approval
-                let approval_manager = &self.bot.approval_manager;
-                if approval_manager.has_pending_approval(user.id.get(), add_reaction.channel_id.get()).await {
-                    // Get the pending approval to check if this is the right message
-                    if let Some(pending) = approval_manager.get_pending_approval(user.id.get(), add_reaction.channel_id.get()).await {
-                        if pending.plan_message_id == add_reaction.message_id.get() {
-                            // Process the approval reaction
-                            let response = match emoji_unicode.as_str() {
-                                "✅" => "approve",
-                                "❌" => "reject",
-                                "✏" => "modify",
-                                _ => return,
-                            };
-                            
-                            if let Some((_request_id, result)) = approval_manager
-                                .process_approval_response(user.id.get(), add_reaction.channel_id.get(), response)
-                                .await 
-                            {
-                                info!(
-                                    "[SpiralConstellation] Processed approval reaction from user {}: {:?}",
-                                    user.id, result
-                                );
-                                
-                                // Send confirmation message
-                                let confirmation = match &result {
-                                    crate::discord::self_update::ApprovalResult::Approved => {
-                                        "✅ Plan approved! Proceeding with implementation..."
-                                    }
-                                    crate::discord::self_update::ApprovalResult::Rejected(_) => {
-                                        "❌ Plan rejected. Update cancelled."
-                                    }
-                                    crate::discord::self_update::ApprovalResult::ModifyRequested(_) => {
-                                        "📝 Modifications requested. Please create a new update request with your changes."
-                                    }
-                                    _ => "Approval response processed."
-                                };
-                                
-                                if let Ok(message) = add_reaction.message(&ctx.http).await {
-                                    if let Err(e) = message.reply(&ctx.http, confirmation).await {
-                                        warn!("[SpiralConstellation] Failed to send approval confirmation: {}", e);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            return;
-        }
         
         // Only handle trash bin, hammer, bug, wrench, and retry reactions for other functionality
         if emoji_unicode != emojis::TRASH_BIN.to_string()
@@ -3427,6 +3658,9 @@ impl SpiralConstellationBotRunner {
             | GatewayIntents::GUILDS;
         // Commented out for now: | GatewayIntents::GUILD_MEMBERS;  // Requires "Server Members Intent"
 
+        // Setup reaction handlers before starting
+        self.bot.setup_reaction_handlers().await;
+        
         // Create handler and get reference to bot for UpdateExecutor
         let bot_arc = Arc::new(self.bot);
         let handler = ConstellationBotHandler {

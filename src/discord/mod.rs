@@ -4,6 +4,7 @@ pub mod lordgenome_quotes;
 pub mod message_security;
 pub mod message_state_manager;
 pub mod messages;
+pub mod reaction_handler;
 pub mod secure_message_handler;
 pub mod self_update;
 pub mod spiral_constellation_bot;
