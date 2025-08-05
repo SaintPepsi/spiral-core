@@ -8,7 +8,7 @@ use super::{
     PreflightChecker, SelfUpdateRequest, StatusTracker, UpdatePlanner, UpdateQueue, UpdateStatus,
     ValidationPipeline, format_approval_instructions,
 };
-use crate::{claude_code::ClaudeCodeClient, Result};
+use crate::{claude_code::ClaudeCodeClient, Result, error::SpiralError};
 use serenity::{http::Http, model::id::ChannelId};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -171,7 +171,7 @@ impl UpdateExecutor {
         // Step 5: Execute Claude Code to implement changes
         self.update_discord_status(&request, "🤖 Implementing changes with Claude Code...")
             .await;
-        let claude_result = self.execute_claude_update(&request).await;
+        let claude_result = self.execute_claude_update(&request, &plan).await;
         if let Err(e) = claude_result {
             error!("[UpdateExecutor] Claude execution failed: {}", e);
             // Rollback if we have a snapshot
@@ -259,29 +259,151 @@ impl UpdateExecutor {
     }
 
     /// Execute Claude Code to implement the requested changes
-    async fn execute_claude_update(&self, request: &SelfUpdateRequest) -> Result<()> {
+    async fn execute_claude_update(&self, request: &SelfUpdateRequest, plan: &ImplementationPlan) -> Result<()> {
         debug!(
             "[UpdateExecutor] Executing Claude update for {}",
             request.id
         );
 
-        // For now, we'll simulate the execution since Claude integration isn't complete
-        // In a real implementation, this would:
-        // 1. Create a prompt from the request
-        // 2. Execute Claude with the prompt
-        // 3. Wait for completion
-        // 4. Return success/failure
+        // Check if Claude client is available
+        let claude_client = match &self.claude_client {
+            Some(client) => client,
+            None => {
+                warn!("[UpdateExecutor] No Claude client configured - cannot execute update");
+                return Err(SpiralError::SystemError(
+                    "Claude Code client not configured".to_string(),
+                ));
+            }
+        };
 
-        warn!(
-            "[UpdateExecutor] Claude Code integration not yet implemented - simulating execution"
+        // Build the execution prompt from the plan
+        let execution_prompt = self.build_execution_prompt(request, plan);
+        
+        info!(
+            "[UpdateExecutor] Executing {} tasks for update {}",
+            plan.tasks.len(),
+            request.id
         );
 
-        // Simulate some processing time
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        // Create a code generation request
+        let code_request = crate::claude_code::CodeGenerationRequest {
+            language: "rust".to_string(), // Primary language is Rust
+            description: execution_prompt,
+            context: std::collections::HashMap::from([
+                ("task_type".to_string(), "self_update_execution".to_string()),
+                ("request_id".to_string(), request.id.clone()),
+                ("plan_id".to_string(), plan.plan_id.clone()),
+                ("codename".to_string(), request.codename.clone()),
+            ]),
+            existing_code: None,
+            requirements: vec![
+                "Follow the implementation plan exactly".to_string(),
+                "Make only the changes specified in the tasks".to_string(),
+                "Ensure all changes compile and pass tests".to_string(),
+                "Add appropriate error handling".to_string(),
+                "Follow existing code patterns and conventions".to_string(),
+            ],
+            session_id: Some(format!("update-{}-execution", request.id)),
+        };
 
-        // For now, always return success in simulation
-        info!("[UpdateExecutor] Simulated Claude update completed");
-        Ok(())
+        // Execute the update via Claude Code
+        match claude_client.generate_code(code_request).await {
+            Ok(result) => {
+                info!(
+                    "[UpdateExecutor] Claude Code execution completed: {}",
+                    result.explanation
+                );
+                
+                // Log files that were generated/modified
+                if !result.files_to_create.is_empty() {
+                    info!(
+                        "[UpdateExecutor] Files to create: {:?}",
+                        result.files_to_create.iter().map(|f| &f.path).collect::<Vec<_>>()
+                    );
+                }
+                if !result.files_to_modify.is_empty() {
+                    info!(
+                        "[UpdateExecutor] Files to modify: {:?}",
+                        result.files_to_modify.iter().map(|f| &f.path).collect::<Vec<_>>()
+                    );
+                }
+                
+                Ok(())
+            }
+            Err(e) => {
+                error!("[UpdateExecutor] Claude Code execution failed: {}", e);
+                Err(SpiralError::Agent {
+                    message: format!("UpdateExecutor: Claude execution failed: {}", e),
+                })
+            }
+        }
+    }
+    
+    /// Build the execution prompt from the implementation plan
+    fn build_execution_prompt(&self, request: &SelfUpdateRequest, plan: &ImplementationPlan) -> String {
+        let task_details = plan.tasks
+            .iter()
+            .map(|task| {
+                format!(
+                    "- Task {}: {}\n  Category: {:?}\n  Complexity: {}\n  Components: {}\n  Validation: {}",
+                    task.id,
+                    task.description,
+                    task.category,
+                    task.complexity,
+                    task.affected_components.join(", "),
+                    task.validation_steps.join("; ")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        
+        format!(
+            r#"You are implementing a self-update for the Spiral Core system.
+
+## Update Request
+- ID: {}
+- Codename: {}
+- Description: {}
+- User Messages:
+{}
+
+## Approved Implementation Plan
+- Plan ID: {}
+- Risk Level: {:?}
+- Summary: {}
+
+## Tasks to Implement
+{}
+
+## Implementation Guidelines
+1. Follow the task list in order, respecting dependencies
+2. Make only the changes specified - no extra "improvements"
+3. Ensure all changes compile and existing tests pass
+4. Add appropriate error handling following project patterns
+5. Use early returns for validation (if !condition {{ return Err(...) }})
+6. Follow SOLID principles and existing code conventions
+7. If a task is unclear or risky, implement conservatively
+
+## Success Criteria
+{}
+
+## Important Notes
+- This is a live system update - be careful and precise
+- If you encounter unexpected issues, document them clearly
+- Maintain backward compatibility unless explicitly changing APIs
+- Add tests for new functionality where appropriate
+
+Implement all tasks according to the plan."#,
+            request.id,
+            request.codename,
+            request.description,
+            request.combined_messages.join("\n"),
+            plan.plan_id,
+            plan.risk_level,
+            plan.summary,
+            task_details,
+            plan.success_criteria.join("\n")
+        )
     }
 
     /// Run the validation pipeline on the changes
