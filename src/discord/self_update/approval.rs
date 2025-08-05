@@ -262,10 +262,17 @@ impl Default for ApprovalManager {
 /// Format approval instructions for Discord
 pub fn format_approval_instructions() -> &'static str {
     "\n📋 **Plan Review Instructions**\n\
-    • Reply with **approve** to proceed with the implementation\n\
-    • Reply with **reject [reason]** to cancel the update\n\
-    • Reply with **modify [details]** to request changes\n\
-    • You have 10 minutes to respond before the request times out"
+    React with:\n\
+    • ✅ to **approve** and proceed with implementation\n\
+    • ❌ to **reject** and cancel the update\n\
+    • ✏️ to **request modifications**\n\
+    \n\
+    Or reply with:\n\
+    • **approve** to proceed with the implementation\n\
+    • **reject [reason]** to cancel the update\n\
+    • **modify [details]** to request changes\n\
+    \n\
+    ⏱️ You have 10 minutes to respond before the request times out"
 }
 
 #[cfg(test)]

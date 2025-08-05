@@ -350,7 +350,26 @@ impl UpdateExecutor {
             match channel_id.say(http, &plan_message).await {
                 Ok(msg) => {
                     info!("[UpdateExecutor] Sent plan for approval, message ID: {}", msg.id);
-                    return msg.id.get();
+                    
+                    // Add emoji reactions for approval
+                    let message_id = msg.id;
+                    
+                    // Add check mark emoji for approval
+                    if let Err(e) = msg.react(http, crate::discord::messages::emojis::CHECK).await {
+                        warn!("[UpdateExecutor] Failed to add approval emoji: {}", e);
+                    }
+                    
+                    // Add cross mark emoji for rejection
+                    if let Err(e) = msg.react(http, crate::discord::messages::emojis::CROSS).await {
+                        warn!("[UpdateExecutor] Failed to add rejection emoji: {}", e);
+                    }
+                    
+                    // Add pencil emoji for modification request
+                    if let Err(e) = msg.react(http, crate::discord::messages::emojis::PENCIL).await {
+                        warn!("[UpdateExecutor] Failed to add modification emoji: {}", e);
+                    }
+                    
+                    return message_id.get();
                 }
                 Err(e) => {
                     warn!("[UpdateExecutor] Failed to send plan for approval: {}", e);

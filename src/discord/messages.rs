@@ -258,6 +258,9 @@ pub mod emojis {
     pub const RETRY: char = '🔄';
     pub const DELETE: char = '❌';
     pub const EYES: char = '👀';
+    pub const CHECK: char = '✅';
+    pub const CROSS: char = '❌';
+    pub const PENCIL: char = '✏';
 }
 
 #[cfg(test)]

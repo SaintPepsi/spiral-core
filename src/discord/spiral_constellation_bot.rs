@@ -1788,14 +1788,75 @@ impl EventHandler for ConstellationBotHandler {
             emojis::HAMMER
         );
 
-        // Only handle trash bin, hammer, bug, wrench, and retry reactions
+        // Handle approval reactions first (before authorization check for these specific emojis)
+        if emoji_unicode == messages::emojis::CHECK.to_string() 
+            || emoji_unicode == messages::emojis::CROSS.to_string()
+            || emoji_unicode == messages::emojis::PENCIL.to_string() {
+            
+            // Don't handle reactions from bots
+            if let Ok(user) = add_reaction.user(&ctx.http).await {
+                if user.bot {
+                    return;
+                }
+                
+                // Check if this user has a pending approval
+                let approval_manager = &self.bot.approval_manager;
+                if approval_manager.has_pending_approval(user.id.get(), add_reaction.channel_id.get()).await {
+                    // Get the pending approval to check if this is the right message
+                    if let Some(pending) = approval_manager.get_pending_approval(user.id.get(), add_reaction.channel_id.get()).await {
+                        if pending.plan_message_id == add_reaction.message_id.get() {
+                            // Process the approval reaction
+                            let response = match emoji_unicode.as_str() {
+                                "✅" => "approve",
+                                "❌" => "reject",
+                                "✏" => "modify",
+                                _ => return,
+                            };
+                            
+                            if let Some((_request_id, result)) = approval_manager
+                                .process_approval_response(user.id.get(), add_reaction.channel_id.get(), response)
+                                .await 
+                            {
+                                info!(
+                                    "[SpiralConstellation] Processed approval reaction from user {}: {:?}",
+                                    user.id, result
+                                );
+                                
+                                // Send confirmation message
+                                let confirmation = match &result {
+                                    crate::discord::self_update::ApprovalResult::Approved => {
+                                        "✅ Plan approved! Proceeding with implementation..."
+                                    }
+                                    crate::discord::self_update::ApprovalResult::Rejected(_) => {
+                                        "❌ Plan rejected. Update cancelled."
+                                    }
+                                    crate::discord::self_update::ApprovalResult::ModifyRequested(_) => {
+                                        "📝 Modifications requested. Please create a new update request with your changes."
+                                    }
+                                    _ => "Approval response processed."
+                                };
+                                
+                                if let Ok(message) = add_reaction.message(&ctx.http).await {
+                                    if let Err(e) = message.reply(&ctx.http, confirmation).await {
+                                        warn!("[SpiralConstellation] Failed to send approval confirmation: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return;
+        }
+        
+        // Only handle trash bin, hammer, bug, wrench, and retry reactions for other functionality
         if emoji_unicode != emojis::TRASH_BIN.to_string()
             && emoji_unicode != emojis::HAMMER.to_string()
             && emoji_unicode != emojis::BUG.to_string()
             && emoji_unicode != emojis::WRENCH.to_string()
             && emoji_unicode != emojis::RETRY.to_string()
         {
-            info!("[SpiralConstellation] Reaction '{}' not handled (not trash bin, hammer, bug, wrench, or retry)", emoji_unicode);
+            info!("[SpiralConstellation] Reaction '{}' not handled", emoji_unicode);
             return;
         }
 
