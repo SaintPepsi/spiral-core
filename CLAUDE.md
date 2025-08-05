@@ -26,15 +26,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-This is a Rust-based system with Claude Code as the primary intelligence engine. The simplified architecture consists of:
+For complete system architecture, see [Architecture Guide](docs/ARCHITECTURE.md).
 
-- **Rust Backend**: Agent orchestration system that coordinates with Claude Code
-- **Claude Code Integration**: Primary AI engine for code generation and analysis
-- **Discord Bot Service**: Node.js/TypeScript service for human interaction
-- **GitHub Integration**: Automated repository management and PR creation
-- **Agent Types**: Specialized orchestrators (Developer, Project Manager, QA, Decision Maker, Creative Innovator, Process Coach)
+Key components:
 
-The system follows a "Spiral" naming convention for all components, using cosmic/space-inspired terms (e.g., Spiral Constellation, Spiral Comet, Spiral Cluster).
+- **Rust Backend**: Agent orchestration with Claude Code integration
+- **Discord Bot Service**: Node.js/TypeScript for human interaction
+- **Specialized Agents**: Developer, Project Manager, QA, and more
 
 ## Development Commands
 
@@ -48,10 +46,11 @@ The system can update itself through Discord mentions. See [Self-Update Guide](d
 
 ## Key Files and Structure
 
-- `ARCHITECTURE.md` - Comprehensive technical architecture document detailing the full agent system design
-- `SPIRAL_CODE.md` - Naming conventions and branding guidelines for the Spiral ecosystem
-- `plans/DISCORD_AI_AGENT_ORCHESTRATOR_ARCHITECTURE.md` - Detailed Discord integration architecture
-- `target/` - Rust build artifacts directory (contains rust-analyzer metadata)
+- `docs/ARCHITECTURE.md` - Comprehensive system architecture
+- `docs/SETUP.md` - Complete setup and configuration guide
+- `docs/CODING_STANDARDS.md` - Development standards and practices
+- `src/agents/docs/` - Agent-specific implementation guides
+- `src/integrations/docs/` - Integration patterns and examples
 
 ## Agent System Design
 
@@ -98,7 +97,7 @@ The simplified architecture focuses on Claude Code orchestration with Discord as
 
 ### Self-Update Philosophy
 
-Following Uncle Iroh's wisdom: "A system that can improve itself is like tea that gets better with each steeping." The self-update system embodies careful, incremental improvement with robust safety mechanisms. See [Iroh's Wisdom](docs/IROH_WISDOM.md) for philosophical guidance.
+Following the principle: "A system that can improve itself is like tea that gets better with each steeping." The self-update system embodies careful, incremental improvement with robust safety mechanisms.
 
 ### Two-Phase Validation Pipeline
 
@@ -131,12 +130,29 @@ The Spiral Core system follows strict architectural principles to ensure maintai
 
 - **SOLID Principles**: Single Responsibility, Open-Closed, Liskov Substitution, Interface Segregation, Dependency Inversion
 - **DRY Principle**: Don't Repeat Yourself - single source of truth for all knowledge
+- **Deliberate Decoupling**: Code naturally couples - fight this with inline logic, behavior passing, and explicit dependencies
 - **SID Naming**: Short, Intuitive, Descriptive naming conventions
 - **Early Return Pattern**: Use negative conditions with early returns for all validation and error handling
 - **Clutter Prevention**: Maintain clean, organized code by preventing complexity accumulation through modular design and consistent patterns
 - **No Bullshit Code**: Never fake status, metrics, or functionality - if it's not implemented, don't pretend it is
 - **No Deadline Compromise**: Deadlines are the anti-spiral abyss - we work by priority: Quality > Urgency > Importance to Business. Never compromise code quality for artificial time constraints
 - **Consensus-Driven Continuous Improvement**: Incremental, organic evolution of the codebase, agents, and system through collaborative consensus rather than disruptive changes or competing proposals
+- **Aggressive Proximity Audit Documentation**: Critical decisions, security controls, and audit points documented directly in code where they matter
+
+### Deliberate Decoupling Standard
+
+**Philosophy**: Code naturally tends toward coupling - it's the path of least resistance. Decoupling requires deliberate, conscious effort.
+
+**Key Principles**:
+
+- **Inline Logic Over Hidden Abstractions**: Put fix logic where it's used, not in factory methods
+- **Pass Behavior, Not Data**: Generic functions should accept closures/functions, not implementation details
+- **Explicit Dependencies**: Make all dependencies visible at the call site
+- **Composition Over Configuration**: Use closures to compose behavior, not configuration objects
+
+**Example**: Instead of hiding fix logic in `create_fix_handler()`, put it inline where you can see exactly what agent is used and how fixes are attempted.
+
+For complete patterns and examples, see [Decoupling Patterns](docs/DECOUPLING_PATTERNS.md).
 
 ### Conditional Logic Standard
 
@@ -173,12 +189,18 @@ The Spiral Core system follows strict architectural principles to ensure maintai
 - **Fake Status**: `"SpiralDev: 🟢 Active"` without checking if agent is actually running
 - **Hardcoded Metrics**: `"Memory Usage: Efficient"` without measuring actual memory usage
 - **Placeholder Values**: `"Response Time: Fast"` without timing real operations
-- **Mock Data**: Returning static data when real data source is unavailable
+- **Mock Data**: Creating fake Phase1Results or any mock data just to satisfy structure requirements
 - **Pretend Features**: UI elements that suggest functionality that doesn't exist
+- **Unnecessary Dependencies**: Requiring data that isn't actually needed (e.g., Phase 2 requiring Phase 1)
 
-**Rule**: If you can't implement it properly, be honest about current limitations. Users prefer "Not yet implemented" over fake functionality.
+**Rule**: NEVER use mock data. If you can't implement it properly, refactor to allow independent execution using SOLID principles. Users prefer "Not yet implemented" over fake functionality.
 
-**Examples**: Replace "🟢 Active" with "❓ Status check not implemented" when there's no actual status checking. Replace "Memory: Efficient" with "❓ Monitoring not implemented" when there's no memory monitoring.
+**Examples**:
+
+- Replace "🟢 Active" with "❓ Status check not implemented" when there's no actual status checking
+- Replace "Memory: Efficient" with "❓ Monitoring not implemented" when there's no memory monitoring
+- Create independent methods like `run_phase2_independent()` instead of mocking Phase 1 data
+- Apply Interface Segregation: Don't force clients to provide unnecessary data
 
 ### No Deadline Compromise Standard
 
@@ -238,21 +260,59 @@ The Spiral Core system follows strict architectural principles to ensure maintai
 
 **Game Theory Alignment**: Embodies all four successful principles - nice (collaborative), forgiving (adaptive), retaliatory (maintains quality), and clear (transparent process).
 
-For detailed implementation guidance, code examples, and best practices, see [Coding Standards](docs/CODING_STANDARDS.md).
+### Aggressive Proximity Audit Documentation Standard
+
+**Definition**: Documentation lives where decisions are made - aggressive (highly visible), proximate (next to code), and auditable (traceable).
+
+**Required Documentation Points**:
+
+```rust
+/// 🏗️ ARCHITECTURE DECISION: Two-phase validation pipeline
+/// Why: Separates quality checks from compliance for targeted fixes
+/// Alternative: Single pass (rejected: mixes concerns)
+/// Audit: Verify Phase 2 doesn't depend on Phase 1
+/// Trade-off: More complex but more maintainable
+pub struct ValidationPipeline { ... }
+```
+
+**Documentation Patterns**:
+
+- **🏗️ ARCHITECTURE DECISION**: Design choices and trade-offs
+- **🛡️ SECURITY DECISION**: Security controls and threat mitigation
+- **⚡ PERFORMANCE DECISION**: Optimizations and benchmarks
+- **🔍 AUDIT CHECKPOINT**: Critical review points
+- **🔄 DRY PATTERN**: Reusable patterns and abstractions
+- **📐 SOLID**: Principle applications
+- **🔧 ERROR RECOVERY**: Failure handling strategies
+
+**Rule**: If a reviewer would ask "why?", the answer must already be in a comment.
+
+For complete documentation patterns, examples, and enforcement strategies, see [Audit Documentation Standard](docs/AUDIT_DOCUMENTATION_STANDARD.md).
+
+For detailed implementation guidance, code examples, and best practices, see [Development Guide](docs/DEVELOPMENT.md).
 
 ## Modular Documentation Architecture
 
 This CLAUDE.md file serves as the orchestrator for specialized documentation modules. For detailed implementation guidance, refer to the modular documentation:
 
+### Code Quality Resources
+
+- **[Code Patterns](docs/PATTERNS.md)** - Reusable patterns for DRY code and consistent implementation
+- **[Claude Improver Agent](.claude/utility-agents/claude-improver.md)** - Automated code quality analysis and refactoring
+
 ### Core System Modules
 
 - **[Coding Standards](docs/CODING_STANDARDS.md)** - SOLID, DRY, SID principles, development practices, and Rust patterns
+- **[Decoupling Patterns](docs/DECOUPLING_PATTERNS.md)** - Deliberate decoupling strategies to prevent natural coupling tendencies
+- **[Audit Documentation Standard](docs/AUDIT_DOCUMENTATION_STANDARD.md)** - Aggressive proximity audit documentation patterns and enforcement
 - **[Colocation Patterns](docs/COLOCATION_PATTERNS.md)** - Code organization, test colocation, and modular structure patterns
 - **[Task Checklist](docs/TASK_CHECKLIST.md)** - Pre-task documentation review and execution guidelines
 - **[Markdown Standards](docs/MARKDOWN_STANDARDS.md)** - Documentation formatting and style guidelines
-- **[Development Practices](docs/CODING_STANDARDS.md#development-practices)** - Package management and development workflow
+- **[Development Guide](docs/DEVELOPMENT.md)** - Complete development practices and standards
 - **[Security Policy](docs/SECURITY_POLICY.md)** - Security hardening measures and vulnerability reporting
-- **[Self-Update Guide](docs/SELF_UPDATE_GUIDE.md)** - How to use the self-update system
+- **[Self-Update Guide](docs/SELF_UPDATE_GUIDE.md)** - Self-update system usage
+- **[Architecture](docs/ARCHITECTURE.md)** - Complete system architecture
+- **[Setup Guide](docs/SETUP.md)** - Installation and configuration
 - **[Engineering Principles](docs/ENGINEERING_PRINCIPLES.md)** - Practical engineering guidelines and quality standards
 - **[Dutch Agent Communication](docs/DUTCH_AGENT_COMMUNICATION.md)** - Direct, pragmatic agent interaction patterns based on Dutch cultural communication
 
@@ -299,6 +359,140 @@ This CLAUDE.md file serves as the orchestrator for specialized documentation mod
 3. **Self-Improvement Mechanisms** - Agent learning and adaptation
 
 For detailed implementation steps, database schemas, security frameworks, and code examples, see the respective modular documentation files.
+
+## 📚 Common Implementation Patterns
+
+### Check-Fix-Retry Pattern
+
+When implementing validation checks that may need fixes, use this generic pattern:
+
+```rust
+async fn run_check_with_retry(
+    &mut self,
+    check_name: &str,
+    command: &str,
+    args: &[&str],
+    fix_agent: Option<&str>,     // Claude agent to fix issues
+    auto_fix: Option<(&str, &[&str])>, // Auto-fix command
+) -> Result<CheckResult> {
+    const MAX_ATTEMPTS: u8 = 3;
+
+    for attempt in 1..=MAX_ATTEMPTS {
+        // Run check
+        let result = run_command(command, args).await?;
+        if result.success() { return Ok(CheckResult::Success); }
+
+        // Try fix if not last attempt
+        if attempt < MAX_ATTEMPTS {
+            // Try auto-fix first, then Claude agent
+            if let Some(fix) = auto_fix { /* run fix */ }
+            if let Some(agent) = fix_agent { /* spawn agent */ }
+        }
+    }
+
+    Err("Check failed after max attempts")
+}
+```
+
+### Error Handling Pattern
+
+Use early returns with negative conditions:
+
+```rust
+// ✅ GOOD - Early return pattern
+if !condition {
+    return Err("Condition not met");
+}
+// Continue with happy path
+
+// ❌ BAD - Nested if blocks
+if condition {
+    // Happy path code
+} else {
+    return Err("Condition not met");
+}
+```
+
+## 🔧 Code Reuse Guidelines
+
+### When to Extract a Helper Method
+
+- **Rule of Three**: If code appears 3+ times with minor variations
+- **Complex Logic**: If the logic is complex but the pattern is common
+- **Testability**: If extraction improves unit testing
+- **Single Responsibility**: If it helps maintain SRP from SOLID
+
+### Generic vs Specific
+
+```rust
+// ✅ GOOD - Generic reusable method
+async fn run_cargo_command(&self, subcommand: &str, args: &[&str]) -> Result<Output>
+
+// ❌ BAD - Multiple specific methods
+async fn run_cargo_test(&self) -> Result<Output>
+async fn run_cargo_check(&self) -> Result<Output>
+async fn run_cargo_clippy(&self) -> Result<Output>
+```
+
+## 🦀 Rust-Specific Patterns
+
+### Result Chaining
+
+```rust
+// ✅ GOOD - Chain operations
+let result = operation1()?
+    .operation2()
+    .and_then(|x| operation3(x))?;
+
+// ❌ BAD - Nested match statements
+match operation1() {
+    Ok(val1) => match val1.operation2() {
+        Ok(val2) => operation3(val2),
+        Err(e) => Err(e),
+    },
+    Err(e) => Err(e),
+}
+```
+
+### Builder Pattern for Complex Configs
+
+```rust
+let config = ConfigBuilder::new()
+    .with_timeout(Duration::from_secs(30))
+    .with_retries(3)
+    .with_agent("claude-agent.md")
+    .build()?;
+```
+
+## 📝 Code Templates
+
+### New Check Implementation
+
+```rust
+async fn run_[check_name]_check(&mut self) -> Result<ComplianceCheck> {
+    self.run_check_with_retry(
+        "[check_name]",           // Check identifier
+        "command",                 // Command to run
+        &["args"],                // Command arguments
+        Some("path/to/agent.md"), // Optional Claude agent
+        Some(("fix_cmd", &["fix_args"])), // Optional auto-fix
+    ).await
+}
+```
+
+### Agent Integration Pattern
+
+```rust
+let context = self.create_context(error_info);
+let response = self.spawn_claude_agent(agent_path, &context).await?;
+
+if response.success {
+    // Agent executed, retry the operation
+    retries += 1;
+} else {
+    warn!("Agent failed: {}", response.explanation);
+}
+```
 
 ## 🚨 CRITICAL: Task Completion Requirements
 

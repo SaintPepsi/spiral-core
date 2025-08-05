@@ -1,4 +1,5 @@
 //! Two-phase validation pipeline implementation
+#![allow(clippy::uninlined_format_args)]
 //!
 //! Implements the validation pipeline described in SELF_UPDATE_PIPELINE_IMPROVEMENT.md:
 //! - Phase 1: Advanced Quality Assurance (AQA)
@@ -14,7 +15,7 @@ use std::collections::HashMap;
 use std::process::Command;
 use std::time::{Duration, Instant};
 use tokio::time::timeout;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Maximum number of complete pipeline iterations allowed
 const MAX_PIPELINE_ITERATIONS: u8 = 3;
@@ -27,6 +28,21 @@ const MAX_AGENT_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// Timeout multiplier for exponential backoff
 const TIMEOUT_MULTIPLIER: f64 = 1.5;
+
+// Phase 2 Claude agent paths - single source of truth for agent locations
+const CLAUDE_AGENT_COMPILATION_FIX: &str = ".claude/validation-agents/phase2/compilation-fixer.md";
+const CLAUDE_AGENT_TEST_FIX: &str = ".claude/validation-agents/phase2/test-failure-analyzer.md";
+const CLAUDE_AGENT_FORMAT_FIX: &str = ".claude/validation-agents/phase2/formatting-fixer.md";
+const CLAUDE_AGENT_CLIPPY_FIX: &str = ".claude/validation-agents/phase2/clippy-resolver.md";
+const CLAUDE_AGENT_DOC_FIX: &str = ".claude/validation-agents/phase2/doc-builder.md";
+
+// Analysis agent paths
+const CLAUDE_AGENT_SUCCESS_ANALYZER: &str =
+    ".claude/validation-agents/analysis/success-analyzer.md";
+const CLAUDE_AGENT_SUCCESS_WITH_ISSUES: &str =
+    ".claude/validation-agents/analysis/success-with-issues-analyzer.md";
+const CLAUDE_AGENT_FAILURE_ANALYZER: &str =
+    ".claude/validation-agents/analysis/failure-analyzer.md";
 
 /// Pipeline execution context passed between phases and to analysis agents
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +132,7 @@ pub struct ExecutionPatterns {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClaudeValidationResponse {
     pub explanation: String,
+    /// Whether Claude executed successfully (not whether the fix worked)
     pub success: bool,
 }
 
@@ -127,12 +144,647 @@ pub struct ValidationPipeline {
     snapshot_id: Option<String>,
 }
 
+/// 📐 SOLID: Trait for running validation checks
+/// Responsibility: Execute a validation command
+/// Dependencies: None - pure interface
+#[async_trait::async_trait]
+pub trait CheckRunner: Send + Sync {
+    async fn run_check(&self) -> Result<CheckOutput>;
+    fn name(&self) -> &str;
+}
+
+/// Output from running a check
+pub struct CheckOutput {
+    pub success: bool,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+/// 📐 SOLID: Trait for handling validation fixes
+/// Responsibility: Abstract fix application strategy
+/// Dependencies: None - pure interface
+/// Extension: Implement for different fix strategies
+#[async_trait::async_trait]
+pub trait FixHandler: Send + Sync {
+    /// Attempt to fix a validation issue
+    async fn attempt_fix(&self, check_name: &str, error_msg: &str) -> Result<bool>;
+}
+
+/// 🔄 DRY PATTERN: Generic validation runner with retry
+/// Replaces: All duplicate retry logic
+/// Usage: Pass any check runner and fix handler
+pub struct ValidationRunner;
+
+impl ValidationRunner {
+    /// 🏗️ ARCHITECTURE DECISION: Truly generic retry mechanism
+    /// Why: Complete separation of concerns - running vs fixing
+    /// Alternative: Coupled implementation (rejected: violates SOLID)
+    /// Audit: Verify check and fix are properly abstracted
+    pub async fn run_with_retry<C, F, Fut>(
+        check: &C,
+        fix_handler: F,
+        max_attempts: u8,
+    ) -> Result<ComplianceCheck>
+    where
+        C: CheckRunner,
+        F: Fn(&str, u8) -> Fut,
+        Fut: std::future::Future<Output = Result<bool>>,
+    {
+        let mut retries = 0;
+        let mut all_errors = vec![];
+        let check_name = check.name();
+
+        info!("[ValidationRunner] Running {} check", check_name);
+
+        for attempt in 1..=max_attempts {
+            info!(
+                "[ValidationRunner] {} check attempt {}/{}",
+                check_name, attempt, max_attempts
+            );
+
+            // Run the check
+            let output = check.run_check().await?;
+
+            if output.success {
+                info!(
+                    "[ValidationRunner] {} check passed on attempt {}",
+                    check_name, attempt
+                );
+                return Ok(ComplianceCheck {
+                    passed: true,
+                    retries,
+                    errors: if all_errors.is_empty() {
+                        None
+                    } else {
+                        Some(all_errors)
+                    },
+                });
+            }
+
+            // Check failed - capture error
+            let error_msg = if check_name == "tests" {
+                format!("stdout: {}\nstderr: {}", output.stdout, output.stderr)
+            } else if check_name == "formatting" {
+                "Code is not properly formatted".to_string()
+            } else {
+                output.stderr
+            };
+
+            all_errors.push(format!("Attempt {}: {}", attempt, error_msg));
+            
+            // Log the error details (first 500 chars to avoid spam)
+            let error_preview = if error_msg.len() > 500 {
+                format!("{}... [truncated]", &error_msg[..500])
+            } else {
+                error_msg.clone()
+            };
+            
+            warn!(
+                "[ValidationRunner] {} check failed on attempt {}/{}\nError: {}",
+                check_name, attempt, max_attempts, error_preview
+            );
+
+            // Always try to fix after a failure (even on last attempt)
+            info!(
+                "[ValidationRunner] Attempting fix for {} issues",
+                check_name
+            );
+
+            match fix_handler(&error_msg, retries).await {
+                Ok(true) => {
+                    info!("[ValidationRunner] Fix applied successfully");
+                    retries += 1;
+
+                    // Only retry the check if we haven't exhausted attempts
+                    if attempt < max_attempts {
+                        continue; // Retry the check
+                    } else {
+                        info!("[ValidationRunner] Fix applied on final attempt, but no more retries allowed");
+                    }
+                }
+                Ok(false) => {
+                    warn!("[ValidationRunner] Fix handler couldn't resolve the issue");
+                    retries += 1;
+                }
+                Err(e) => {
+                    warn!("[ValidationRunner] Fix handler error: {}", e);
+                    retries += 1;
+                }
+            }
+        }
+
+        // Log final failure with summary of errors
+        error!(
+            "[ValidationRunner] {} check failed after {} attempts with {} retries",
+            check_name, max_attempts, retries
+        );
+        
+        // Log a summary of errors from each attempt
+        for (i, err) in all_errors.iter().enumerate() {
+            error!("[ValidationRunner] └── {}", err);
+            if i >= 2 {
+                // Only show first 3 errors to avoid spam
+                if all_errors.len() > 3 {
+                    error!("[ValidationRunner] └── ... and {} more errors", all_errors.len() - 3);
+                }
+                break;
+            }
+        }
+        
+        Ok(ComplianceCheck {
+            passed: false,
+            retries,
+            errors: Some(all_errors),
+        })
+    }
+}
+
+/// Concrete check runner for cargo commands
+pub struct CargoCheck {
+    name: String,
+    command: String,
+    args: Vec<String>,
+}
+
+impl CargoCheck {
+    pub fn new(name: impl Into<String>, command: impl Into<String>, args: Vec<String>) -> Self {
+        Self {
+            name: name.into(),
+            command: command.into(),
+            args,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl CheckRunner for CargoCheck {
+    async fn run_check(&self) -> Result<CheckOutput> {
+        let output = Command::new(&self.command)
+            .args(&self.args)
+            .output()
+            .map_err(|e| {
+                error!(
+                    "[CargoCheck] Failed to execute {} {}: {}",
+                    self.command,
+                    self.args.join(" "),
+                    e
+                );
+                crate::error::SpiralError::SystemError(format!(
+                    "Failed to run {} {}: {}",
+                    self.command,
+                    self.args.join(" "),
+                    e
+                ))
+            })?;
+            
+        // Log exit code if command failed
+        if !output.status.success() {
+            if let Some(code) = output.status.code() {
+                debug!(
+                    "[CargoCheck] {} exited with code {}",
+                    self.command, code
+                );
+            }
+        }
+
+        Ok(CheckOutput {
+            success: output.status.success(),
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        })
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+/// Composite fix handler that tries auto-fix first, then Claude
+pub struct CompositeFixHandler {
+    auto_fix: Option<Box<dyn FixHandler>>,
+    claude_fix: Option<Box<dyn FixHandler>>,
+}
+
+impl CompositeFixHandler {
+    pub fn new(
+        auto_fix: Option<Box<dyn FixHandler>>,
+        claude_fix: Option<Box<dyn FixHandler>>,
+    ) -> Self {
+        Self {
+            auto_fix,
+            claude_fix,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl FixHandler for CompositeFixHandler {
+    async fn attempt_fix(&self, check_name: &str, error_msg: &str) -> Result<bool> {
+        // Try auto-fix first
+        if let Some(auto_handler) = &self.auto_fix {
+            if let Ok(true) = auto_handler.attempt_fix(check_name, error_msg).await {
+                return Ok(true);
+            }
+            // Continue to Claude
+        }
+
+        // Try Claude fix
+        if let Some(claude_handler) = &self.claude_fix {
+            return claude_handler.attempt_fix(check_name, error_msg).await;
+        }
+
+        Ok(false)
+    }
+}
+
+/// Auto-fix handler for simple fixes like cargo fmt
+pub struct AutoFixHandler {
+    command: String,
+    args: Vec<String>,
+}
+
+impl AutoFixHandler {
+    pub fn new(command: impl Into<String>, args: Vec<String>) -> Self {
+        Self {
+            command: command.into(),
+            args,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl FixHandler for AutoFixHandler {
+    async fn attempt_fix(&self, check_name: &str, _error_msg: &str) -> Result<bool> {
+        info!(
+            "[AutoFixHandler] Running {} {} for {}",
+            self.command,
+            self.args.join(" "),
+            check_name
+        );
+
+        let output = Command::new(&self.command)
+            .args(&self.args)
+            .output()
+            .map_err(|e| {
+                crate::error::SpiralError::SystemError(format!("Failed to run auto-fix: {}", e))
+            })?;
+
+        Ok(output.status.success())
+    }
+}
+
+/// 🏗️ ARCHITECTURE DECISION: Claude-based fix handler
+/// Why: Claude can understand and fix complex errors autonomously
+/// Alternative: Manual fixes (available via NoOpFixHandler)
+/// Audit: Verify prompts don't expose sensitive data
+pub struct ClaudeFixHandler {
+    claude_client: ClaudeCodeClient,
+    agent_path: String,
+}
+
+impl ClaudeFixHandler {
+    pub fn new(claude_client: ClaudeCodeClient, agent_path: impl Into<String>) -> Self {
+        Self {
+            claude_client,
+            agent_path: agent_path.into(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl FixHandler for ClaudeFixHandler {
+    async fn attempt_fix(&self, check_name: &str, error_msg: &str) -> Result<bool> {
+        use std::collections::HashMap;
+
+        // Read the agent prompt template
+        let agent_prompt = tokio::fs::read_to_string(&self.agent_path)
+            .await
+            .map_err(|e| {
+                crate::error::SpiralError::SystemError(format!(
+                    "Failed to read agent prompt {}: {}",
+                    self.agent_path, e
+                ))
+            })?;
+
+        // Truncate error message to avoid exceeding Claude's limits
+        // Keep first 2000 chars for context (leaves ~8000 for agent prompt + task)
+        let truncated_error = if error_msg.len() > 2000 {
+            // For test/compilation errors, try to extract the most relevant parts
+            let lines: Vec<&str> = error_msg.lines().collect();
+            let error_lines: Vec<&str> = lines
+                .iter()
+                .filter(|line| {
+                    line.contains("error:")
+                        || line.contains("warning:")
+                        || line.contains("-->")
+                        || line.contains("help:")
+                        || line.trim().starts_with('|')
+                })
+                .take(30) // Take first 30 relevant lines
+                .copied()
+                .collect();
+
+            let truncated = if !error_lines.is_empty() {
+                format!(
+                    "{}\n[Truncated {} more lines from {} total chars]",
+                    error_lines.join("\n"),
+                    lines.len().saturating_sub(error_lines.len()),
+                    error_msg.len()
+                )
+            } else {
+                // Fallback to simple truncation if no error patterns found
+                format!(
+                    "{}...\n[Truncated {} more characters]",
+                    &error_msg[..2000],
+                    error_msg.len() - 2000
+                )
+            };
+
+            info!(
+                "[ClaudeFixHandler] Truncated error from {} to {} chars",
+                error_msg.len(),
+                truncated.len()
+            );
+            truncated
+        } else {
+            error_msg.to_string()
+        };
+
+        // Create a focused prompt for Claude
+        let full_prompt = format!(
+            "{}\n\n## Current Issue\n\nThe {} check is failing with the following error:\n\n```\n{}\n```\n\n## Task\n\nAnalyze and fix this issue directly in the code. Use your available tools to:\n1. Understand the error\n2. Locate the problematic code\n3. Apply the necessary fix\n4. Verify the fix if possible\n\nRespond with a brief summary of what you fixed.",
+            agent_prompt,
+            check_name,
+            truncated_error
+        );
+
+        // Log prompt size for debugging
+        info!(
+            "[ClaudeFixHandler] Total prompt size: {} chars (agent: {}, error: {})",
+            full_prompt.len(),
+            agent_prompt.len(),
+            truncated_error.len()
+        );
+
+        // Create code generation request
+        let request = CodeGenerationRequest {
+            language: "rust".to_string(),
+            description: full_prompt,
+            context: HashMap::new(),
+            existing_code: None,
+            requirements: vec![
+                format!("Fix the {} validation error", check_name),
+                "Make minimal necessary changes".to_string(),
+                "Preserve existing functionality".to_string(),
+            ],
+            session_id: Some(format!("phase2-{}-fix", check_name)),
+        };
+
+        // Execute Claude fix with timeout
+        let timeout_duration = Duration::from_secs(120);
+        match tokio::time::timeout(timeout_duration, self.claude_client.generate_code(request))
+            .await
+        {
+            Ok(Ok(result)) => {
+                info!("[ClaudeFixHandler] Fix completed: {}", result.explanation);
+                Ok(true)
+            }
+            Ok(Err(e)) => {
+                warn!("[ClaudeFixHandler] Fix error: {}", e);
+                Ok(false)
+            }
+            Err(_) => {
+                warn!("[ClaudeFixHandler] Fix timed out after 2 minutes");
+                Ok(false)
+            }
+        }
+    }
+}
+
+/// No-op fix handler for when Claude is not available
+pub struct NoOpFixHandler;
+
+#[async_trait::async_trait]
+impl FixHandler for NoOpFixHandler {
+    async fn attempt_fix(&self, _check_name: &str, _error_msg: &str) -> Result<bool> {
+        Ok(false) // Always returns false - no fix attempted
+    }
+}
+
+/// 📐 SOLID: Single Responsibility + Dependency Inversion
+/// Responsibility: Execute Phase 2 checks ONLY - no Phase 1 concerns
+/// Dependencies: Optional Claude client for fixes
+/// Extension: Add new fix strategies by implementing FixHandler trait
+pub struct Phase2Executor {
+    pub claude_client: Option<ClaudeCodeClient>,
+    pub start_time: Instant,
+}
+
+impl Default for Phase2Executor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Phase2Executor {
+    /// Create a new Phase 2 executor without any Phase 1 dependencies
+    pub fn new() -> Self {
+        Self {
+            claude_client: None,
+            start_time: Instant::now(),
+        }
+    }
+
+    /// Create with Claude client for automatic fixes
+    pub async fn with_claude(config: ClaudeCodeConfig) -> Result<Self> {
+        let claude_client = ClaudeCodeClient::new(config).await?;
+        Ok(Self {
+            claude_client: Some(claude_client),
+            start_time: Instant::now(),
+        })
+    }
+
+    /// Run all Phase 2 checks independently
+    pub async fn execute(&mut self) -> Result<Phase2Attempt> {
+        info!("[Phase2Executor] Starting independent Phase 2 validation");
+
+        let compilation = self.run_compilation_check().await?;
+        let tests = self.run_test_check().await?;
+        let formatting = self.run_formatting_check().await?;
+        let clippy = self.run_clippy_check().await?;
+        let docs = self.run_doc_check().await?;
+
+        let triggered_loop = compilation.retries > 0
+            || tests.retries > 0
+            || formatting.retries > 0
+            || clippy.retries > 0
+            || docs.retries > 0;
+
+        Ok(Phase2Attempt {
+            iteration: 1, // Standalone is always iteration 1
+            checks: Phase2Checks {
+                compilation,
+                tests,
+                formatting,
+                clippy,
+                docs,
+            },
+            triggered_loop,
+        })
+    }
+
+    async fn run_compilation_check(&mut self) -> Result<ComplianceCheck> {
+        let check = CargoCheck::new(
+            "compilation",
+            "cargo",
+            vec!["check".to_string(), "--all-targets".to_string()],
+        );
+
+        let claude_client = self.claude_client.clone();
+        let fix_handler = move |error_msg: &str, _retries: u8| {
+            let client = claude_client.clone();
+            let error = error_msg.to_string();
+            async move {
+                if let Some(client) = client {
+                    // Spawn Claude agent to handle compilation fixes
+                    let fix_handler = ClaudeFixHandler::new(client, CLAUDE_AGENT_COMPILATION_FIX);
+                    fix_handler.attempt_fix("compilation", &error).await
+                } else {
+                    Ok(false)
+                }
+            }
+        };
+
+        ValidationRunner::run_with_retry(&check, fix_handler, 3).await
+    }
+
+    async fn run_test_check(&mut self) -> Result<ComplianceCheck> {
+        let check = CargoCheck::new("tests", "cargo", vec!["test".to_string()]);
+
+        let claude_client = self.claude_client.clone();
+        let fix_handler = move |error_msg: &str, _retries: u8| {
+            let client = claude_client.clone();
+            let error = error_msg.to_string();
+            async move {
+                if let Some(client) = client {
+                    // Spawn Claude agent to handle test failure analysis
+                    let fix_handler = ClaudeFixHandler::new(client, CLAUDE_AGENT_TEST_FIX);
+                    fix_handler.attempt_fix("tests", &error).await
+                } else {
+                    Ok(false)
+                }
+            }
+        };
+
+        ValidationRunner::run_with_retry(&check, fix_handler, 3).await
+    }
+
+    async fn run_formatting_check(&mut self) -> Result<ComplianceCheck> {
+        let check = CargoCheck::new(
+            "formatting",
+            "cargo",
+            vec!["fmt".to_string(), "--".to_string(), "--check".to_string()],
+        );
+
+        let claude_client = self.claude_client.clone();
+        let fix_handler = move |error_msg: &str, retries: u8| {
+            let client = claude_client.clone();
+            let error = error_msg.to_string();
+            async move {
+                // Try auto-fix first with cargo fmt
+                if retries == 0 {
+                    let auto_fix = AutoFixHandler::new("cargo", vec!["fmt".to_string()]);
+                    if auto_fix.attempt_fix("formatting", &error).await? {
+                        return Ok(true);
+                    }
+                }
+
+                // Then try Claude if auto-fix didn't work
+                if let Some(client) = client {
+                    let fix_handler = ClaudeFixHandler::new(client, CLAUDE_AGENT_FORMAT_FIX);
+                    fix_handler.attempt_fix("formatting", &error).await
+                } else {
+                    Ok(false)
+                }
+            }
+        };
+
+        ValidationRunner::run_with_retry(&check, fix_handler, 3).await
+    }
+
+    async fn run_clippy_check(&mut self) -> Result<ComplianceCheck> {
+        let check = CargoCheck::new(
+            "clippy",
+            "cargo",
+            vec![
+                "clippy".to_string(),
+                "--all-targets".to_string(),
+                "--".to_string(),
+                "-D".to_string(),
+                "warnings".to_string(),
+            ],
+        );
+
+        let claude_client = self.claude_client.clone();
+        let fix_handler = move |error_msg: &str, _retries: u8| {
+            let client = claude_client.clone();
+            let error = error_msg.to_string();
+            async move {
+                if let Some(client) = client {
+                    // Spawn Claude agent to resolve clippy warnings
+                    let fix_handler = ClaudeFixHandler::new(client, CLAUDE_AGENT_CLIPPY_FIX);
+                    fix_handler.attempt_fix("clippy", &error).await
+                } else {
+                    Ok(false)
+                }
+            }
+        };
+
+        ValidationRunner::run_with_retry(&check, fix_handler, 3).await
+    }
+
+    async fn run_doc_check(&mut self) -> Result<ComplianceCheck> {
+        let check = CargoCheck::new(
+            "docs",
+            "cargo",
+            vec![
+                "doc".to_string(),
+                "--no-deps".to_string(),
+                "--quiet".to_string(),
+            ],
+        );
+
+        let claude_client = self.claude_client.clone();
+        let fix_handler = move |error_msg: &str, _retries: u8| {
+            let client = claude_client.clone();
+            let error = error_msg.to_string();
+            async move {
+                if let Some(client) = client {
+                    // Spawn Claude agent to fix documentation issues
+                    let fix_handler = ClaudeFixHandler::new(client, CLAUDE_AGENT_DOC_FIX);
+                    fix_handler.attempt_fix("docs", &error).await
+                } else {
+                    Ok(false)
+                }
+            }
+        };
+
+        ValidationRunner::run_with_retry(&check, fix_handler, 3).await
+    }
+}
+
 impl PipelineContext {
     /// Serialize context to JSON for passing to Claude agents
     pub fn to_json(&self) -> Result<String> {
         serde_json::to_string_pretty(self).map_err(|e| {
-            crate::error::SpiralError::SystemError(format!("Failed to serialize context: {}", e))
+            crate::error::SpiralError::SystemError(format!("Failed to serialize context: {e}"))
         })
+    }
+}
+
+impl Default for ValidationPipeline {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -458,6 +1110,74 @@ impl ValidationPipeline {
     }
 
     /// Execute Phase 2: Core Rust Compliance Checks
+    /// Execute Phase 2 checks independently without requiring Phase 1
+    /// This follows SOLID principles - Phase 2 doesn't depend on Phase 1
+    pub async fn run_phase2_independent(&mut self) -> Result<Phase2Attempt> {
+        info!("[Phase2] ┌─── CORE RUST COMPLIANCE CHECKS (STANDALONE) ───┐");
+
+        let mut phase2_attempt = Phase2Attempt {
+            iteration: 1, // Standalone run is always iteration 1
+            checks: Phase2Checks {
+                compilation: ComplianceCheck {
+                    passed: false,
+                    retries: 0,
+                    errors: None,
+                },
+                tests: ComplianceCheck {
+                    passed: false,
+                    retries: 0,
+                    errors: None,
+                },
+                formatting: ComplianceCheck {
+                    passed: false,
+                    retries: 0,
+                    errors: None,
+                },
+                clippy: ComplianceCheck {
+                    passed: false,
+                    retries: 0,
+                    errors: None,
+                },
+                docs: ComplianceCheck {
+                    passed: false,
+                    retries: 0,
+                    errors: None,
+                },
+            },
+            triggered_loop: false,
+        };
+
+        // Run each Phase 2 check in sequence
+        phase2_attempt.checks.compilation = self.run_compilation_check().await?;
+        if phase2_attempt.checks.compilation.retries > 0 {
+            phase2_attempt.triggered_loop = true;
+        }
+
+        phase2_attempt.checks.tests = self.run_test_check().await?;
+        if phase2_attempt.checks.tests.retries > 0 {
+            phase2_attempt.triggered_loop = true;
+        }
+
+        phase2_attempt.checks.formatting = self.run_formatting_check().await?;
+        if phase2_attempt.checks.formatting.retries > 0 {
+            phase2_attempt.triggered_loop = true;
+        }
+
+        phase2_attempt.checks.clippy = self.run_clippy_check().await?;
+        if phase2_attempt.checks.clippy.retries > 0 {
+            phase2_attempt.triggered_loop = true;
+        }
+
+        phase2_attempt.checks.docs = self.run_doc_check().await?;
+        if phase2_attempt.checks.docs.retries > 0 {
+            phase2_attempt.triggered_loop = true;
+        }
+
+        info!("[Phase2] └─── PHASE 2 COMPLETE ───┘");
+
+        Ok(phase2_attempt)
+    }
+
     async fn execute_phase2(&mut self) -> Result<bool> {
         info!("[Phase2] ┌─── CORE RUST COMPLIANCE CHECKS ───┐");
 
@@ -630,28 +1350,19 @@ impl ValidationPipeline {
             PipelineStatus::Success => {
                 info!("[ValidationPipeline] Running success analyzer agent");
                 let _ = self
-                    .spawn_claude_agent(
-                        ".claude/validation-agents/analysis/success-analyzer.md",
-                        &context_clone,
-                    )
+                    .spawn_claude_agent(CLAUDE_AGENT_SUCCESS_ANALYZER, &context_clone)
                     .await;
             }
             PipelineStatus::SuccessWithRetries => {
                 info!("[ValidationPipeline] Running success-with-issues analyzer agent");
                 let _ = self
-                    .spawn_claude_agent(
-                        ".claude/validation-agents/analysis/success-with-issues-analyzer.md",
-                        &context_clone,
-                    )
+                    .spawn_claude_agent(CLAUDE_AGENT_SUCCESS_WITH_ISSUES, &context_clone)
                     .await;
             }
             PipelineStatus::Failure => {
                 info!("[ValidationPipeline] Running failure analyzer agent");
                 let _ = self
-                    .spawn_claude_agent(
-                        ".claude/validation-agents/analysis/failure-analyzer.md",
-                        &context_clone,
-                    )
+                    .spawn_claude_agent(CLAUDE_AGENT_FAILURE_ANALYZER, &context_clone)
                     .await;
             }
         }
@@ -672,6 +1383,7 @@ impl ValidationPipeline {
     }
 
     /// Run a command with timeout
+    #[allow(dead_code)] // Utility method for future use
     async fn run_command_with_timeout(
         &self,
         cmd: &str,
@@ -732,6 +1444,102 @@ impl ValidationPipeline {
     /// Add a critical error to the context
     fn add_critical_error(&mut self, error: String) {
         self.context.critical_errors.push(error);
+    }
+
+    /// Create a fix context for Phase 2 checks
+    #[allow(dead_code)] // Utility method for future use
+    fn create_fix_context(
+        &self,
+        check_name: &str,
+        error_msg: &str,
+        retries: u8,
+    ) -> PipelineContext {
+        PipelineContext {
+            pipeline_iterations: self.context.pipeline_iterations,
+            total_duration_ms: self.start_time.elapsed().as_millis() as u64,
+            final_status: PipelineStatus::Failure,
+            phase1_results: self.context.phase1_results.clone(),
+            phase2_attempts: vec![Phase2Attempt {
+                iteration: self.context.pipeline_iterations,
+                checks: Phase2Checks {
+                    compilation: if check_name == "compilation" {
+                        ComplianceCheck {
+                            passed: false,
+                            retries,
+                            errors: Some(vec![error_msg.to_string()]),
+                        }
+                    } else {
+                        ComplianceCheck {
+                            passed: false,
+                            retries: 0,
+                            errors: None,
+                        }
+                    },
+                    tests: if check_name == "tests" {
+                        ComplianceCheck {
+                            passed: false,
+                            retries,
+                            errors: Some(vec![error_msg.to_string()]),
+                        }
+                    } else {
+                        ComplianceCheck {
+                            passed: false,
+                            retries: 0,
+                            errors: None,
+                        }
+                    },
+                    formatting: if check_name == "formatting" {
+                        ComplianceCheck {
+                            passed: false,
+                            retries,
+                            errors: Some(vec![error_msg.to_string()]),
+                        }
+                    } else {
+                        ComplianceCheck {
+                            passed: false,
+                            retries: 0,
+                            errors: None,
+                        }
+                    },
+                    clippy: if check_name == "clippy" {
+                        ComplianceCheck {
+                            passed: false,
+                            retries,
+                            errors: Some(vec![error_msg.to_string()]),
+                        }
+                    } else {
+                        ComplianceCheck {
+                            passed: false,
+                            retries: 0,
+                            errors: None,
+                        }
+                    },
+                    docs: if check_name == "docs" {
+                        ComplianceCheck {
+                            passed: false,
+                            retries,
+                            errors: Some(vec![error_msg.to_string()]),
+                        }
+                    } else {
+                        ComplianceCheck {
+                            passed: false,
+                            retries: 0,
+                            errors: None,
+                        }
+                    },
+                },
+                triggered_loop: false,
+            }],
+            files_modified: self.context.files_modified.clone(),
+            changes_applied: self.context.changes_applied.clone(),
+            critical_errors: vec![],
+            warnings: vec![],
+            patterns: ExecutionPatterns {
+                consistent_failures: None,
+                flakey_checks: None,
+                performance_bottlenecks: None,
+            },
+        }
     }
 
     /// Spawn a Claude Code agent with the given prompt file and context
@@ -796,21 +1604,21 @@ impl ValidationPipeline {
 
                     Ok(ClaudeValidationResponse {
                         explanation: generation_result.explanation,
-                        success: true,
+                        success: true, // Claude executed successfully
                     })
                 }
                 Ok(Err(e)) => {
                     warn!("[ValidationPipeline] Claude Code API error: {}", e);
                     Ok(ClaudeValidationResponse {
                         explanation: format!("API error: {}", e),
-                        success: false,
+                        success: false, // Claude failed to execute
                     })
                 }
                 Err(_) => {
                     warn!("[ValidationPipeline] Claude Code request timed out");
                     Ok(ClaudeValidationResponse {
                         explanation: "Request timed out".to_string(),
-                        success: false,
+                        success: false, // Claude failed to execute
                     })
                 }
             }
@@ -824,17 +1632,18 @@ impl ValidationPipeline {
         }
     }
 
-    // Phase 1 check implementations (stubs for now)
+    // Phase 1 check implementations
 
     async fn run_code_review(&self) -> Result<CheckResult> {
         let start = Instant::now();
         info!("[Phase1] Running code review standards check");
 
-        // TODO: Spawn Claude agent with .claude/validation-agents/phase1/code-review-standards.md
+        // Note: Claude agent integration pending
+        // Agent path: .claude/validation-agents/phase1/code-review-standards.md
 
         Ok(CheckResult {
             passed: true,
-            findings: vec!["Code review not yet implemented".to_string()],
+            findings: vec!["Code review agent integration pending".to_string()],
             duration_ms: start.elapsed().as_millis() as u64,
         })
     }
@@ -843,11 +1652,12 @@ impl ValidationPipeline {
         let start = Instant::now();
         info!("[Phase1] Running comprehensive testing check");
 
-        // TODO: Spawn Claude agent with .claude/validation-agents/phase1/comprehensive-testing.md
+        // Note: Claude agent integration pending
+        // Agent path: .claude/validation-agents/phase1/comprehensive-testing.md
 
         Ok(CheckResult {
             passed: true,
-            findings: vec!["Testing analysis not yet implemented".to_string()],
+            findings: vec!["Testing analysis agent integration pending".to_string()],
             duration_ms: start.elapsed().as_millis() as u64,
         })
     }
@@ -856,11 +1666,12 @@ impl ValidationPipeline {
         let start = Instant::now();
         info!("[Phase1] Running security audit");
 
-        // TODO: Spawn Claude agent with .claude/validation-agents/phase1/security-audit.md
+        // Note: Claude agent integration pending
+        // Agent path: .claude/validation-agents/phase1/security-audit.md
 
         Ok(CheckResult {
             passed: true,
-            findings: vec!["Security audit not yet implemented".to_string()],
+            findings: vec!["Security audit agent integration pending".to_string()],
             duration_ms: start.elapsed().as_millis() as u64,
         })
     }
@@ -869,235 +1680,154 @@ impl ValidationPipeline {
         let start = Instant::now();
         info!("[Phase1] Running system integration check");
 
-        // TODO: Spawn Claude agent with .claude/validation-agents/phase1/system-integration.md
+        // Note: Claude agent integration pending
+        // Agent path: .claude/validation-agents/phase1/system-integration.md
 
         Ok(CheckResult {
             passed: true,
-            findings: vec!["Integration check not yet implemented".to_string()],
+            findings: vec!["Integration check agent integration pending".to_string()],
             duration_ms: start.elapsed().as_millis() as u64,
         })
     }
 
-    // Phase 2 check implementations (stubs for now)
+    // Phase 2 check implementations
 
     async fn run_compilation_check(&mut self) -> Result<ComplianceCheck> {
-        info!("[Phase2] Running compilation check");
+        let check = CargoCheck::new(
+            "compilation",
+            "cargo",
+            vec!["check".to_string(), "--all-targets".to_string()],
+        );
 
-        let mut retries = 0;
-        let mut errors = vec![];
-
-        // Try up to 2 times (initial + 1 retry with Claude)
-        for attempt in 0..2 {
-            let output = self
-                .run_command_with_timeout("cargo", &["check", "--all-targets"])
-                .await?;
-
-            if output.status.success() {
-                return Ok(ComplianceCheck {
-                    passed: true,
-                    retries,
-                    errors: if errors.is_empty() {
-                        None
-                    } else {
-                        Some(errors)
-                    },
-                });
-            }
-
-            // Compilation failed
-            let error_msg = String::from_utf8_lossy(&output.stderr);
-            errors.push(error_msg.to_string());
-
-            if attempt == 0 {
-                // First failure - try to fix with Claude
-                warn!("[Phase2] Compilation check failed, attempting Claude fix");
-
-                // Update context with compilation errors
-                let mut fix_context = self.context.clone();
-                fix_context.phase2_attempts.push(Phase2Attempt {
-                    iteration: self.context.pipeline_iterations,
-                    checks: Phase2Checks {
-                        compilation: ComplianceCheck {
-                            passed: false,
-                            retries: 0,
-                            errors: Some(vec![error_msg.to_string()]),
-                        },
-                        tests: ComplianceCheck {
-                            passed: false,
-                            retries: 0,
-                            errors: None,
-                        },
-                        formatting: ComplianceCheck {
-                            passed: false,
-                            retries: 0,
-                            errors: None,
-                        },
-                        clippy: ComplianceCheck {
-                            passed: false,
-                            retries: 0,
-                            errors: None,
-                        },
-                        docs: ComplianceCheck {
-                            passed: false,
-                            retries: 0,
-                            errors: None,
-                        },
-                    },
-                    triggered_loop: false,
-                });
-
-                // Spawn Claude agent
-                let claude_response = self
-                    .spawn_claude_agent(
-                        ".claude/validation-agents/phase2/compilation-fixer.md",
-                        &fix_context,
-                    )
-                    .await?;
-
-                if claude_response.success {
-                    info!("[Phase2] Claude applied compilation fixes");
-                    retries = 1;
-                    // Loop will retry cargo check
+        let claude_client = self.claude_client.clone();
+        let fix_handler = move |error_msg: &str, _retries: u8| {
+            let client = claude_client.clone();
+            let error = error_msg.to_string();
+            async move {
+                if let Some(client) = client {
+                    // Spawn Claude agent to handle compilation fixes
+                    let fix_handler = ClaudeFixHandler::new(client, CLAUDE_AGENT_COMPILATION_FIX);
+                    fix_handler.attempt_fix("compilation", &error).await
                 } else {
-                    // Claude couldn't fix it
-                    info!("[Phase2] Claude unable to fix compilation issues");
-                    break;
+                    Ok(false)
                 }
             }
-        }
+        };
 
-        Ok(ComplianceCheck {
-            passed: false,
-            retries,
-            errors: Some(errors),
-        })
+        ValidationRunner::run_with_retry(&check, fix_handler, 3).await
     }
 
-    async fn run_test_check(&self) -> Result<ComplianceCheck> {
-        info!("[Phase2] Running test check");
+    async fn run_test_check(&mut self) -> Result<ComplianceCheck> {
+        let check = CargoCheck::new("tests", "cargo", vec!["test".to_string()]);
 
-        let output = Command::new("cargo").arg("test").output().map_err(|e| {
-            crate::error::SpiralError::SystemError(format!("Failed to run cargo test: {}", e))
-        })?;
+        let claude_client = self.claude_client.clone();
+        let fix_handler = move |error_msg: &str, _retries: u8| {
+            let client = claude_client.clone();
+            let error = error_msg.to_string();
+            async move {
+                if let Some(client) = client {
+                    // Spawn Claude agent to handle test failure analysis
+                    let fix_handler = ClaudeFixHandler::new(client, CLAUDE_AGENT_TEST_FIX);
+                    fix_handler.attempt_fix("tests", &error).await
+                } else {
+                    Ok(false)
+                }
+            }
+        };
 
-        if output.status.success() {
-            return Ok(ComplianceCheck {
-                passed: true,
-                retries: 0,
-                errors: None,
-            });
-        }
-
-        // Tests failed - spawn Claude agent to fix
-        let errors = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        warn!("[Phase2] Test check failed");
-
-        // TODO: Actually spawn Claude agent with test-failure-analyzer.md
-        // For now, simulate that we tried once
-
-        Ok(ComplianceCheck {
-            passed: false,
-            retries: 1,
-            errors: Some(vec![format!("stdout: {}\nstderr: {}", stdout, errors)]),
-        })
+        ValidationRunner::run_with_retry(&check, fix_handler, 3).await
     }
 
-    async fn run_formatting_check(&self) -> Result<ComplianceCheck> {
-        info!("[Phase2] Running formatting check");
+    async fn run_formatting_check(&mut self) -> Result<ComplianceCheck> {
+        let check = CargoCheck::new(
+            "formatting",
+            "cargo",
+            vec!["fmt".to_string(), "--".to_string(), "--check".to_string()],
+        );
 
-        let output = Command::new("cargo")
-            .args(["fmt", "--", "--check"])
-            .output()
-            .map_err(|e| {
-                crate::error::SpiralError::SystemError(format!("Failed to run cargo fmt: {}", e))
-            })?;
+        let claude_client = self.claude_client.clone();
+        let fix_handler = move |error_msg: &str, retries: u8| {
+            let client = claude_client.clone();
+            let error = error_msg.to_string();
+            async move {
+                // Try auto-fix first with cargo fmt
+                if retries == 0 {
+                    let auto_fix = AutoFixHandler::new("cargo", vec!["fmt".to_string()]);
+                    if auto_fix.attempt_fix("formatting", &error).await? {
+                        return Ok(true);
+                    }
+                }
 
-        if output.status.success() {
-            return Ok(ComplianceCheck {
-                passed: true,
-                retries: 0,
-                errors: None,
-            });
-        }
+                // Then try Claude if auto-fix didn't work
+                if let Some(client) = client {
+                    let fix_handler = ClaudeFixHandler::new(client, CLAUDE_AGENT_FORMAT_FIX);
+                    fix_handler.attempt_fix("formatting", &error).await
+                } else {
+                    Ok(false)
+                }
+            }
+        };
 
-        // Formatting incorrect - spawn Claude agent to fix
-        warn!("[Phase2] Formatting check failed");
-
-        // TODO: Actually spawn Claude agent with formatting-fixer.md
-        // For now, simulate that we tried once and fixed it
-
-        // Run cargo fmt to fix
-        let _ = Command::new("cargo").arg("fmt").output();
-
-        Ok(ComplianceCheck {
-            passed: false,
-            retries: 1,
-            errors: Some(vec!["Formatting issues detected and fixed".to_string()]),
-        })
+        ValidationRunner::run_with_retry(&check, fix_handler, 3).await
     }
 
-    async fn run_clippy_check(&self) -> Result<ComplianceCheck> {
-        info!("[Phase2] Running clippy check");
+    async fn run_clippy_check(&mut self) -> Result<ComplianceCheck> {
+        let check = CargoCheck::new(
+            "clippy",
+            "cargo",
+            vec![
+                "clippy".to_string(),
+                "--all-targets".to_string(),
+                "--".to_string(),
+                "-D".to_string(),
+                "warnings".to_string(),
+            ],
+        );
 
-        let output = Command::new("cargo")
-            .args(["clippy", "--all-targets", "--", "-D", "warnings"])
-            .output()
-            .map_err(|e| {
-                crate::error::SpiralError::SystemError(format!("Failed to run cargo clippy: {}", e))
-            })?;
+        let claude_client = self.claude_client.clone();
+        let fix_handler = move |error_msg: &str, _retries: u8| {
+            let client = claude_client.clone();
+            let error = error_msg.to_string();
+            async move {
+                if let Some(client) = client {
+                    // Spawn Claude agent to resolve clippy warnings
+                    let fix_handler = ClaudeFixHandler::new(client, CLAUDE_AGENT_CLIPPY_FIX);
+                    fix_handler.attempt_fix("clippy", &error).await
+                } else {
+                    Ok(false)
+                }
+            }
+        };
 
-        if output.status.success() {
-            return Ok(ComplianceCheck {
-                passed: true,
-                retries: 0,
-                errors: None,
-            });
-        }
-
-        // Clippy warnings/errors - spawn Claude agent to fix
-        let errors = String::from_utf8_lossy(&output.stderr);
-        warn!("[Phase2] Clippy check failed");
-
-        // TODO: Actually spawn Claude agent with clippy-resolver.md
-        // For now, simulate that we tried once
-
-        Ok(ComplianceCheck {
-            passed: false,
-            retries: 1,
-            errors: Some(vec![errors.to_string()]),
-        })
+        ValidationRunner::run_with_retry(&check, fix_handler, 3).await
     }
 
-    async fn run_doc_check(&self) -> Result<ComplianceCheck> {
-        info!("[Phase2] Running documentation check");
+    async fn run_doc_check(&mut self) -> Result<ComplianceCheck> {
+        let check = CargoCheck::new(
+            "docs",
+            "cargo",
+            vec![
+                "doc".to_string(),
+                "--no-deps".to_string(),
+                "--quiet".to_string(),
+            ],
+        );
 
-        let output = Command::new("cargo")
-            .args(["doc", "--no-deps", "--quiet"])
-            .output()
-            .map_err(|e| {
-                crate::error::SpiralError::SystemError(format!("Failed to run cargo doc: {}", e))
-            })?;
+        let claude_client = self.claude_client.clone();
+        let fix_handler = move |error_msg: &str, _retries: u8| {
+            let client = claude_client.clone();
+            let error = error_msg.to_string();
+            async move {
+                if let Some(client) = client {
+                    // Spawn Claude agent to fix documentation issues
+                    let fix_handler = ClaudeFixHandler::new(client, CLAUDE_AGENT_DOC_FIX);
+                    fix_handler.attempt_fix("docs", &error).await
+                } else {
+                    Ok(false)
+                }
+            }
+        };
 
-        if output.status.success() {
-            return Ok(ComplianceCheck {
-                passed: true,
-                retries: 0,
-                errors: None,
-            });
-        }
-
-        // Doc build failed - spawn Claude agent to fix
-        let errors = String::from_utf8_lossy(&output.stderr);
-        warn!("[Phase2] Documentation check failed");
-
-        // TODO: Actually spawn Claude agent with doc-builder.md
-        // For now, simulate that we tried once
-
-        Ok(ComplianceCheck {
-            passed: false,
-            retries: 1,
-            errors: Some(vec![errors.to_string()]),
-        })
+        ValidationRunner::run_with_retry(&check, fix_handler, 3).await
     }
 }

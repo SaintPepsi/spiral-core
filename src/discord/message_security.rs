@@ -212,7 +212,7 @@ impl MessageSecurityValidator {
         // Check for malicious file patterns with URLs
         for (file_ext, description) in MALICIOUS_FILE_PATTERNS {
             if content.contains(file_ext) && content.contains("http") {
-                issues.push(format!("Contains suspicious URLs: {}", description));
+                issues.push(format!("Contains suspicious URLs: {description}"));
                 if RiskLevel::High > risk_level {
                     risk_level = RiskLevel::High;
                 }

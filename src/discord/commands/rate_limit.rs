@@ -7,6 +7,12 @@ pub struct RateLimitCommand {
     // Rate limit command doesn't need state for now
 }
 
+impl Default for RateLimitCommand {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RateLimitCommand {
     pub fn new() -> Self {
         Self {}
@@ -16,7 +22,7 @@ impl RateLimitCommand {
     fn generate_rate_limit_status(&self, _user_id: u64, username: &str) -> String {
         // Rate limit data access not yet implemented in secure message handler
         format!(
-            "⏱️ **Rate Limit Status for {}**\n\n\
+            "⏱️ **Rate Limit Status for {username}**\n\n\
             **Current Status:** 🟢 Good Standing\n\
             **Requests Used:** ❓ Data not available\n\
             **Reset Time:** ❓ Data not available\n\
@@ -25,8 +31,7 @@ impl RateLimitCommand {
             • Rate limiting is active to prevent abuse\n\
             • Limits reset daily at midnight UTC\n\
             • Contact admin if you need higher limits\n\n\
-            *Rate limit data collection not yet implemented* ⚠️",
-            username
+            *Rate limit data collection not yet implemented* ⚠️"
         )
     }
 
@@ -34,15 +39,14 @@ impl RateLimitCommand {
     fn generate_reset_confirmation(&self, target_user: &str) -> String {
         format!(
             "🔄 **Rate Limit Reset**\n\n\
-            **Target User:** {}\n\
+            **Target User:** {target_user}\n\
             **Action:** Rate limit reset requested\n\
             **Status:** ❓ Reset functionality not implemented\n\n\
             **What would happen:**\n\
             • User's rate limit counters would be cleared\n\
             • Fresh daily allowance would be granted\n\
             • User would be notified of the reset\n\n\
-            *Rate limit reset not yet implemented* ⚠️",
-            target_user
+            *Rate limit reset not yet implemented* ⚠️"
         )
     }
 
@@ -58,7 +62,7 @@ impl RateLimitCommand {
         let parts: Vec<&str> = content.split_whitespace().collect();
         if parts.len() >= 4 {
             if let Ok(user_id) = parts[3].parse::<u64>() {
-                return Some((user_id, format!("User {}", user_id)));
+                return Some((user_id, format!("User {user_id}")));
             }
         }
 

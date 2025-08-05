@@ -71,7 +71,9 @@
       "Bash(touch:*)",
       "Bash(awk:*)",
       "Bash(git commit:*)",
-      "Bash(npx prettier:*)"
+      "Bash(npx prettier:*)",
+      "Bash(claude --version)",
+      "Bash(git config:*)"
     ],
     "deny": [
       "Bash(npm install -g:*)",

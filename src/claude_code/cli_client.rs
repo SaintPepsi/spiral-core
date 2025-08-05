@@ -119,11 +119,16 @@ impl ClaudeCodeCliClient {
     /// Why: Prevents blocking the async runtime during binary discovery
     /// Alternative: spawn_blocking (considered: more overhead for simple command)
     async fn find_claude_binary() -> Result<String> {
+        // Expand home directory path
+        let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/Users/hogers".to_string());
+
         // Try common locations for Claude Code
-        let possible_paths = [
-            "claude",                         // PATH search
-            "/usr/local/bin/claude",          // Homebrew/standard install
-            "/home/vscode/.local/bin/claude", // Dev container install
+        let possible_paths = vec![
+            "claude".to_string(),                         // PATH search (alias)
+            format!("{}/.claude/local/claude", home_dir), // Local installation
+            format!("{}/.claude/local/node_modules/.bin/claude", home_dir), // Direct node module
+            "/usr/local/bin/claude".to_string(),          // Homebrew/standard install
+            "/home/vscode/.local/bin/claude".to_string(), // Dev container install
         ];
 
         for path in &possible_paths {
@@ -151,7 +156,7 @@ impl ClaudeCodeCliClient {
         }
 
         Err(SpiralError::ConfigurationError(
-            "Claude Code CLI not found. Please install with: npm install -g @anthropic-ai/claude-code".to_string()
+            "Claude Code CLI not found. Please ensure 'claude' is available in PATH or set CLAUDE_BINARY_PATH environment variable".to_string()
         ))
     }
 

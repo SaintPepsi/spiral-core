@@ -7,6 +7,12 @@ pub struct DebugCommand {
     // Debug command doesn't need state for now
 }
 
+impl Default for DebugCommand {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DebugCommand {
     pub fn new() -> Self {
         Self {}
@@ -23,11 +29,10 @@ impl DebugCommand {
         let mut report = "🔍 **Spiral Debug Report**\n\n".to_string();
 
         // Extract target message if replying to one
-        let target_message = if let Some(referenced_message) = &msg.referenced_message {
-            Some(referenced_message.as_ref())
-        } else {
-            None
-        };
+        let target_message = msg
+            .referenced_message
+            .as_ref()
+            .map(|referenced_message| referenced_message.as_ref());
 
         if let Some(target_msg) = target_message {
             report.push_str("**🎯 Target Message Debug**\n");
@@ -50,7 +55,7 @@ impl DebugCommand {
             } else {
                 target_msg.content.clone()
             };
-            report.push_str(&format!("• Content Preview: `{}`\n\n", content_preview));
+            report.push_str(&format!("• Content Preview: `{content_preview}`\n\n"));
 
             // Security validation analysis using bot's secure message handler
             report.push_str("**🛡️ Security Analysis**\n");
@@ -63,13 +68,11 @@ impl DebugCommand {
             } else {
                 "🔴 Issues Found"
             };
-            report.push_str(&format!("• Message Validation: {}\n", validation_status));
+            report.push_str(&format!("• Message Validation: {validation_status}\n"));
 
             if !validation_result.is_valid {
-                report.push_str(&format!(
-                    "• Issues: {}\n",
-                    validation_result.issues.join(", ")
-                ));
+                let issues = validation_result.issues.join(", ");
+                report.push_str(&format!("• Issues: {issues}\n"));
             }
 
             let risk_level = &validation_result.risk_level;
@@ -80,8 +83,7 @@ impl DebugCommand {
                 crate::discord::message_security::RiskLevel::Critical => "🚨",
             };
             report.push_str(&format!(
-                "• Risk Assessment: {} {:?}\n\n",
-                risk_emoji, risk_level
+                "• Risk Assessment: {risk_emoji} {risk_level:?}\n\n"
             ));
         } else {
             // System debug information
@@ -107,7 +109,8 @@ impl DebugCommand {
         ));
         report.push_str(&format!("• Channel: <#{}>\n", msg.channel_id.get()));
         if let Some(guild_id) = msg.guild_id {
-            report.push_str(&format!("• Server: Guild ID {}\n", guild_id.get()));
+            let guild_id_num = guild_id.get();
+            report.push_str(&format!("• Server: Guild ID {guild_id_num}\n"));
         } else {
             report.push_str("• Server: Direct Message\n");
         }
@@ -120,7 +123,7 @@ impl DebugCommand {
         } else {
             "🔴 Not Authorized"
         };
-        report.push_str(&format!("• Authorization: {}\n\n", auth_status));
+        report.push_str(&format!("• Authorization: {auth_status}\n\n"));
 
         // System status summary
         report.push_str("**⚡ System Status Summary**\n");
@@ -132,11 +135,11 @@ impl DebugCommand {
         let security_metrics = bot.secure_message_handler.get_security_metrics();
         let rate_limited_count = security_metrics.rate_limited;
         let rate_limit_status = if rate_limited_count > 0 {
-            format!("🟡 Active ({} users limited)", rate_limited_count)
+            format!("🟡 Active ({rate_limited_count} users limited)")
         } else {
             "🟢 Active (no limits triggered)".to_string()
         };
-        report.push_str(&format!("• Rate Limiting: {}\n\n", rate_limit_status));
+        report.push_str(&format!("• Rate Limiting: {rate_limit_status}\n\n"));
 
         report.push_str("*Debug report generated successfully* ✅\n");
         report.push_str("*Use this information to troubleshoot issues or verify system behavior*");

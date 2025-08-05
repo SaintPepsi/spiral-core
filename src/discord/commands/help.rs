@@ -7,6 +7,12 @@ pub struct HelpCommand {
     // Help command doesn't need state for now
 }
 
+impl Default for HelpCommand {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HelpCommand {
     pub fn new() -> Self {
         Self {}
@@ -97,7 +103,7 @@ impl HelpCommand {
                     command.prefix, command.description
                 ));
             }
-            commands_text.push_str("\n");
+            commands_text.push('\n');
         }
 
         // Admin commands (only for authorized users)
@@ -111,7 +117,7 @@ impl HelpCommand {
                         command.prefix, command.description
                     ));
                 }
-                commands_text.push_str("\n");
+                commands_text.push('\n');
             }
         }
 

@@ -249,6 +249,43 @@ fn create_test_config() -> ClaudeCodeConfig {
     }
 }
 
+/// 🔍 BINARY DISCOVERY TEST: Verify Claude CLI can be found
+/// ARCHITECTURE DECISION: Test actual binary discovery logic
+/// Why: Ensures the system can find Claude in various installation locations
+/// Audit: Verify all common installation paths are checked
+#[tokio::test]
+async fn test_find_claude_binary() {
+    use crate::claude_code::cli_client::ClaudeCodeCliClient;
+
+    // Test that we can create a client (which internally finds the binary)
+    let config = ClaudeCodeConfig {
+        claude_binary_path: None, // Force binary discovery
+        working_directory: Some("/tmp".to_string()),
+        timeout_seconds: 300,
+        permission_mode: "acceptEdits".to_string(),
+        allowed_tools: vec!["Read".to_string()],
+        workspace_cleanup_after_hours: 24,
+        max_workspace_size_mb: 100,
+    };
+
+    // This should succeed if Claude is installed
+    match ClaudeCodeCliClient::new(config).await {
+        Ok(_client) => {
+            println!("✓ Claude binary found successfully");
+            // Verify the client was created with a valid binary path
+            // Test passed - client created successfully
+        }
+        Err(e) => {
+            // This is expected in CI/CD environments without Claude installed
+            println!("⚠️ Claude binary not found (expected in CI): {e}");
+            assert!(
+                e.to_string().contains("Claude Code CLI not found"),
+                "Should provide helpful error message"
+            );
+        }
+    }
+}
+
 /// 🎯 INTEGRATION TEST HELPERS: For future integration testing
 /// DECISION: Prepare infrastructure for integration tests with real API
 #[cfg(test)]

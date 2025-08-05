@@ -7,6 +7,12 @@ pub struct SelfUpdateCommand {
     // Self-update command doesn't need state for now
 }
 
+impl Default for SelfUpdateCommand {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SelfUpdateCommand {
     pub fn new() -> Self {
         Self {}
@@ -100,8 +106,7 @@ impl SelfUpdateCommand {
 
     /// Generate manual update status
     fn generate_manual_update_status(&self) -> String {
-        format!(
-            "🔄 **Manual System Update**\n\n\
+        "🔄 **Manual System Update**\n\n\
             **Status:** ❓ Self-update execution not yet implemented\n\n\
             **What Would Happen:**\n\
             • System analysis for improvement opportunities\n\
@@ -118,7 +123,7 @@ impl SelfUpdateCommand {
             The self-update execution system needs implementation to enable \
             actual autonomous improvements. The foundation is ready.\n\n\
             *Self-improvement is the highest form of evolution* 🌟"
-        )
+            .to_string()
     }
 }
 

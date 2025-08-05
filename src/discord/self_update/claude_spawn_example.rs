@@ -23,17 +23,16 @@ pub async fn spawn_claude_code_example(custom_prompt: &str) -> Result<String> {
         # Example Claude Code Invocation
         
         ## Prompt:
-        {}
+        {custom_prompt}
         
         ## Expected Response Format:
         - Validation findings
         - Recommendations
         - Security concerns
-        "#,
-        custom_prompt
+        "#
     );
 
-    info!("[ClaudeSpawn] Would execute: {}", simple_example);
+    info!("[ClaudeSpawn] Would execute: {simple_example}");
 
     // Example 2: With specific agent and files
     let agent_example = spawn_with_agent(
@@ -51,8 +50,7 @@ pub async fn spawn_claude_code_example(custom_prompt: &str) -> Result<String> {
     .await?;
 
     Ok(format!(
-        "Claude Code Examples:\n1. Simple: {}\n2. Agent: {}\n3. Security: {}",
-        simple_example, agent_example, security_example
+        "Claude Code Examples:\n1. Simple: {simple_example}\n2. Agent: {agent_example}\n3. Security: {security_example}"
     ))
 }
 
@@ -67,29 +65,26 @@ async fn spawn_with_agent(agent_type: &str, description: &str, files: Vec<&str>)
     // }).await?;
     // ```
 
-    let command_example = format!(
-        "claude-code --agent {} --task '{}' --files {}",
-        agent_type,
-        description,
-        files.join(",")
-    );
+    let files_str = files.join(",");
+    let command_example =
+        format!("claude-code --agent {agent_type} --task '{description}' --files {files_str}");
 
-    info!("[ClaudeSpawn] Agent command: {}", command_example);
+    info!("[ClaudeSpawn] Agent command: {command_example}");
+    let file_count = files.len();
     Ok(format!(
-        "Would run agent {} on {} files",
-        agent_type,
-        files.len()
+        "Would run agent {agent_type} on {file_count} files"
     ))
 }
 
 /// Example: Security-focused Claude Code invocation
 async fn spawn_security_review(files: Vec<&str>, security_focus: &str) -> Result<String> {
+    let files_list = files.join("\n");
     let security_prompt = format!(
         r#"
-        Perform security review with focus: {}
+        Perform security review with focus: {security_focus}
         
         Files to analyze:
-        {}
+        {files_list}
         
         Check for:
         - Input validation issues
@@ -97,12 +92,10 @@ async fn spawn_security_review(files: Vec<&str>, security_focus: &str) -> Result
         - Authorization flaws
         - Injection vulnerabilities
         - Sensitive data exposure
-        "#,
-        security_focus,
-        files.join("\n")
+        "#
     );
 
-    info!("[ClaudeSpawn] Security review prompt: {}", security_prompt);
+    info!("[ClaudeSpawn] Security review prompt: {security_prompt}");
     Ok("Security review would be performed".to_string())
 }
 
@@ -111,15 +104,16 @@ pub async fn spawn_architecture_review(
     changed_files: Vec<String>,
     custom_instructions: &str,
 ) -> Result<String> {
+    let files_list = changed_files.join("\n");
     let prompt = format!(
         r#"
         Architectural Review Request
         
         Changed files:
-        {}
+        {files_list}
         
         Custom instructions:
-        {}
+        {custom_instructions}
         
         Please analyze:
         1. Architectural patterns and consistency
@@ -127,15 +121,13 @@ pub async fn spawn_architecture_review(
         3. Performance implications
         4. Security architecture
         5. Testing strategy alignment
-        "#,
-        changed_files.join("\n"),
-        custom_instructions
+        "#
     );
 
     // Example of how you might invoke Claude Code CLI
     // This is a conceptual example - adapt to your actual Claude Code integration
     let claude_command = Command::new("claude-code")
-        .args(&[
+        .args([
             "--mode",
             "review",
             "--prompt",
@@ -153,14 +145,12 @@ pub async fn spawn_architecture_review(
             } else {
                 let error = String::from_utf8_lossy(&output.stderr);
                 Err(SpiralError::SystemError(format!(
-                    "Claude Code failed: {}",
-                    error
+                    "Claude Code failed: {error}"
                 )))
             }
         }
         Err(e) => Err(SpiralError::SystemError(format!(
-            "Failed to spawn Claude Code: {}",
-            e
+            "Failed to spawn Claude Code: {e}"
         ))),
     }
 }
@@ -171,7 +161,7 @@ pub async fn simple_claude_spawn(prompt: &str) -> Result<()> {
 
     // This is where you would integrate with Claude Code API/CLI
     // For now, just log what would be executed
-    info!("[ClaudeSpawn] Prompt: {}", prompt);
+    info!("[ClaudeSpawn] Prompt: {prompt}");
 
     // Example integration points:
     // 1. HTTP API: POST to Claude Code endpoint

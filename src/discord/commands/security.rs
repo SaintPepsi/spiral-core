@@ -7,12 +7,19 @@ pub struct SecurityCommand {
     // Security command doesn't need state for now
 }
 
+impl Default for SecurityCommand {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SecurityCommand {
     pub fn new() -> Self {
         Self {}
     }
 
     /// Generate detailed security statistics
+    #[allow(clippy::uninlined_format_args)]
     fn generate_security_stats(&self, bot: &SpiralConstellationBot) -> String {
         let metrics = bot.secure_message_handler.get_security_metrics();
         let avg_confidence = bot.secure_message_handler.get_average_confidence();
@@ -108,6 +115,7 @@ impl SecurityCommand {
     }
 
     /// Generate comprehensive security report
+    #[allow(clippy::uninlined_format_args)]
     fn generate_security_report(&self, bot: &SpiralConstellationBot) -> String {
         let metrics = bot.secure_message_handler.get_security_metrics();
         let avg_confidence = bot.secure_message_handler.get_average_confidence();
@@ -192,8 +200,7 @@ impl SecurityCommand {
     /// Reset security metrics
     fn generate_reset_confirmation(&self, _bot: &SpiralConstellationBot) -> String {
         // Note: Would need to implement actual reset in the secure_message_handler
-        format!(
-            "🔄 **Security Metrics Reset**\n\n\
+        "🔄 **Security Metrics Reset**\n\n\
             **Action:** All security counters have been reset\n\
             **Status:** ✅ Reset completed successfully\n\n\
             **Metrics Reset:**\n\
@@ -203,7 +210,7 @@ impl SecurityCommand {
             • Risk level distributions\n\n\
             **Note:** Historical logs are preserved for audit purposes\n\n\
             *Security monitoring continues with fresh counters* 🛡️"
-        )
+            .to_string()
     }
 }
 

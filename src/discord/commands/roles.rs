@@ -10,6 +10,12 @@ pub struct RolesCommand {
     // Roles command doesn't need state for now
 }
 
+impl Default for RolesCommand {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RolesCommand {
     pub fn new() -> Self {
         Self {}
@@ -94,7 +100,8 @@ impl RolesCommand {
                         "[RolesCommand] Failed to create role {}: {}",
                         persona.name, e
                     );
-                    return Err(format!("Failed to create role '{}': {}", persona.name, e));
+                    let persona_name = &persona.name;
+                    return Err(format!("Failed to create role '{persona_name}': {e}"));
                 }
             }
         }
@@ -117,7 +124,7 @@ impl RolesCommand {
         let normalized_role_name = if role_name.to_lowercase().starts_with("spiral") {
             role_name.to_string()
         } else {
-            format!("Spiral{}", role_name)
+            format!("Spiral{role_name}")
         };
 
         // Find the role
@@ -169,7 +176,8 @@ impl RolesCommand {
 
         // Check if user already has the role
         if member.roles.contains(&role.id) {
-            return Some(format!("ℹ️ You already have the **{}** role!", role.name));
+            let role_name = &role.name;
+            return Some(format!("ℹ️ You already have the **{role_name}** role!"));
         }
 
         // Assign the role
@@ -182,19 +190,19 @@ impl RolesCommand {
                     msg.author.id.get()
                 );
 
+                let role_name_assigned = &role.name;
                 Some(format!(
-                    "✅ **Role Assigned!**\n\nYou now have the **{}** role!\n\n\
+                    "✅ **Role Assigned!**\n\nYou now have the **{role_name_assigned}** role!\n\n\
                     You can now:\n\
                     • Be mentioned with agent tasks\n\
                     • Access role-specific channels (if configured)\n\
                     • Represent this agent persona in discussions\n\n\
-                    *Welcome to the Spiral team!* 🌌",
-                    role.name
+                    *Welcome to the Spiral team!* 🌌"
                 ))
             }
             Err(e) => {
                 error!("[RolesCommand] Failed to assign role: {}", e);
-                Some(format!("❌ Failed to assign role: {}", e))
+                Some(format!("❌ Failed to assign role: {e}"))
             }
         }
     }
@@ -204,8 +212,10 @@ impl RolesCommand {
 #[derive(Debug, Clone)]
 struct AgentPersona {
     name: String,
+    #[allow(dead_code)] // Used for future UI features
     emoji: &'static str,
     color: Colour,
+    #[allow(dead_code)] // Used for future UI features
     description: String,
 }
 
@@ -251,25 +261,28 @@ impl CommandHandler for RolesCommand {
                     Ok(roles) => {
                         let role_list = roles
                             .iter()
-                            .map(|r| format!("• <@&{}> ({})", r.id, r.name))
+                            .map(|r| {
+                                let role_id = r.id;
+                                let role_name = &r.name;
+                                format!("• <@&{role_id}> ({role_name})")
+                            })
                             .collect::<Vec<_>>()
                             .join("\n");
 
+                        let role_count = roles.len();
+                        let first_role_id = roles.first().map(|r| r.id.to_string()).unwrap_or_default();
                         Some(format!(
                             "🌌 **SpiralConstellation Setup Complete!**\n\n\
-                            Created {} agent persona roles:\n{}\n\n\
+                            Created {role_count} agent persona roles:\n{role_list}\n\n\
                             **Usage:**\n\
-                            • Mention roles directly: <@&{}> help me with code\n\
+                            • Mention roles directly: <@&{first_role_id}> help me with code\n\
                             • Text mentions: @SpiralDev create a function\n\
                             • Get a role: !spiral roles join SpiralDev\n\n\
-                            *All roles are mentionable and color-coded!* ✨",
-                            roles.len(),
-                            role_list,
-                            roles.first().map(|r| r.id.to_string()).unwrap_or_default()
+                            *All roles are mentionable and color-coded!* ✨"
                         ))
                     }
                     Err(e) => {
-                        Some(format!("❌ **Role Creation Failed**\n\n{}\n\n**Common Issues:**\n• Bot needs 'Manage Roles' permission\n• Check bot role hierarchy\n• Verify server permissions", e))
+                        Some(format!("❌ **Role Creation Failed**\n\n{e}\n\n**Common Issues:**\n• Bot needs 'Manage Roles' permission\n• Check bot role hierarchy\n• Verify server permissions"))
                     }
                 }
             }

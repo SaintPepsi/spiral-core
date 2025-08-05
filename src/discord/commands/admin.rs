@@ -7,6 +7,12 @@ pub struct AdminCommand {
     // Admin command doesn't need state for now
 }
 
+impl Default for AdminCommand {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AdminCommand {
     pub fn new() -> Self {
         Self {}
@@ -22,8 +28,8 @@ impl AdminCommand {
         // Bot status and stats
         let stats = bot.stats.lock().await;
         panel.push_str("**📊 System Status**\n");
-        panel.push_str(&format!("• Bot Status: 🟢 Online\n"));
-        panel.push_str(&format!("• Uptime: Running\n"));
+        panel.push_str("• Bot Status: 🟢 Online\n");
+        panel.push_str("• Uptime: Running\n");
         panel.push_str(&format!(
             "• Dev Tasks Completed: {}\n",
             stats.dev_tasks_completed
@@ -62,8 +68,7 @@ impl AdminCommand {
             }
         ));
         panel.push_str(&format!(
-            "• Classification Confidence: {:.2}\n",
-            avg_confidence
+            "• Classification Confidence: {avg_confidence:.2}\n"
         ));
         panel.push_str(&format!(
             "• Threat Detections: {}\n",
@@ -82,14 +87,14 @@ impl AdminCommand {
         } else {
             "🔴 Not Available"
         };
-        panel.push_str(&format!("• SpiralDev: {}\n", dev_status));
+        panel.push_str(&format!("• SpiralDev: {dev_status}\n"));
 
         let orchestrator_status = if bot.has_orchestrator() {
             "🟢 Available"
         } else {
             "🔴 Not Available"
         };
-        panel.push_str(&format!("• Orchestrator: {}\n", orchestrator_status));
+        panel.push_str(&format!("• Orchestrator: {orchestrator_status}\n"));
 
         // Other agents not yet implemented
         panel.push_str("• SpiralPM: 🔴 Not Implemented\n");
@@ -114,7 +119,7 @@ impl AdminCommand {
             if let Ok(output) = String::from_utf8(usage.stdout) {
                 if let Ok(rss_kb) = output.trim().parse::<u64>() {
                     let rss_mb = rss_kb / 1024;
-                    panel.push_str(&format!("• Memory Usage: {}MB RSS\n", rss_mb));
+                    panel.push_str(&format!("• Memory Usage: {rss_mb}MB RSS\n"));
                 } else {
                     panel.push_str("• Memory Usage: ❓ Parse error\n");
                 }

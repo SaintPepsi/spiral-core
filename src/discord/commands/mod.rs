@@ -10,6 +10,7 @@ pub mod security;
 pub mod self_update;
 
 /// Command handler trait for all Discord commands
+#[allow(async_fn_in_trait)]
 pub trait CommandHandler {
     async fn handle(
         &self,
@@ -122,6 +123,12 @@ pub struct CommandRouter {
     pub roles: roles::RolesCommand,
     pub security: security::SecurityCommand,
     pub self_update: self_update::SelfUpdateCommand,
+}
+
+impl Default for CommandRouter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CommandRouter {

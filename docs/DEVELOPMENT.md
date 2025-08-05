@@ -1,7 +1,6 @@
-# Coding Standards and Development Practices
+# Development Guide - Spiral Core
 
-Development patterns that work well for this project  
-**Updated**: 2024-08-01
+This guide covers coding standards, development practices, and architectural principles for the Spiral Core project.
 
 ## Quick Reference
 
@@ -92,7 +91,7 @@ pub trait BadAgent {
 
 #### Dependency Inversion Principle (DIP)
 
-Depend on abstractions, not concretions. **This is the foundation of decoupling.**
+Depend on abstractions, not concretions.
 
 ```rust
 // ✅ Good - Depends on trait abstraction

@@ -1,4 +1,4 @@
-## Phase 1: Core Self-Healing Foundation
+## Phase 1: Core Self-Healing Foundation Philosophy
 
 ### Goals
 
@@ -11,14 +11,14 @@
 
 ### Authorised Activation
 
-- **Who**: Pre-defined authorised users (system already handles this)
-- **How**: Direct mention of @Spiral Constellation#4975 by authorised user with update request
-- **Alternative**: Wrench auto-fix for specific messages (authorised users only)
+- **Who**: Pre-defined authorised users only
+- **How**: Explicit update requests from authorised users
+- **Alternative**: Automated fix triggers for specific scenarios
 
 ### Unauthorised Access Handling
 
-- **Response**: Use Claude to generate a unique Lordgenome-style despair quote relating to the user's specific action (Gurren Lagann reference)
-- **Action**: Deny request and provide the contextual quote as response
+- **Response**: Contextual rejection with thematic messaging
+- **Action**: Deny request and provide appropriate response
 
 ### 1.2 Pre-flight Checks
 
@@ -31,24 +31,85 @@
 
 ### Resource Availability
 
-- Confirm sufficient disk space for git operations
-- Verify 8GB RAM limit compliance
-- Check Claude API connectivity
-- Ensure Discord bot connection is stable
+- Confirm sufficient resources for operations
+- Verify memory and storage constraints
+- Check external service connectivity
+- Ensure core system connection is stable
 
 ### Information Gathering
 
 - Determine if additional information is needed from requesting user
-- If insufficient information: Reply to user's message requesting specifics
-- **Restart Process**: Restart the entire process with the combined original + response messages
+- If insufficient information: Request specifics from user
+- **Restart Process**: Restart the entire process with complete information
 
-### 1.3 Backup & Restore Points
+### 1.3 Planning & Analysis Phase
 
-### Git-Based Snapshots
+### Request Analysis
 
-- Create git commit with current system state before any changes
-- Tag commit as "pre-update-snapshot-[codename]-[timestamp]"
-- Ensure clean working directory before proceeding
+- **Scope Assessment**: Analyse the complexity and scope of the requested changes
+- **Impact Evaluation**: Identify which system components will be affected
+- **Dependency Mapping**: Determine what systems depend on areas being modified
+- **Risk Classification**: Categorise the request by risk level
+
+### Task Decomposition
+
+- **Break Down Request**: Decompose the user request into specific, actionable tasks
+- **Sequence Planning**: Determine the optimal order for implementing changes
+- **Validation Strategy**: Plan specific tests and validation steps for each task
+- **Rollback Planning**: Identify rollback points and recovery strategies for each phase
+
+### Technical Planning
+
+- **Component Identification**: List all components that need to be modified, created, or removed
+- **Integration Points**: Map how changes will integrate with existing system components
+- **Testing Requirements**: Define specific tests needed to validate each change
+
+### Resource Planning
+
+- **Time Estimation**: Estimate completion time for each task component
+- **Complexity Assessment**: Rate complexity of proposed changes
+- **Prerequisite Identification**: Determine if any prerequisites or setup is needed
+- **Constraint Analysis**: Identify any technical constraints or limitations
+
+### Agent Assignment Strategy
+
+- **Task Distribution**: Determine which agents are best suited for each task
+- **Agent Coordination**: Plan how different agents will work together
+- **Validation Chain**: Define the sequence of validation agents
+- **Quality Gates**: Establish checkpoints where agent approval is required
+
+### Communication Plan
+
+- **Progress Reporting**: Define how progress will be communicated to the user
+- **Milestone Messaging**: Plan key milestone messages and status updates
+- **Error Communication**: Prepare communication strategy for potential issues
+- **Success Metrics**: Define how success will be measured and reported
+
+### Planning Output
+
+Before proceeding to implementation, the system must generate:
+
+1. **Detailed Task List**: Numbered list of specific tasks to be completed
+2. **Implementation Sequence**: Ordered sequence with dependencies clearly marked
+3. **Validation Checkpoints**: Specific points where validation will occur
+4. **Risk Assessment Summary**: Key risks identified and mitigation strategies
+5. **Resource Requirements**: Time estimates and agent assignments
+6. **Success Criteria**: Clear definition of what constitutes successful completion
+
+### Planning Approval
+
+- **User Confirmation**: Present planning output to user for approval before proceeding
+- **Plan Modification**: Allow user to request changes to the plan
+- **Final Approval**: Obtain explicit user approval before moving to implementation
+- **Plan Documentation**: Store approved plan for future reference
+
+### 1.4 Backup & Restore Points
+
+### State Snapshots
+
+- Create system state snapshot before any changes
+- Tag snapshots with unique identifiers and timestamps
+- Ensure clean state before proceeding
 
 ### Update Identification
 
@@ -59,205 +120,173 @@
 ### Restore Strategy
 
 - **Trigger**: Any failure in update pipeline
-- **Method**: Hard reset to last known good commit (if snapshot available)
-- **Scope**: Revert all uncommitted changes and reset to snapshot (if snapshot is available)
+- **Method**: Restore to last known good state
+- **Scope**: Revert all changes and reset to snapshot
 
-### 1.4 Update Execution Pipeline
+### 1.5 Update Execution Pipeline
 
 ### Queue Management
 
 - **Concurrent Requests**: Add to sequential queue
-- **Queue Blocking**: Prevent new self-update message processing during active update
+- **Queue Blocking**: Prevent new processing during active update
 - **Failure Handling**: Clear entire queue on any failure, report individual status
 
 ### Execution Phases
 
-1. **Initiation Message**: "Processing self-update request..." (in same channel)
-2. **Update Start**: "Starting self-update [codename]..."
-3. **Progress Updates**: "Updating main Spiral Core..." (with periodic status updates indicating current phase: testing, auditing, code review, etc.)
-4. **System Lock**: Implement update lock mechanism to prevent corruption
+1. **Initiation**: Processing acknowledgment
+2. **Planning Phase**: Analysis and plan creation
+3. **Plan Presentation**: Present detailed plan to user for approval
+4. **Update Start**: Begin implementation after plan approval
+5. **Progress Updates**: Periodic status updates indicating current phase
+6. **System Lock**: Implement update lock mechanism to prevent corruption
 
 ### Change Implementation
 
-- Apply requested modifications to system files
-- **Pre-commit Validation**: Execute entire validation pipeline BEFORE committing changes
-- Commit changes only after all validation steps pass
-- **Push Changes**: Push git commits to remote repository
-- Maintain git history for accountability
+- Follow approved implementation plan step-by-step
+- Apply modifications according to planned sequence
+- **Two-Phase Validation**: Execute validation before and after key milestones
+- **Quality Gates**: Proceed only after validation steps pass
+- **Change Tracking**: Maintain complete audit trail
+- Preserve system history for accountability
 
-### 1.5 Two-Phase Validation Pipeline
+### 1.6 Two-Phase Validation Pipeline
 
-### Pipeline Architecture
+### Phase 1: Pre-Implementation Validation
 
-**Flow Logic**: Phase 1 (AQA) → Phase 2 (CRCC) → Success/Failure Analysis
+**Objective**: Validate changes BEFORE applying to live system
 
-- If ANY Phase 2 check requires retry, loop back to Phase 1
-- Maximum 3 complete pipeline iterations before failure
+#### Validation Requirements
 
-### Phase 1: Advanced Quality Assurance (AQA)
+- Execute comprehensive testing protocols
+- Perform security validation
+- Conduct thorough code/change review
+- Verify system integration compatibility
 
-Execute sequentially with max 3 retries per check:
+#### Pre-Implementation Gate
 
-1. **Code Review & Standards Compliance**
+- **Requirement**: ALL Phase 1 validation steps must pass
+- **Action on Failure**: Do NOT apply changes; fix issues and re-run Phase 1
+- **Action on Success**: Proceed to implementation and Phase 2 validation
 
-   - **Claude Prompt**: "Perform comprehensive code review against project standards. Verify architectural consistency, naming conventions, error handling patterns, and adherence to established codebase guidelines."
-   - **Success**: Full compliance with coding standards
+### Phase 2: Post-Implementation Validation
 
-2. **Comprehensive Testing Analysis**
+**Objective**: Final validation after changes are applied but before system restart
 
-   - **Claude Prompt**: "Perform comprehensive testing analysis focused on pressure points and critical failure scenarios. Implement ONLY high-value test cases for edge cases that could cause system failure."
-   - **Success**: Zero test failures, critical scenarios covered
+#### Post-Implementation Testing
 
-3. **Security Audit**
+- Re-run full validation suite after implementation
+- Confirm changes integrate properly
+- Verify no existing functionality has been broken
 
-   - **Claude Prompt**: "Conduct thorough security audit. Identify potential vulnerabilities, unsafe code patterns, dependency security issues, and data validation gaps."
-   - **Success**: Zero critical vulnerabilities
+#### Final Validation
 
-4. **System Integration Verification**
-   - **Claude Prompt**: "Verify system integration integrity. Test that changes don't break existing functionality, APIs remain compatible, and all integration points function correctly."
-   - **Success**: No integration regressions
+- Complete final testing pass
+- Perform final security verification
+- Conduct last comprehensive review
+- Confirm system readiness for restart
 
-### Phase 2: Core Rust Compliance Checks (CRCC)
+#### Post-Implementation Gate
 
-Execute sequentially - ANY retry triggers return to Phase 1:
-
-1. **Compilation Verification** (`cargo check`)
-
-   - **Failure Action**: Spawn Claude with "Fix all compilation errors identified by cargo check"
-   - **Loop Trigger**: Any retry → Phase 1
-
-2. **Test Suite Validation** (`cargo test`)
-
-   - **Failure Action**: Spawn Claude with "Analyse and fix failing tests. DO NOT delete tests unless fundamentally invalid"
-   - **Loop Trigger**: Any retry → Phase 1
-
-3. **Code Formatting** (`cargo fmt`)
-
-   - **Failure Action**: Spawn Claude with "Apply Rust standard formatting using cargo fmt"
-   - **Loop Trigger**: Any retry → Phase 1
-
-4. **Linting Compliance** (`cargo clippy`)
-
-   - **Failure Action**: Spawn Claude with "Fix all Clippy warnings and errors"
-   - **Loop Trigger**: Any retry → Phase 1
-
-5. **Documentation Generation** (`cargo doc`)
-   - **Failure Action**: Spawn Claude with "Fix documentation build errors"
-   - **Loop Trigger**: Any retry → Phase 1
+- **Requirement**: ALL Phase 2 validation steps must pass
+- **Action on Failure**: Rollback to pre-update snapshot; do NOT restart system
+- **Action on Success**: Proceed to system restart
 
 ### Timeout Handling
 
-- **Claude Timeout**: Immediate retry with progress update
-- **Extended Timeout**: Exponential backoff (1s, 2s, 4s)
-- **Maximum Timeout Retries**: 3 attempts before escalation
+- **Operation Timeout**: Retry operation and update progress
+- **Extended Timeout**: Implement backoff strategy with status updates
+- **Maximum Retries**: Define limit before marking as failed
+- **Phase-Specific Timeouts**: Track timeouts separately for each validation phase
 
-### Analysis Protocols
-
-**Success Analysis** (No Phase 2 retries):
-
-- Spawn Claude: "Generate success report including checks performed, code quality metrics, security findings, test coverage, and deployment checklist"
-
-**Success with Issues Analysis** (Phase 2 retries but passed):
-
-- Spawn Claude: "Analyze which compliance checks required retries, identify systemic problems, recommend process improvements"
-
-**Failure Analysis** (3 iterations exhausted):
-
-- Spawn Claude: "CRITICAL FAILURE ANALYSIS: Identify root causes, determine if failures are due to prompts/code/tools/criteria. Propose pipeline modifications"
-
-### 1.6 Success/Failure Handling
+### 1.7 Success/Failure Handling
 
 ### Success Path
 
-1. **Pre-restart Message**: "Restarting Spiral Core..."
-2. **Server Shutdown**: Kill existing server process
-3. **Server Startup**: Initialise new server instance
-4. **Completion Message**: "Spiral Core Back online"
-5. **Change Report**: Detailed summary of modifications and tests passed
+1. **Pre-restart Notification**: System restart announcement
+2. **System Shutdown**: Terminate existing processes
+3. **System Startup**: Initialise new system instance
+4. **Completion Notification**: System back online confirmation
+5. **Change Report**: Detailed summary of modifications and validations passed
 
 ### Failure Path
 
-1. **Problem Analysis**: Execute failure analysis protocol using generated logs
+1. **Problem Analysis**: Analyse issues using available diagnostic tools
 2. **Immediate Rollback**: Revert to pre-update snapshot
-3. **System Restart**: Reboot to last known good state (if the server got shut down)
+3. **System Restart**: Reboot to last known good state if needed
 4. **Failure Report**: Comprehensive analysis of what succeeded/failed
 5. **Queue Cleanup**: Mark all queued requests with failure status
-6. **Retry Mechanism**: Add retry emoji ♻️ to failed requests for user retry
+6. **Retry Mechanism**: Provide retry capability for failed requests
 
 ### Queue Status Reporting
 
 - **Individual Status**: Separate messages for each queued request outcome
-- **Success**: ✅ "Update [codename] completed successfully"
-- **Failure**: ❌ "Update [codename] failed - [reason]" with retry emoji ♻️
-- **Retry Functionality**: Clicking retry emoji ♻️ re-adds request to queue with new codename
+- **Success Indicators**: Clear success confirmation messages
+- **Failure Indicators**: Clear failure messages with retry options
+- **Retry Functionality**: Mechanism to re-queue failed requests
 
-### 1.7 Post-Update Monitoring
+### 1.8 Post-Update Monitoring
 
 ### Health Validation
 
-- **System Boot**: Verify server starts without errors
+- **System Boot**: Verify system starts without errors
 - **Test Suite**: Confirm all tests pass post-restart
-- **Service Connectivity**: Validate Discord bot and Claude API connections
-- **Performance**: Monitor within 8GB RAM constraints
+- **Service Connectivity**: Validate external service connections
+- **Performance**: Monitor within resource constraints
 
 ### Logging & Documentation
 
-- **Structured Logs**: Maintain detailed update logs organised by codename + timestamp
-- **Change Tracking**: Git history provides complete audit trail
-- **Issue Analysis**: Log all encountered problems under codename for failure analysis
-- **Success Metrics**: Track successful update patterns by codename
+- **Structured Logs**: Maintain detailed update logs organised by identifier
+- **Change Tracking**: Complete audit trail of all modifications
+- **Issue Analysis**: Log all encountered problems for analysis
+- **Success Metrics**: Track successful update patterns
 
 ### Continuous Monitoring
 
 - **Ongoing Health**: Monitor system stability post-update
 - **Performance Validation**: Ensure update didn't degrade performance
-- **User Feedback**: Track any reported issues from authorised users
+- **User Feedback**: Track any reported issues from users
 
-### 1.8 Communication Protocols
+### 1.9 Communication Protocols
 
 ### Message Templates
 
-- **Processing**: "🔄 Processing self-update request..."
-- **Starting**: "🚀 Starting self-update [codename]..."
-- **Working**: "⚙️ Updating main Spiral Core... [current phase]"
-- **Restarting**: "🔄 Restarting Spiral Core..."
-- **Success**: "✅ Spiral Core Back online [codename]"
-- **Failure**: "❌ Update [codename] failed: [specific reason] ♻️"
+- **Processing**: Update request acknowledgment
+- **Planning**: Analysis and plan creation notification
+- **Plan Ready**: Implementation plan ready for review
+- **Starting**: Update implementation beginning
+- **Working**: Progress updates with current phase
+- **Restarting**: System restart notification
+- **Success**: Successful completion confirmation
+- **Failure**: Clear failure notification with retry option
 
 ### Phase 1 Success Criteria
 
-- [ ] 10+ successful simple updates (messages, comments, minor fixes)
-- [ ] 3+ successful test additions/modifications
-- [ ] 1+ successful feature addition
+- [ ] Multiple successful simple updates
+- [ ] Successful test additions/modifications
+- [ ] Successful feature additions
 - [ ] Zero data loss incidents
-- [ ] Two-phase validation pipeline working reliably with specialist agents
+- [ ] All validation systems working reliably
 - [ ] Queue system handling concurrent requests properly
 - [ ] Rollback mechanism tested and working
+- [ ] Planning phase consistently produces accurate implementation plans
+- [ ] User plan approval process working smoothly
 
 ---
 
-## Implementation Timeline
+## Implementation Philosophy
 
-### Phase 1 Deployment
+### Core Principles
 
-- **Week 1**: Core pipeline implementation
-- **Week 2-3**: Safety mechanism testing
-- **Week 4-6**: Queue management and agent integration
-- **Week 7-8**: Stability testing and edge case handling
-- **Target**: 2 months to proven stable operation
+- **Safety First**: Multiple validation gates prevent harmful changes
+- **User Control**: Users approve plans before implementation
+- **Transparency**: Clear communication throughout the process
+- **Reliability**: Robust error handling and rollback capabilities
+- **Accountability**: Complete audit trails for all changes
 
-### Phase 1 → Phase 2 Transition
+### Risk Mitigation Philosophy
 
-- **Data Collection**: Analyse Phase 1 success/failure patterns
-- **Complexity Calibration**: Use real data to calibrate Fibonacci scale
-- **Algorithm Tuning**: Adjust learning parameters based on observed patterns
-
----
-
-## Risk Mitigation
-
-### Phase 1 Risks
-
-- **Validation Pipeline Failures**: Comprehensive testing of all agent integrations
-- **Queue Corruption**: Robust error handling and state recovery
-- **Rollback Failures**: Multiple backup strategies and manual override
+- **Validation Pipeline**: Comprehensive testing at multiple stages
+- **Queue Management**: Robust error handling and state recovery
+- **Rollback Strategy**: Multiple backup strategies and recovery options
+- **Planning Accuracy**: Iterative plan refinement and user feedback integration
+- **Implementation Fidelity**: Strict adherence to approved plans with deviation tracking

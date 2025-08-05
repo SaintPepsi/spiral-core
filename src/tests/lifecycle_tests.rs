@@ -23,11 +23,9 @@ mod orchestrator_lifecycle {
                 .expect("Failed to create orchestrator"),
         );
 
-        // Start the orchestrator
-        orchestrator
-            .run()
-            .await
-            .expect("Failed to start orchestrator");
+        // Start the orchestrator in background
+        let orchestrator_clone = orchestrator.clone();
+        let _orchestrator_handle = tokio::spawn(async move { orchestrator_clone.run().await });
 
         // Verify it's running
         assert_eq!(orchestrator.get_queue_length().await, 0);
@@ -82,10 +80,9 @@ mod orchestrator_lifecycle {
                 .expect("Failed to create orchestrator"),
         );
 
-        orchestrator
-            .run()
-            .await
-            .expect("Failed to start orchestrator");
+        // Start the orchestrator in background
+        let orchestrator_clone = orchestrator.clone();
+        tokio::spawn(async move { orchestrator_clone.run().await });
 
         // Submit tasks until queue is full
         for i in 0..1001 {
@@ -125,10 +122,9 @@ mod orchestrator_lifecycle {
                 .expect("Failed to create orchestrator"),
         );
 
-        orchestrator
-            .run()
-            .await
-            .expect("Failed to start orchestrator");
+        // Start the orchestrator in background
+        let orchestrator_clone = orchestrator.clone();
+        tokio::spawn(async move { orchestrator_clone.run().await });
 
         // Submit a task - in a real scenario this might fail
         let task = Task::new(
@@ -197,10 +193,9 @@ mod api_server_lifecycle {
                 .await
                 .expect("Failed to create orchestrator"),
         );
-        orchestrator
-            .run()
-            .await
-            .expect("Failed to start orchestrator");
+        // Start the orchestrator in background
+        let orchestrator_clone = orchestrator.clone();
+        tokio::spawn(async move { orchestrator_clone.run().await });
 
         let api_server = ApiServer::new(config.clone(), orchestrator.clone())
             .expect("Failed to create API server");
@@ -263,10 +258,9 @@ mod api_server_lifecycle {
                 .await
                 .expect("Failed to create orchestrator"),
         );
-        orchestrator
-            .run()
-            .await
-            .expect("Failed to start orchestrator");
+        // Start the orchestrator in background
+        let orchestrator_clone = orchestrator.clone();
+        tokio::spawn(async move { orchestrator_clone.run().await });
 
         let api_server = ApiServer::new(config.clone(), orchestrator.clone()).unwrap();
 
@@ -510,10 +504,9 @@ mod integration_lifecycle {
                 .await
                 .expect("Failed to create orchestrator"),
         );
-        orchestrator
-            .run()
-            .await
-            .expect("Failed to start orchestrator");
+        // Start the orchestrator in background
+        let orchestrator_clone = orchestrator.clone();
+        tokio::spawn(async move { orchestrator_clone.run().await });
 
         // Register with monitor
         if let Ok(client) = orchestrator.get_claude_client() {
@@ -554,10 +547,9 @@ mod integration_lifecycle {
                 .expect("Failed to create orchestrator"),
         );
 
-        orchestrator
-            .run()
-            .await
-            .expect("Failed to start orchestrator");
+        // Start the orchestrator in background
+        let orchestrator_clone = orchestrator.clone();
+        tokio::spawn(async move { orchestrator_clone.run().await });
 
         // Submit tasks to stress the system
         for i in 0..5 {

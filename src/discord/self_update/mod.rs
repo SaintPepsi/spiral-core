@@ -53,7 +53,7 @@
 //! ```
 
 mod git_ops;
-mod pipeline;
+pub mod pipeline;
 mod queue;
 mod status_tracker;
 mod types;
@@ -62,7 +62,10 @@ mod validation;
 pub mod claude_spawn_example;
 
 pub use git_ops::{GitOperations, SnapshotManager};
-pub use pipeline::{PipelineContext, PipelineStatus, ValidationPipeline};
+pub use pipeline::{
+    CheckResult, ClaudeValidationResponse, ComplianceCheck, ExecutionPatterns, Phase1Results,
+    Phase2Attempt, Phase2Checks, PipelineContext, PipelineStatus, ValidationPipeline,
+};
 pub use queue::{UpdateQueue, UpdateQueueStatus};
 pub use status_tracker::{ImplementationProgress, StatusTracker, UpdateType};
 pub use types::{SelfUpdateRequest, UpdateStatus};

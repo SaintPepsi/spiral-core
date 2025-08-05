@@ -6,7 +6,6 @@
   "scripts": {
     "install-tools": "npm install",
     "test": "npm run test:docs",
-    "prepare": "husky",
     "lint": "npm run lint:md",
     "lint:md": "markdownlint --config .markdownlint.json --ignore-path .markdownlintignore '**/*.md'",
     "lint:md:fix": "markdownlint --config .markdownlint.json --fix --ignore-path .markdownlintignore '**/*.md'",
@@ -27,11 +26,9 @@
   "author": "Spiral Core Team",
   "license": "MIT",
   "devDependencies": {
-    "husky": "^9.1.7",
-    "lint-staged": "^16.1.2",
+    "@types/node": "^22.9.0",
     "markdownlint-cli": "^0.45.0",
-    "tsx": "^4.20.0",
-    "@types/node": "^22.9.0"
+    "tsx": "^4.20.0"
   },
   "engines": {
     "node": ">=22.0.0",
@@ -44,10 +41,5 @@
   "bugs": {
     "url": "https://github.com/your-org/spiral-core/issues"
   },
-  "homepage": "https://github.com/your-org/spiral-core#readme",
-  "lint-staged": {
-    "*.md": [
-      "markdownlint --config .markdownlint.json --fix"
-    ]
-  }
+  "homepage": "https://github.com/your-org/spiral-core#readme"
 }

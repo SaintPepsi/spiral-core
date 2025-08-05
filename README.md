@@ -4,10 +4,10 @@ A Rust-based AI agent orchestration system built by Anti Spiral Interactive. The
 
 ## Quick Links
 
-📋 **[Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md)** - System design and component relationships  
-🏗️ **[Development Setup](docs/CODING_STANDARDS.md#development-practices)** - Local development and container setup  
-🔧 **[Coding Standards](docs/CODING_STANDARDS.md)** - SOLID, DRY, SID principles and best practices  
-🚀 **[Phase 1 Implementation](src/implementation/docs/IMPLEMENTATION_PHASE1.md)** - Current development phase
+📋 **[Architecture](docs/ARCHITECTURE.md)** - Complete system design and components
+🚀 **[Setup Guide](docs/SETUP.md)** - All installation and configuration options
+🔧 **[Development](docs/DEVELOPMENT.md)** - Coding standards and practices
+📖 **[API Reference](docs/API.md)** - HTTP endpoint documentation
 
 ## Architecture Overview
 
@@ -20,16 +20,7 @@ Spiral Core uses Claude Code as the primary intelligence engine, reducing comple
 
 ## Quick Start
 
-### Development Container (Recommended)
-
-1. **Prerequisites:** Docker Desktop + VS Code with Dev Containers extension
-2. **Open in container:** `code .` → "Dev Containers: Reopen in Container"
-3. **Configure:** Update `.env` with your Claude API key
-4. **Run:** `spiral-start` or `./test-api.sh`
-
-See [.devcontainer/DEVCONTAINER-GUIDE.md](.devcontainer/DEVCONTAINER-GUIDE.md) for complete setup.
-
-### Local Development
+### Getting Started
 
 **Prerequisites:**
 
@@ -54,7 +45,7 @@ DISCORD_AUTHORIZED_USERS=123456789012345678,987654321098765432  # required for D
 cargo run --bin spiral-core
 ```
 
-See [Development Practices](docs/CODING_STANDARDS.md) for complete environment setup.
+See [Setup Guide](docs/SETUP.md) for all installation options including Docker, local development, and production deployment.
 
 ### Available Aliases
 
@@ -152,7 +143,7 @@ curl -X POST http://localhost:3000/tasks \
 curl -H "x-api-key: your-api-key" http://localhost:3000/system/status
 ```
 
-See [API Reference](src/api/API_REFERENCE.md) for complete endpoint documentation.
+See [API Reference](docs/API.md) for complete endpoint documentation.
 
 ### Current Agents
 
@@ -186,13 +177,34 @@ cargo test --test integration # Integration tests only
 RUST_LOG=debug cargo test    # With debug logging
 ```
 
+### Phase 2 Validation (CRCC)
+
+Run standalone Core Rust Compliance Checks without the full pipeline:
+
+```bash
+# Run Phase 2 validation checks in parallel
+cargo run --bin run_phase2
+```
+
+This executes all Phase 2 compliance checks:
+
+- **Compilation**: `cargo check --all-targets`
+- **Tests**: `cargo test`
+- **Formatting**: `cargo fmt -- --check`
+- **Clippy**: `cargo clippy --all-targets`
+- **Documentation**: `cargo doc --no-deps`
+
+All checks run in parallel for optimal performance. In the full validation pipeline, failed checks would trigger Claude agents for automatic fixes.
+
 ### Development Guidelines
 
-The project follows strict architectural principles documented in [Coding Standards](docs/CODING_STANDARDS.md):
+The project follows strict architectural principles:
 
 - **SOLID Principles**: Single responsibility, open-closed, etc.
 - **DRY Principle**: Single source of truth for all knowledge
 - **SID Naming**: Short, Intuitive, Descriptive conventions
+
+See [Development Guide](docs/DEVELOPMENT.md) for complete standards.
 
 ## System Architecture
 
@@ -209,7 +221,7 @@ The project follows strict architectural principles documented in [Coding Standa
 - **CPU**: 2+ cores recommended
 - **Network**: Stable internet for Claude API calls
 
-See [Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md) for complete system design.
+See [Architecture](docs/ARCHITECTURE.md) for complete system design.
 
 ## Troubleshooting
 
@@ -221,34 +233,31 @@ Common issues and solutions:
 
 Debug mode: `RUST_LOG=debug cargo run`
 
-See [Development Practices](docs/CODING_STANDARDS.md) for detailed troubleshooting.
+See [Setup Guide](docs/SETUP.md#troubleshooting) for detailed troubleshooting.
 
-## Documentation Structure
+## Documentation
 
-As the project grows, we're transitioning to a wiki-style documentation model:
+### Core Documentation
+- **[Architecture](docs/ARCHITECTURE.md)** - System design and components
+- **[Setup Guide](docs/SETUP.md)** - Installation and configuration
+- **[Development](docs/DEVELOPMENT.md)** - Standards and practices
+- **[API Reference](docs/API.md)** - Endpoint documentation
+- **[Operations](docs/OPERATIONS.md)** - Deployment and monitoring
 
-```
-docs/                           # Core project documentation
-├── ARCHITECTURE_*.md          # System architecture guides
-└── CODING_STANDARDS.md  # All coding standards and practices
-
-src/                           # Implementation-specific docs
-├── agents/docs/              # Agent implementation guides
-├── integrations/docs/        # Integration patterns and examples
-└── implementation/docs/      # Phase-based implementation plans
-```
+### Implementation Documentation
+- **[Agent Guides](src/agents/docs/)** - Agent-specific implementation
+- **[Integration Patterns](src/integrations/docs/)** - Integration examples
+- **[Implementation Phases](src/implementation/docs/)** - Development roadmap
 
 ## Contributing
 
-1. Follow [Coding Standards](docs/CODING_STANDARDS.md) and architectural principles
+1. Follow architectural principles in [Development Guide](docs/DEVELOPMENT.md)
 2. Ensure all tests pass before submitting PRs
 3. Update relevant documentation for changes
-4. See [Development Practices](docs/CODING_STANDARDS.md) for workflow
+4. See [Contributing Guidelines](docs/CONTRIBUTING.md) for workflow
 
 ## License
 
 MIT License - see LICENSE file for details.
 
 ---
-
-💡 **Moving to Wiki Model**: As documentation grows, we're transitioning to a modular, wiki-style approach. Links above will eventually point to dedicated wiki pages for better organization and searchability.
