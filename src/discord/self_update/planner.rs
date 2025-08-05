@@ -6,7 +6,7 @@
 use super::types::SelfUpdateRequest;
 use crate::Result;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Represents a single task in the implementation plan
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,16 +98,189 @@ pub enum ApprovalStatus {
 }
 
 /// The update planner that analyzes requests and creates plans
-pub struct UpdatePlanner;
+pub struct UpdatePlanner {
+    claude_client: Option<crate::claude_code::ClaudeCodeClient>,
+}
 
 impl UpdatePlanner {
+    /// Create a new update planner with optional Claude client
+    pub fn new(claude_client: Option<crate::claude_code::ClaudeCodeClient>) -> Self {
+        Self { claude_client }
+    }
+
     /// Analyze an update request and create an implementation plan
-    pub async fn create_plan(request: &SelfUpdateRequest) -> Result<ImplementationPlan> {
+    pub async fn create_plan(&self, request: &SelfUpdateRequest) -> Result<ImplementationPlan> {
         info!(
             "[UpdatePlanner] Creating plan for request: {} ({})",
             request.id, request.codename
         );
 
+        // If Claude client is available, use it for comprehensive planning
+        if let Some(claude_client) = &self.claude_client {
+            self.create_plan_with_claude(request, claude_client).await
+        } else {
+            // Fallback to keyword-based analysis
+            self.create_plan_with_keywords(request).await
+        }
+    }
+    
+    /// Create a comprehensive plan using Claude Code
+    async fn create_plan_with_claude(
+        &self,
+        request: &SelfUpdateRequest,
+        claude_client: &crate::claude_code::ClaudeCodeClient,
+    ) -> Result<ImplementationPlan> {
+        info!("[UpdatePlanner] Using Claude Code for comprehensive planning");
+        
+        // Build a comprehensive prompt that encapsulates all planning aspects
+        let planning_prompt = self.build_comprehensive_planning_prompt(request);
+        
+        // Create a code generation request for the planning task
+        let code_request = crate::claude_code::CodeGenerationRequest {
+            language: "json".to_string(), // We want JSON output for structured data
+            description: planning_prompt,
+            context: std::collections::HashMap::from([
+                ("task_type".to_string(), "self_update_planning".to_string()),
+                ("request_id".to_string(), request.id.clone()),
+                ("codename".to_string(), request.codename.clone()),
+            ]),
+            existing_code: None,
+            requirements: vec![
+                "Output must be valid JSON matching the ImplementationPlan structure".to_string(),
+                "Include specific, actionable tasks with clear validation steps".to_string(),
+                "Assess risks realistically based on the changes".to_string(),
+                "Provide accurate time estimates".to_string(),
+            ],
+            session_id: Some(format!("planning-{}", request.id)),
+        };
+        
+        // Execute the planning request
+        match claude_client.generate_code(code_request).await {
+            Ok(result) => {
+                // Parse the JSON response into an ImplementationPlan
+                match serde_json::from_str::<ImplementationPlan>(&result.code) {
+                    Ok(mut plan) => {
+                        // Ensure some fields are set correctly
+                        plan.plan_id = format!("plan-{}-{}", request.codename, chrono::Utc::now().timestamp());
+                        plan.request_id = request.id.clone();
+                        plan.approval_status = ApprovalStatus::Pending;
+                        
+                        info!(
+                            "[UpdatePlanner] Claude created plan {} with {} tasks, risk level: {:?}",
+                            plan.plan_id,
+                            plan.tasks.len(),
+                            plan.risk_level
+                        );
+                        
+                        Ok(plan)
+                    }
+                    Err(e) => {
+                        warn!("[UpdatePlanner] Failed to parse Claude's JSON response: {}", e);
+                        // Fallback to keyword analysis
+                        self.create_plan_with_keywords(request).await
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("[UpdatePlanner] Claude Code planning failed: {}", e);
+                // Fallback to keyword analysis
+                self.create_plan_with_keywords(request).await
+            }
+        }
+    }
+    
+    /// Build a comprehensive prompt for Claude Code planning
+    fn build_comprehensive_planning_prompt(&self, request: &SelfUpdateRequest) -> String {
+        let combined_messages = request.combined_messages.join("\n");
+        
+        format!(
+            r#"You are a Project Manager AI agent specialized in planning self-update operations for the Spiral Core system.
+            
+Analyze the following self-update request and create a comprehensive implementation plan in JSON format.
+
+## Update Request Details:
+- Request ID: {}
+- Codename: {}
+- Description: {}
+- User Messages:
+{}
+
+## Your Task:
+Create a detailed implementation plan that includes:
+
+1. **Task Decomposition**: Break down the request into specific, actionable tasks with:
+   - Unique task IDs (task-1, task-2, etc.)
+   - Clear descriptions of what needs to be done
+   - Task category (CodeChange, TestAddition, Documentation, Configuration, Refactoring, BugFix, FeatureAddition, Security, Performance)
+   - Complexity rating (1-5, where 5 is most complex)
+   - Dependencies on other tasks
+   - Affected components (file paths or module names)
+   - Validation steps to verify task completion
+
+2. **Risk Assessment**: 
+   - Identify the overall risk level (Low, Medium, High, Critical)
+   - List specific risks associated with the changes
+   - Consider security implications, breaking changes, and system stability
+
+3. **Time Estimation**:
+   - Provide realistic time estimates for each task
+   - Calculate total estimated time in minutes
+
+4. **Success Criteria**:
+   - Define clear, measurable criteria for success
+   - Include compilation checks, test requirements, and quality standards
+
+5. **Resource Requirements**:
+   - Identify which agents or tools are needed
+   - Note any special access or permissions required
+
+## Output Format:
+Return a JSON object matching this structure:
+{{
+    "summary": "Brief summary of what will be done",
+    "risk_level": "Low|Medium|High|Critical",
+    "estimated_minutes": 30,
+    "tasks": [
+        {{
+            "id": "task-1",
+            "description": "Clear task description",
+            "category": "TaskCategory",
+            "complexity": 3,
+            "dependencies": [],
+            "affected_components": ["file1.rs", "module2"],
+            "validation_steps": ["Step 1", "Step 2"]
+        }}
+    ],
+    "identified_risks": ["Risk 1", "Risk 2"],
+    "rollback_strategy": "How to undo changes if needed",
+    "success_criteria": ["Criterion 1", "Criterion 2"],
+    "resource_requirements": {{
+        "time_estimate_minutes": 30,
+        "required_agents": ["Claude Code"],
+        "special_requirements": []
+    }}
+}}
+
+## Important Considerations:
+- Be thorough but practical in your planning
+- Consider the existing codebase structure and conventions
+- Include tests for any new functionality
+- Account for validation and security checks
+- Think about edge cases and error handling
+- Ensure the plan is specific to the Spiral Core Rust project
+
+Analyze the request carefully and provide a comprehensive plan that a developer can follow step-by-step."#,
+            request.id,
+            request.codename,
+            request.description,
+            combined_messages
+        )
+    }
+    
+    /// Fallback method using keyword analysis
+    async fn create_plan_with_keywords(&self, request: &SelfUpdateRequest) -> Result<ImplementationPlan> {
+        info!("[UpdatePlanner] Using keyword-based planning (fallback)");
+        
         // Analyze the request to understand what's being asked
         let analysis = Self::analyze_request(request)?;
         
@@ -146,7 +319,7 @@ impl UpdatePlanner {
         };
         
         info!(
-            "[UpdatePlanner] Created plan {} with {} tasks, risk level: {:?}",
+            "[UpdatePlanner] Created keyword-based plan {} with {} tasks, risk level: {:?}",
             plan.plan_id,
             plan.tasks.len(),
             plan.risk_level
@@ -548,7 +721,8 @@ mod tests {
             status: crate::discord::self_update::UpdateStatus::Queued,
         };
         
-        let plan = UpdatePlanner::create_plan(&request).await.unwrap();
+        let planner = UpdatePlanner::new(None);
+        let plan = planner.create_plan(&request).await.unwrap();
         
         assert!(!plan.tasks.is_empty());
         assert_eq!(plan.request_id, "test-123");

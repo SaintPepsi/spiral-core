@@ -86,7 +86,8 @@ impl UpdateExecutor {
         // Step 2: Create implementation plan
         self.update_discord_status(&request, "📋 Creating implementation plan...")
             .await;
-        let plan = match UpdatePlanner::create_plan(&request).await {
+        let planner = UpdatePlanner::new(self.claude_client.clone());
+        let plan = match planner.create_plan(&request).await {
             Ok(p) => p,
             Err(e) => {
                 error!("[UpdateExecutor] Failed to create plan: {}", e);
