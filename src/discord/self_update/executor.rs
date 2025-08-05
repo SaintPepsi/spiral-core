@@ -378,11 +378,9 @@ impl UpdateExecutor {
 ## Implementation Guidelines
 1. Follow the task list in order, respecting dependencies
 2. Make only the changes specified - no extra "improvements"
-3. Ensure all changes compile and existing tests pass
-4. Add appropriate error handling following project patterns
-5. Use early returns for validation (if !condition {{ return Err(...) }})
-6. Follow SOLID principles and existing code conventions
-7. If a task is unclear or risky, implement conservatively
+3. Follow project coding standards from CLAUDE.md
+4. Ensure all changes compile and existing tests pass
+5. If a task is unclear, implement conservatively
 
 ## Success Criteria
 {}
