@@ -8,8 +8,8 @@ use crate::{
         message_state_manager::{MessageStateConfig, MessageStateManager},
         messages::{self, emojis, risk_level_to_str},
         self_update::{
-            GitOperations, PreflightChecker, SelfUpdateRequest, StatusTracker, UpdateExecutor,
-            UpdateQueue, UpdateStatus, UpdateType, UpdateValidator,
+            ApprovalManager, GitOperations, PreflightChecker, SelfUpdateRequest, StatusTracker,
+            UpdateExecutor, UpdateQueue, UpdateStatus, UpdateType, UpdateValidator,
         },
         IntentClassifier, IntentResponse, IntentType, MessageSecurityValidator, RiskLevel,
         SecureMessageHandler,
@@ -157,6 +157,7 @@ pub struct SpiralConstellationBot {
     intent_classifier: Arc<IntentClassifier>,
     pub secure_message_handler: Arc<SecureMessageHandler>,
     update_queue: Arc<UpdateQueue>,
+    approval_manager: Arc<ApprovalManager>,
     command_router: CommandRouter,
     discord_config: DiscordConfig,
 }
@@ -353,6 +354,7 @@ impl SpiralConstellationBot {
             intent_classifier,
             secure_message_handler,
             update_queue: Arc::new(UpdateQueue::new()),
+            approval_manager: Arc::new(ApprovalManager::new()),
             command_router: CommandRouter::new(),
             discord_config,
         })
@@ -395,6 +397,7 @@ impl SpiralConstellationBot {
             intent_classifier,
             secure_message_handler,
             update_queue: Arc::new(UpdateQueue::new()),
+            approval_manager: Arc::new(ApprovalManager::new()),
             command_router: CommandRouter::new(),
             discord_config,
         })
@@ -1175,6 +1178,48 @@ impl EventHandler for ConstellationBotHandler {
         if self.is_auto_core_update_request(&msg).await {
             self.handle_auto_core_update_request(&ctx, &msg).await;
             return;
+        }
+        
+        // Check if this is a self-update approval response
+        {
+            let approval_manager = &self.bot.approval_manager;
+            if approval_manager.has_pending_approval(msg.author.id.get(), msg.channel_id.get()).await {
+                let response_lower = msg.content.trim().to_lowercase();
+                if response_lower == "approve" || response_lower.starts_with("approve") ||
+                   response_lower == "reject" || response_lower.starts_with("reject") ||
+                   response_lower == "modify" || response_lower.starts_with("modify") {
+                    
+                    if let Some((_request_id, result)) = approval_manager
+                        .process_approval_response(msg.author.id.get(), msg.channel_id.get(), &msg.content)
+                        .await 
+                    {
+                        info!(
+                            "[SpiralConstellation] Processed approval response from user {}: {:?}",
+                            msg.author.id, result
+                        );
+                        
+                        // Send confirmation message
+                        let confirmation = match &result {
+                            crate::discord::self_update::ApprovalResult::Approved => {
+                                "✅ Plan approved! Proceeding with implementation..."
+                            }
+                            crate::discord::self_update::ApprovalResult::Rejected(_) => {
+                                "❌ Plan rejected. Update cancelled."
+                            }
+                            crate::discord::self_update::ApprovalResult::ModifyRequested(_) => {
+                                "📝 Modifications requested. Please create a new update request with your changes."
+                            }
+                            _ => "Approval response processed."
+                        };
+                        
+                        if let Err(e) = msg.reply(&ctx.http, confirmation).await {
+                            warn!("[SpiralConstellation] Failed to send approval confirmation: {}", e);
+                        }
+                        
+                        return;
+                    }
+                }
+            }
         }
 
         // Handle special commands first
@@ -3340,13 +3385,18 @@ impl SpiralConstellationBotRunner {
             let update_queue = bot_arc.update_queue.clone();
             let claude_client = bot_arc.claude_client.as_ref().map(|c| c.as_ref().clone());
             let discord_http_clone = discord_http.clone();
+            let approval_manager = bot_arc.approval_manager.clone();
 
             tokio::spawn(async move {
                 info!("[UpdateExecutor] Starting background update processor...");
 
                 // Create UpdateExecutor
-                let mut update_executor =
-                    UpdateExecutor::new(update_queue, claude_client, Some(discord_http_clone));
+                let mut update_executor = UpdateExecutor::new(
+                    update_queue,
+                    claude_client,
+                    Some(discord_http_clone),
+                    approval_manager,
+                );
 
                 // Run the queue processing loop
                 update_executor.process_queue().await;

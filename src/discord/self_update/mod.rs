@@ -52,6 +52,7 @@
 //! # }
 //! ```
 
+mod approval;
 mod executor;
 mod git_ops;
 pub mod pipeline;
@@ -63,6 +64,7 @@ mod validation;
 
 pub mod claude_spawn_example;
 
+pub use approval::{ApprovalManager, ApprovalResult, PendingApproval, format_approval_instructions};
 pub use executor::{UpdateExecutor, UpdateResult};
 pub use git_ops::{GitOperations, SnapshotManager};
 pub use pipeline::{

@@ -4,8 +4,9 @@
 //! git operations, Claude Code integration, validation pipeline, and result reporting.
 
 use super::{
-    format_plan_for_discord, GitOperations, ImplementationPlan, PreflightChecker,
-    SelfUpdateRequest, StatusTracker, UpdatePlanner, UpdateQueue, UpdateStatus, ValidationPipeline,
+    format_plan_for_discord, ApprovalManager, ApprovalResult, GitOperations, ImplementationPlan,
+    PreflightChecker, SelfUpdateRequest, StatusTracker, UpdatePlanner, UpdateQueue, UpdateStatus,
+    ValidationPipeline, format_approval_instructions,
 };
 use crate::{claude_code::ClaudeCodeClient, Result};
 use serenity::{http::Http, model::id::ChannelId};
@@ -42,6 +43,8 @@ pub struct UpdateExecutor {
     status_tracker: Arc<RwLock<StatusTracker>>,
     /// Discord HTTP client for sending updates
     discord_http: Option<Arc<Http>>,
+    /// Approval manager for handling plan approvals
+    approval_manager: Arc<ApprovalManager>,
 }
 
 impl UpdateExecutor {
@@ -50,6 +53,7 @@ impl UpdateExecutor {
         queue: Arc<UpdateQueue>,
         claude_client: Option<ClaudeCodeClient>,
         discord_http: Option<Arc<Http>>,
+        approval_manager: Arc<ApprovalManager>,
     ) -> Self {
         Self {
             queue,
@@ -57,6 +61,7 @@ impl UpdateExecutor {
             pipeline: ValidationPipeline::new(),
             status_tracker: Arc::new(RwLock::new(StatusTracker)),
             discord_http,
+            approval_manager,
         }
     }
 
@@ -89,12 +94,62 @@ impl UpdateExecutor {
             }
         };
 
-        // Step 3: Present plan for approval
-        self.present_plan_for_approval(&request, &plan).await;
+        // Step 3: Present plan for approval and wait
+        let plan_message_id = self.present_plan_for_approval(&request, &plan).await;
         
-        // Wait for plan approval (this will be implemented in the next task)
-        // For now, we'll continue as if approved
-        info!("[UpdateExecutor] Plan created, continuing with implementation (approval pending)");
+        // Register plan for approval
+        self.approval_manager
+            .register_for_approval(
+                plan.clone(),
+                request.id.clone(),
+                request.user_id,
+                request.channel_id,
+                plan_message_id,
+            )
+            .await;
+        
+        // Wait for approval (10 minute timeout)
+        let approval_timeout = tokio::time::Duration::from_secs(600);
+        let (approval_result, _) = match self
+            .approval_manager
+            .wait_for_approval(plan_message_id, approval_timeout)
+            .await 
+        {
+            Ok(result) => result,
+            Err(e) => {
+                error!("[UpdateExecutor] Failed to wait for approval: {}", e);
+                return self.create_failure_result(request, format!("Approval wait failed: {}", e));
+            }
+        };
+        
+        match approval_result {
+            ApprovalResult::Approved => {
+                info!("[UpdateExecutor] Plan approved, proceeding with implementation");
+                self.update_discord_status(&request, "✅ Plan approved! Starting implementation...")
+                    .await;
+            }
+            ApprovalResult::Rejected(reason) => {
+                info!("[UpdateExecutor] Plan rejected: {}", reason);
+                return self.create_failure_result(
+                    request,
+                    format!("Update cancelled: Plan rejected - {}", reason),
+                );
+            }
+            ApprovalResult::ModifyRequested(details) => {
+                info!("[UpdateExecutor] Modifications requested: {}", details);
+                return self.create_failure_result(
+                    request,
+                    format!("Update paused: Modifications requested - {}", details),
+                );
+            }
+            ApprovalResult::TimedOut => {
+                info!("[UpdateExecutor] Approval timed out");
+                return self.create_failure_result(
+                    request,
+                    "Update cancelled: Approval timed out (10 minutes)".to_string(),
+                );
+            }
+        }
 
         // Step 4: Create git snapshot
         self.update_discord_status(&request, "📸 Creating git snapshot...")
@@ -284,18 +339,25 @@ impl UpdateExecutor {
     }
 
     /// Present the implementation plan for user approval
-    async fn present_plan_for_approval(&self, request: &SelfUpdateRequest, plan: &ImplementationPlan) {
+    async fn present_plan_for_approval(&self, request: &SelfUpdateRequest, plan: &ImplementationPlan) -> u64 {
         if let Some(ref http) = self.discord_http {
             let channel_id = ChannelId::new(request.channel_id);
-            let plan_message = format_plan_for_discord(plan);
+            let mut plan_message = format_plan_for_discord(plan);
+            plan_message.push_str("\n\n");
+            plan_message.push_str(format_approval_instructions());
             
-            if let Err(e) = channel_id.say(http, plan_message).await {
-                warn!(
-                    "[UpdateExecutor] Failed to send plan for approval: {}",
-                    e
-                );
+            match channel_id.say(http, &plan_message).await {
+                Ok(msg) => {
+                    info!("[UpdateExecutor] Sent plan for approval, message ID: {}", msg.id);
+                    return msg.id.get();
+                }
+                Err(e) => {
+                    warn!("[UpdateExecutor] Failed to send plan for approval: {}", e);
+                }
             }
         }
+        // Return a default message ID if we couldn't send
+        0
     }
 
     /// Send final result to Discord
@@ -344,7 +406,8 @@ mod tests {
     #[tokio::test]
     async fn test_update_executor_creation() {
         let queue = Arc::new(UpdateQueue::new());
-        let executor = UpdateExecutor::new(queue, None, None);
+        let approval_manager = Arc::new(ApprovalManager::new());
+        let executor = UpdateExecutor::new(queue, None, None, approval_manager);
 
         assert!(executor.discord_http.is_none());
         assert!(executor.claude_client.is_none());
@@ -353,7 +416,8 @@ mod tests {
     #[tokio::test]
     async fn test_failure_result_creation() {
         let queue = Arc::new(UpdateQueue::new());
-        let executor = UpdateExecutor::new(queue, None, None);
+        let approval_manager = Arc::new(ApprovalManager::new());
+        let executor = UpdateExecutor::new(queue, None, None, approval_manager);
 
         let request = SelfUpdateRequest {
             id: "test-123".to_string(),
