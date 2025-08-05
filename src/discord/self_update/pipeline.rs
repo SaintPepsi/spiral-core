@@ -231,14 +231,14 @@ impl ValidationRunner {
             };
 
             all_errors.push(format!("Attempt {}: {}", attempt, error_msg));
-            
+
             // Log the error details (first 500 chars to avoid spam)
             let error_preview = if error_msg.len() > 500 {
                 format!("{}... [truncated]", &error_msg[..500])
             } else {
                 error_msg.clone()
             };
-            
+
             warn!(
                 "[ValidationRunner] {} check failed on attempt {}/{}\nError: {}",
                 check_name, attempt, max_attempts, error_preview
@@ -278,19 +278,22 @@ impl ValidationRunner {
             "[ValidationRunner] {} check failed after {} attempts with {} retries",
             check_name, max_attempts, retries
         );
-        
+
         // Log a summary of errors from each attempt
         for (i, err) in all_errors.iter().enumerate() {
             error!("[ValidationRunner] └── {}", err);
             if i >= 2 {
                 // Only show first 3 errors to avoid spam
                 if all_errors.len() > 3 {
-                    error!("[ValidationRunner] └── ... and {} more errors", all_errors.len() - 3);
+                    error!(
+                        "[ValidationRunner] └── ... and {} more errors",
+                        all_errors.len() - 3
+                    );
                 }
                 break;
             }
         }
-        
+
         Ok(ComplianceCheck {
             passed: false,
             retries,
@@ -336,14 +339,11 @@ impl CheckRunner for CargoCheck {
                     e
                 ))
             })?;
-            
+
         // Log exit code if command failed
         if !output.status.success() {
             if let Some(code) = output.status.code() {
-                debug!(
-                    "[CargoCheck] {} exited with code {}",
-                    self.command, code
-                );
+                debug!("[CargoCheck] {} exited with code {}", self.command, code);
             }
         }
 
