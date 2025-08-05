@@ -1,0 +1,573 @@
+//! Planning & Analysis Phase for self-update requests
+//!
+//! This module implements the planning phase that analyzes update requests,
+//! decomposes them into tasks, and generates implementation plans for user approval.
+
+use super::types::SelfUpdateRequest;
+use crate::Result;
+use serde::{Deserialize, Serialize};
+use tracing::{debug, info};
+
+/// Represents a single task in the implementation plan
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlannedTask {
+    /// Unique identifier for the task
+    pub id: String,
+    /// Human-readable task description
+    pub description: String,
+    /// Task category (e.g., "code_change", "test_addition", "documentation")
+    pub category: TaskCategory,
+    /// Estimated complexity (1-5, where 5 is most complex)
+    pub complexity: u8,
+    /// Dependencies on other task IDs
+    pub dependencies: Vec<String>,
+    /// Specific files or components affected
+    pub affected_components: Vec<String>,
+    /// Validation steps for this task
+    pub validation_steps: Vec<String>,
+}
+
+/// Categories of tasks that can be planned
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum TaskCategory {
+    CodeChange,
+    TestAddition,
+    Documentation,
+    Configuration,
+    Refactoring,
+    BugFix,
+    FeatureAddition,
+    Security,
+    Performance,
+}
+
+/// Risk level assessment for the update
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum RiskLevel {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+/// The complete implementation plan
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImplementationPlan {
+    /// Unique plan identifier
+    pub plan_id: String,
+    /// Original request that generated this plan
+    pub request_id: String,
+    /// Human-readable summary of what will be done
+    pub summary: String,
+    /// Overall risk assessment
+    pub risk_level: RiskLevel,
+    /// Estimated total time in minutes
+    pub estimated_minutes: u32,
+    /// Ordered list of tasks to execute
+    pub tasks: Vec<PlannedTask>,
+    /// Key risks identified
+    pub identified_risks: Vec<String>,
+    /// Rollback strategy if something goes wrong
+    pub rollback_strategy: String,
+    /// Success criteria - how we know the update succeeded
+    pub success_criteria: Vec<String>,
+    /// Resource requirements
+    pub resource_requirements: ResourceRequirements,
+    /// Approval status
+    pub approval_status: ApprovalStatus,
+}
+
+/// Resource requirements for the update
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceRequirements {
+    /// Estimated time in minutes
+    pub time_estimate_minutes: u32,
+    /// Which agents are needed
+    pub required_agents: Vec<String>,
+    /// Any special tools or access needed
+    pub special_requirements: Vec<String>,
+}
+
+/// Approval status of the plan
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ApprovalStatus {
+    Pending,
+    Approved,
+    Rejected(String), // Reason for rejection
+    Modified,         // User requested changes
+}
+
+/// The update planner that analyzes requests and creates plans
+pub struct UpdatePlanner;
+
+impl UpdatePlanner {
+    /// Analyze an update request and create an implementation plan
+    pub async fn create_plan(request: &SelfUpdateRequest) -> Result<ImplementationPlan> {
+        info!(
+            "[UpdatePlanner] Creating plan for request: {} ({})",
+            request.id, request.codename
+        );
+
+        // Analyze the request to understand what's being asked
+        let analysis = Self::analyze_request(request)?;
+        
+        // Decompose into specific tasks
+        let tasks = Self::decompose_into_tasks(&analysis, request)?;
+        
+        // Assess overall risk
+        let risk_level = Self::assess_risk(&tasks, &analysis);
+        
+        // Calculate time estimate
+        let estimated_minutes = Self::estimate_time(&tasks);
+        
+        // Identify specific risks
+        let identified_risks = Self::identify_risks(&tasks, &analysis, request);
+        
+        // Define success criteria
+        let success_criteria = Self::define_success_criteria(&tasks, request);
+        
+        // Create the plan
+        let plan = ImplementationPlan {
+            plan_id: format!("plan-{}-{}", request.codename, chrono::Utc::now().timestamp()),
+            request_id: request.id.clone(),
+            summary: Self::generate_summary(&tasks, request),
+            risk_level,
+            estimated_minutes,
+            tasks,
+            identified_risks,
+            rollback_strategy: "Git snapshot created before changes. Can rollback to previous commit if needed.".to_string(),
+            success_criteria,
+            resource_requirements: ResourceRequirements {
+                time_estimate_minutes: estimated_minutes,
+                required_agents: vec!["Claude Code".to_string()],
+                special_requirements: vec![],
+            },
+            approval_status: ApprovalStatus::Pending,
+        };
+        
+        info!(
+            "[UpdatePlanner] Created plan {} with {} tasks, risk level: {:?}",
+            plan.plan_id,
+            plan.tasks.len(),
+            plan.risk_level
+        );
+        
+        Ok(plan)
+    }
+    
+    /// Analyze the request to understand scope and intent
+    fn analyze_request(request: &SelfUpdateRequest) -> Result<RequestAnalysis> {
+        debug!("[UpdatePlanner] Analyzing request: {}", request.description);
+        
+        let combined_text = format!(
+            "{}\n{}",
+            request.description,
+            request.combined_messages.join("\n")
+        );
+        
+        // Simple keyword-based analysis for now
+        // In a real implementation, this would use NLP or Claude to understand intent
+        let analysis = RequestAnalysis {
+            primary_intent: Self::detect_primary_intent(&combined_text),
+            scope: Self::detect_scope(&combined_text),
+            affected_areas: Self::detect_affected_areas(&combined_text),
+            complexity_factors: Self::detect_complexity_factors(&combined_text),
+        };
+        
+        Ok(analysis)
+    }
+    
+    /// Decompose the request into specific tasks
+    fn decompose_into_tasks(
+        analysis: &RequestAnalysis,
+        request: &SelfUpdateRequest,
+    ) -> Result<Vec<PlannedTask>> {
+        let mut tasks = Vec::new();
+        let mut task_counter = 1;
+        
+        // Based on the analysis, create appropriate tasks
+        match analysis.primary_intent {
+            Intent::BugFix => {
+                tasks.push(PlannedTask {
+                    id: format!("task-{}", task_counter),
+                    description: format!("Identify and fix the bug: {}", request.description),
+                    category: TaskCategory::BugFix,
+                    complexity: 3,
+                    dependencies: vec![],
+                    affected_components: analysis.affected_areas.clone(),
+                    validation_steps: vec![
+                        "Run existing tests to verify fix".to_string(),
+                        "Add regression test for the bug".to_string(),
+                    ],
+                });
+                task_counter += 1;
+                
+                tasks.push(PlannedTask {
+                    id: format!("task-{}", task_counter),
+                    description: "Add tests to prevent regression".to_string(),
+                    category: TaskCategory::TestAddition,
+                    complexity: 2,
+                    dependencies: vec!["task-1".to_string()],
+                    affected_components: vec!["tests".to_string()],
+                    validation_steps: vec!["Ensure new tests pass".to_string()],
+                });
+            }
+            Intent::FeatureAddition => {
+                tasks.push(PlannedTask {
+                    id: format!("task-{}", task_counter),
+                    description: format!("Implement new feature: {}", request.description),
+                    category: TaskCategory::FeatureAddition,
+                    complexity: 4,
+                    dependencies: vec![],
+                    affected_components: analysis.affected_areas.clone(),
+                    validation_steps: vec![
+                        "Feature works as described".to_string(),
+                        "Integration with existing code verified".to_string(),
+                    ],
+                });
+                task_counter += 1;
+                
+                tasks.push(PlannedTask {
+                    id: format!("task-{}", task_counter),
+                    description: "Add tests for new feature".to_string(),
+                    category: TaskCategory::TestAddition,
+                    complexity: 3,
+                    dependencies: vec!["task-1".to_string()],
+                    affected_components: vec!["tests".to_string()],
+                    validation_steps: vec!["All tests pass".to_string()],
+                });
+                task_counter += 1;
+                
+                tasks.push(PlannedTask {
+                    id: format!("task-{}", task_counter),
+                    description: "Update documentation".to_string(),
+                    category: TaskCategory::Documentation,
+                    complexity: 1,
+                    dependencies: vec!["task-1".to_string()],
+                    affected_components: vec!["README.md".to_string(), "docs".to_string()],
+                    validation_steps: vec!["Documentation is accurate".to_string()],
+                });
+            }
+            Intent::Improvement => {
+                tasks.push(PlannedTask {
+                    id: format!("task-{}", task_counter),
+                    description: format!("Improve: {}", request.description),
+                    category: TaskCategory::Refactoring,
+                    complexity: 3,
+                    dependencies: vec![],
+                    affected_components: analysis.affected_areas.clone(),
+                    validation_steps: vec![
+                        "Functionality unchanged".to_string(),
+                        "Performance or quality improved".to_string(),
+                    ],
+                });
+            }
+            _ => {
+                // Generic task for unclear intents
+                tasks.push(PlannedTask {
+                    id: format!("task-{}", task_counter),
+                    description: request.description.clone(),
+                    category: TaskCategory::CodeChange,
+                    complexity: 3,
+                    dependencies: vec![],
+                    affected_components: vec!["unknown".to_string()],
+                    validation_steps: vec![
+                        "Changes implemented as requested".to_string(),
+                        "No regressions introduced".to_string(),
+                    ],
+                });
+            }
+        }
+        
+        Ok(tasks)
+    }
+    
+    /// Assess the overall risk level
+    fn assess_risk(tasks: &[PlannedTask], analysis: &RequestAnalysis) -> RiskLevel {
+        let max_complexity = tasks.iter().map(|t| t.complexity).max().unwrap_or(1);
+        let total_components = analysis.affected_areas.len();
+        
+        if analysis.scope == Scope::Critical || max_complexity >= 5 {
+            RiskLevel::Critical
+        } else if total_components > 5 || max_complexity >= 4 {
+            RiskLevel::High
+        } else if total_components > 2 || max_complexity >= 3 {
+            RiskLevel::Medium
+        } else {
+            RiskLevel::Low
+        }
+    }
+    
+    /// Estimate total time needed
+    fn estimate_time(tasks: &[PlannedTask]) -> u32 {
+        tasks.iter()
+            .map(|t| match t.complexity {
+                1 => 5,   // 5 minutes for trivial
+                2 => 15,  // 15 minutes for easy
+                3 => 30,  // 30 minutes for medium
+                4 => 60,  // 1 hour for complex
+                5 => 120, // 2 hours for very complex
+                _ => 30,  // Default to 30 minutes
+            })
+            .sum()
+    }
+    
+    /// Identify specific risks
+    fn identify_risks(
+        tasks: &[PlannedTask],
+        analysis: &RequestAnalysis,
+        _request: &SelfUpdateRequest,
+    ) -> Vec<String> {
+        let mut risks = Vec::new();
+        
+        // Check for high complexity
+        if tasks.iter().any(|t| t.complexity >= 4) {
+            risks.push("High complexity changes may introduce bugs".to_string());
+        }
+        
+        // Check for critical areas
+        if analysis.scope == Scope::Critical {
+            risks.push("Changes affect critical system components".to_string());
+        }
+        
+        // Check for test coverage
+        if !tasks.iter().any(|t| t.category == TaskCategory::TestAddition) {
+            risks.push("No tests planned - may miss regressions".to_string());
+        }
+        
+        // Check for broad impact
+        if analysis.affected_areas.len() > 3 {
+            risks.push("Changes affect multiple components".to_string());
+        }
+        
+        if risks.is_empty() {
+            risks.push("Low risk - straightforward changes".to_string());
+        }
+        
+        risks
+    }
+    
+    /// Define success criteria
+    fn define_success_criteria(tasks: &[PlannedTask], _request: &SelfUpdateRequest) -> Vec<String> {
+        let mut criteria = vec![
+            "All compilation checks pass".to_string(),
+            "All existing tests continue to pass".to_string(),
+        ];
+        
+        // Add task-specific criteria
+        for task in tasks {
+            criteria.extend(task.validation_steps.clone());
+        }
+        
+        criteria.push("No performance regressions".to_string());
+        criteria.push("Code follows project standards".to_string());
+        
+        criteria
+    }
+    
+    /// Generate a summary of the plan
+    fn generate_summary(tasks: &[PlannedTask], request: &SelfUpdateRequest) -> String {
+        let task_summary = tasks
+            .iter()
+            .map(|t| format!("- {}", t.description))
+            .collect::<Vec<_>>()
+            .join("\n");
+        
+        format!(
+            "Plan to address: {}\n\nTasks:\n{}",
+            request.description, task_summary
+        )
+    }
+    
+    /// Detect the primary intent of the request
+    fn detect_primary_intent(text: &str) -> Intent {
+        let text_lower = text.to_lowercase();
+        
+        if text_lower.contains("fix") || text_lower.contains("bug") || text_lower.contains("error") {
+            Intent::BugFix
+        } else if text_lower.contains("add") || text_lower.contains("implement") || text_lower.contains("create") {
+            Intent::FeatureAddition
+        } else if text_lower.contains("improve") || text_lower.contains("enhance") || text_lower.contains("optimize") {
+            Intent::Improvement
+        } else if text_lower.contains("update") || text_lower.contains("change") {
+            Intent::Update
+        } else {
+            Intent::Unknown
+        }
+    }
+    
+    /// Detect the scope of changes
+    fn detect_scope(text: &str) -> Scope {
+        let text_lower = text.to_lowercase();
+        
+        if text_lower.contains("security") || text_lower.contains("auth") || text_lower.contains("critical") {
+            Scope::Critical
+        } else if text_lower.contains("api") || text_lower.contains("interface") || text_lower.contains("public") {
+            Scope::Public
+        } else if text_lower.contains("internal") || text_lower.contains("private") {
+            Scope::Internal
+        } else {
+            Scope::Unknown
+        }
+    }
+    
+    /// Detect affected areas
+    fn detect_affected_areas(text: &str) -> Vec<String> {
+        let mut areas = Vec::new();
+        let text_lower = text.to_lowercase();
+        
+        // Check for common component mentions
+        if text_lower.contains("discord") {
+            areas.push("discord".to_string());
+        }
+        if text_lower.contains("api") {
+            areas.push("api".to_string());
+        }
+        if text_lower.contains("agent") {
+            areas.push("agents".to_string());
+        }
+        if text_lower.contains("test") {
+            areas.push("tests".to_string());
+        }
+        if text_lower.contains("validation") || text_lower.contains("validate") {
+            areas.push("validation".to_string());
+        }
+        if text_lower.contains("config") {
+            areas.push("configuration".to_string());
+        }
+        
+        if areas.is_empty() {
+            areas.push("unknown".to_string());
+        }
+        
+        areas
+    }
+    
+    /// Detect complexity factors
+    fn detect_complexity_factors(text: &str) -> Vec<String> {
+        let mut factors = Vec::new();
+        let text_lower = text.to_lowercase();
+        
+        if text_lower.contains("refactor") {
+            factors.push("refactoring required".to_string());
+        }
+        if text_lower.contains("multiple") || text_lower.contains("several") {
+            factors.push("multiple components affected".to_string());
+        }
+        if text_lower.contains("async") || text_lower.contains("concurrent") {
+            factors.push("async/concurrent code".to_string());
+        }
+        if text_lower.contains("breaking") {
+            factors.push("breaking changes".to_string());
+        }
+        
+        factors
+    }
+}
+
+/// Internal struct for request analysis
+#[derive(Debug)]
+struct RequestAnalysis {
+    primary_intent: Intent,
+    scope: Scope,
+    affected_areas: Vec<String>,
+    complexity_factors: Vec<String>,
+}
+
+#[derive(Debug, PartialEq)]
+enum Intent {
+    BugFix,
+    FeatureAddition,
+    Improvement,
+    Update,
+    Unknown,
+}
+
+#[derive(Debug, PartialEq)]
+enum Scope {
+    Critical,
+    Public,
+    Internal,
+    Unknown,
+}
+
+/// Format a plan for Discord display
+pub fn format_plan_for_discord(plan: &ImplementationPlan) -> String {
+    let mut output = String::new();
+    
+    output.push_str(&format!("## 📋 Implementation Plan: {}\n\n", plan.plan_id));
+    output.push_str(&format!("**Summary**: {}\n\n", plan.summary));
+    output.push_str(&format!("**Risk Level**: {:?}\n", plan.risk_level));
+    output.push_str(&format!("**Estimated Time**: {} minutes\n\n", plan.estimated_minutes));
+    
+    output.push_str("### 📝 Tasks\n");
+    for (i, task) in plan.tasks.iter().enumerate() {
+        output.push_str(&format!(
+            "{}. **{}** (Complexity: {}/5)\n   {}\n",
+            i + 1,
+            task.description,
+            task.complexity,
+            task.validation_steps.join(", ")
+        ));
+    }
+    
+    output.push_str("\n### ⚠️ Identified Risks\n");
+    for risk in &plan.identified_risks {
+        output.push_str(&format!("- {}\n", risk));
+    }
+    
+    output.push_str("\n### ✅ Success Criteria\n");
+    for criterion in &plan.success_criteria {
+        output.push_str(&format!("- {}\n", criterion));
+    }
+    
+    output.push_str(&format!("\n**Rollback Strategy**: {}\n", plan.rollback_strategy));
+    
+    output.push_str("\n---\n");
+    output.push_str("Reply with **approve** to proceed or **modify** to request changes.");
+    
+    output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_plan_creation() {
+        let request = SelfUpdateRequest {
+            id: "test-123".to_string(),
+            codename: "fix-bug".to_string(),
+            description: "Fix the memory leak in message handler".to_string(),
+            user_id: 123456,
+            channel_id: 789012,
+            message_id: 345678,
+            combined_messages: vec!["There's a memory leak when processing messages".to_string()],
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            retry_count: 0,
+            status: crate::discord::self_update::UpdateStatus::Queued,
+        };
+        
+        let plan = UpdatePlanner::create_plan(&request).await.unwrap();
+        
+        assert!(!plan.tasks.is_empty());
+        assert_eq!(plan.request_id, "test-123");
+        assert!(plan.tasks.iter().any(|t| t.category == TaskCategory::BugFix));
+    }
+    
+    #[test]
+    fn test_intent_detection() {
+        assert_eq!(
+            UpdatePlanner::detect_primary_intent("fix the bug in the code"),
+            Intent::BugFix
+        );
+        assert_eq!(
+            UpdatePlanner::detect_primary_intent("add a new feature"),
+            Intent::FeatureAddition
+        );
+        assert_eq!(
+            UpdatePlanner::detect_primary_intent("improve performance"),
+            Intent::Improvement
+        );
+    }
+}

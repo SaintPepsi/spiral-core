@@ -55,6 +55,7 @@
 mod executor;
 mod git_ops;
 pub mod pipeline;
+mod planner;
 mod queue;
 mod status_tracker;
 mod types;
@@ -67,6 +68,10 @@ pub use git_ops::{GitOperations, SnapshotManager};
 pub use pipeline::{
     CheckResult, ClaudeValidationResponse, ComplianceCheck, ExecutionPatterns, Phase1Results,
     Phase2Attempt, Phase2Checks, PipelineContext, PipelineStatus, ValidationPipeline,
+};
+pub use planner::{
+    format_plan_for_discord, ApprovalStatus, ImplementationPlan, PlannedTask, ResourceRequirements,
+    RiskLevel as PlanRiskLevel, TaskCategory, UpdatePlanner,
 };
 pub use queue::{UpdateQueue, UpdateQueueStatus};
 pub use status_tracker::{ImplementationProgress, StatusTracker, UpdateType};

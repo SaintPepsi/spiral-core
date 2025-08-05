@@ -4,8 +4,8 @@
 //! git operations, Claude Code integration, validation pipeline, and result reporting.
 
 use super::{
-    GitOperations, PreflightChecker, SelfUpdateRequest, StatusTracker, UpdateQueue, UpdateStatus,
-    ValidationPipeline,
+    format_plan_for_discord, GitOperations, ImplementationPlan, PreflightChecker,
+    SelfUpdateRequest, StatusTracker, UpdatePlanner, UpdateQueue, UpdateStatus, ValidationPipeline,
 };
 use crate::{claude_code::ClaudeCodeClient, Result};
 use serenity::{http::Http, model::id::ChannelId};
@@ -78,7 +78,25 @@ impl UpdateExecutor {
             return self.create_failure_result(request, format!("Preflight checks failed: {}", e));
         }
 
-        // Step 2: Create git snapshot
+        // Step 2: Create implementation plan
+        self.update_discord_status(&request, "📋 Creating implementation plan...")
+            .await;
+        let plan = match UpdatePlanner::create_plan(&request).await {
+            Ok(p) => p,
+            Err(e) => {
+                error!("[UpdateExecutor] Failed to create plan: {}", e);
+                return self.create_failure_result(request, format!("Planning failed: {}", e));
+            }
+        };
+
+        // Step 3: Present plan for approval
+        self.present_plan_for_approval(&request, &plan).await;
+        
+        // Wait for plan approval (this will be implemented in the next task)
+        // For now, we'll continue as if approved
+        info!("[UpdateExecutor] Plan created, continuing with implementation (approval pending)");
+
+        // Step 4: Create git snapshot
         self.update_discord_status(&request, "📸 Creating git snapshot...")
             .await;
         let snapshot_result = self.create_snapshot(&request).await;
@@ -94,7 +112,7 @@ impl UpdateExecutor {
             }
         };
 
-        // Step 3: Execute Claude Code to implement changes
+        // Step 5: Execute Claude Code to implement changes
         self.update_discord_status(&request, "🤖 Implementing changes with Claude Code...")
             .await;
         let claude_result = self.execute_claude_update(&request).await;
@@ -108,7 +126,7 @@ impl UpdateExecutor {
                 .create_failure_result(request, format!("Claude Code execution failed: {}", e));
         }
 
-        // Step 4: Run validation pipeline
+        // Step 6: Run validation pipeline
         self.update_discord_status(&request, "✅ Validating changes...")
             .await;
         let validation_result = self.run_validation_pipeline(&request).await;
@@ -259,6 +277,21 @@ impl UpdateExecutor {
             if let Err(e) = channel_id.say(http, status).await {
                 warn!(
                     "[UpdateExecutor] Failed to send Discord status update: {}",
+                    e
+                );
+            }
+        }
+    }
+
+    /// Present the implementation plan for user approval
+    async fn present_plan_for_approval(&self, request: &SelfUpdateRequest, plan: &ImplementationPlan) {
+        if let Some(ref http) = self.discord_http {
+            let channel_id = ChannelId::new(request.channel_id);
+            let plan_message = format_plan_for_discord(plan);
+            
+            if let Err(e) = channel_id.say(http, plan_message).await {
+                warn!(
+                    "[UpdateExecutor] Failed to send plan for approval: {}",
                     e
                 );
             }
