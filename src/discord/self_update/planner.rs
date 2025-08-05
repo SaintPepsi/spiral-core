@@ -17,7 +17,7 @@ pub struct PlannedTask {
     pub description: String,
     /// Task category (e.g., "code_change", "test_addition", "documentation")
     pub category: TaskCategory,
-    /// Estimated complexity (1-5, where 5 is most complex)
+    /// Estimated complexity using Fibonacci scale (1, 2, 3, 5, 8, 13)
     pub complexity: u8,
     /// Dependencies on other task IDs
     pub dependencies: Vec<String>,
@@ -41,13 +41,17 @@ pub enum TaskCategory {
     Performance,
 }
 
-/// Risk level assessment for the update
+/// Risk level assessment for the update using Fibonacci scale
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RiskLevel {
-    Low,
-    Medium,
-    High,
-    Critical,
+    Unknown,        // ? - Needs investigation
+    Low,            // 1 - Minimal risk with negligible impact
+    Potential,      // 2 - Some risk but manageable
+    Medium,         // 3 - Moderate risk requiring attention
+    Certain,        // 5 - High probability of issues
+    High,           // 8 - Serious risk with major implications
+    Nuclear,        // 13 - Critical risk that could be catastrophic
+    DoNotImplement, // ∞ - Unacceptable risk level
 }
 
 /// The complete implementation plan
@@ -208,13 +212,21 @@ Create a detailed implementation plan that includes:
    - Unique task IDs (task-1, task-2, etc.)
    - Clear descriptions of what needs to be done
    - Task category (CodeChange, TestAddition, Documentation, Configuration, Refactoring, BugFix, FeatureAddition, Security, Performance)
-   - Complexity rating (1-5, where 5 is most complex)
+   - Complexity rating using Fibonacci scale (1, 2, 3, 5, 8, 13 - where 13 is extremely complex)
    - Dependencies on other tasks
    - Affected components (file paths or module names)
    - Validation steps to verify task completion
 
 2. **Risk Assessment**: 
-   - Identify the overall risk level (Low, Medium, High, Critical)
+   - Identify the overall risk level using Fibonacci scale:
+     * Unknown (?) - Needs investigation
+     * Low (1) - Minimal risk with negligible impact
+     * Potential (2) - Some risk but manageable
+     * Medium (3) - Moderate risk requiring attention
+     * Certain (5) - High probability of issues
+     * High (8) - Serious risk with major implications
+     * Nuclear (13) - Critical risk that could be catastrophic
+     * DoNotImplement (∞) - Unacceptable risk level
    - List specific risks associated with the changes
    - Consider security implications, breaking changes, and system stability
 
@@ -230,13 +242,13 @@ Create a detailed implementation plan that includes:
 Return a JSON object matching this structure:
 {{
     "summary": "Brief summary of what will be done",
-    "risk_level": "Low|Medium|High|Critical",
+    "risk_level": "Unknown|Low|Potential|Medium|Certain|High|Nuclear|DoNotImplement",
     "tasks": [
         {{
             "id": "task-1",
             "description": "Clear task description",
             "category": "TaskCategory",
-            "complexity": 3,
+            "complexity": 3,  // Use Fibonacci scale: 1, 2, 3, 5, 8, 13
             "dependencies": [],
             "affected_components": ["file1.rs", "module2"],
             "validation_steps": ["Step 1", "Step 2"]
@@ -440,17 +452,35 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
         Ok(tasks)
     }
     
-    /// Assess the overall risk level
+    /// Assess the overall risk level using Fibonacci scale
     fn assess_risk(tasks: &[PlannedTask], analysis: &RequestAnalysis) -> RiskLevel {
         let max_complexity = tasks.iter().map(|t| t.complexity).max().unwrap_or(1);
         let total_components = analysis.affected_areas.len();
         
-        if analysis.scope == Scope::Critical || max_complexity >= 5 {
-            RiskLevel::Critical
-        } else if total_components > 5 || max_complexity >= 4 {
-            RiskLevel::High
-        } else if total_components > 2 || max_complexity >= 3 {
+        // Check for unknown factors first
+        if analysis.affected_areas.contains(&"unknown".to_string()) {
+            return RiskLevel::Unknown;
+        }
+        
+        // Critical scope always has high risk
+        if analysis.scope == Scope::Critical {
+            if max_complexity >= 8 {
+                RiskLevel::Nuclear  // Critical + very complex = nuclear risk
+            } else if max_complexity >= 5 {
+                RiskLevel::High
+            } else {
+                RiskLevel::Certain  // Critical changes always have certain risk
+            }
+        } else if max_complexity >= 13 {
+            RiskLevel::Nuclear  // Extremely complex tasks are nuclear risk
+        } else if max_complexity >= 8 || total_components > 8 {
+            RiskLevel::High  // Very complex or many components
+        } else if max_complexity >= 5 || total_components > 5 {
+            RiskLevel::Certain  // Complex tasks have certain risk of issues
+        } else if max_complexity >= 3 || total_components > 3 {
             RiskLevel::Medium
+        } else if max_complexity == 2 || total_components == 2 {
+            RiskLevel::Potential
         } else {
             RiskLevel::Low
         }
@@ -635,18 +665,32 @@ enum Scope {
     Unknown,
 }
 
+/// Format risk level with appropriate emoji and description
+fn format_risk_level(risk: &RiskLevel) -> String {
+    match risk {
+        RiskLevel::Unknown => "❓ Unknown - Needs investigation".to_string(),
+        RiskLevel::Low => "✅ Low (1) - Minimal risk".to_string(),
+        RiskLevel::Potential => "🟡 Potential (2) - Some manageable risk".to_string(),
+        RiskLevel::Medium => "⚠️ Medium (3) - Requires attention".to_string(),
+        RiskLevel::Certain => "🟠 Certain (5) - High probability of issues".to_string(),
+        RiskLevel::High => "🔴 High (8) - Serious risk".to_string(),
+        RiskLevel::Nuclear => "☢️ Nuclear (13) - Critical risk".to_string(),
+        RiskLevel::DoNotImplement => "🚫 Do Not Implement (∞) - Unacceptable risk".to_string(),
+    }
+}
+
 /// Format a plan for Discord display
 pub fn format_plan_for_discord(plan: &ImplementationPlan) -> String {
     let mut output = String::new();
     
     output.push_str(&format!("## 📋 Implementation Plan: {}\n\n", plan.plan_id));
     output.push_str(&format!("**Summary**: {}\n\n", plan.summary));
-    output.push_str(&format!("**Risk Level**: {:?}\n\n", plan.risk_level));
+    output.push_str(&format!("**Risk Level**: {}\n\n", format_risk_level(&plan.risk_level)));
     
     output.push_str("### 📝 Tasks\n");
     for (i, task) in plan.tasks.iter().enumerate() {
         output.push_str(&format!(
-            "{}. **{}** (Complexity: {}/5)\n   {}\n",
+            "{}. **{}** (Complexity: {})\n   {}\n",
             i + 1,
             task.description,
             task.complexity,
