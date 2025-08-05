@@ -24,6 +24,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Key Simplification**: Agents serve as intelligent orchestrators of Claude Code capabilities rather than managing local LLM inference, dramatically reducing complexity while maintaining sophisticated functionality.
 
+## 🚨 CRITICAL: Time Estimates vs Risk/Complexity Metrics
+
+**NEVER provide time estimates** for any task, feature, or implementation. Time is irrelevant to quality.
+
+**ALWAYS provide:**
+- **Risk Level**: Low, Medium, High, Critical - based on potential system impact
+- **Complexity Rating**: 1-5 scale where 5 is most complex
+- **Specific Risk Factors**: What could go wrong and why
+
+**Why**: Time estimates create artificial pressure and lead to rushed, poor-quality code. Risk and complexity metrics help make informed decisions about implementation approach and testing requirements.
+
 ## Architecture
 
 For complete system architecture, see [Architecture Guide](docs/ARCHITECTURE.md).

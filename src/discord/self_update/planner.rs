@@ -61,8 +61,6 @@ pub struct ImplementationPlan {
     pub summary: String,
     /// Overall risk assessment
     pub risk_level: RiskLevel,
-    /// Estimated total time in minutes
-    pub estimated_minutes: u32,
     /// Ordered list of tasks to execute
     pub tasks: Vec<PlannedTask>,
     /// Key risks identified
@@ -80,8 +78,6 @@ pub struct ImplementationPlan {
 /// Resource requirements for the update
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceRequirements {
-    /// Estimated time in minutes
-    pub time_estimate_minutes: u32,
     /// Which agents are needed
     pub required_agents: Vec<String>,
     /// Any special tools or access needed
@@ -222,15 +218,11 @@ Create a detailed implementation plan that includes:
    - List specific risks associated with the changes
    - Consider security implications, breaking changes, and system stability
 
-3. **Time Estimation**:
-   - Provide realistic time estimates for each task
-   - Calculate total estimated time in minutes
-
-4. **Success Criteria**:
+3. **Success Criteria**:
    - Define clear, measurable criteria for success
    - Include compilation checks, test requirements, and quality standards
 
-5. **Resource Requirements**:
+4. **Resource Requirements**:
    - Identify which agents or tools are needed
    - Note any special access or permissions required
 
@@ -239,7 +231,6 @@ Return a JSON object matching this structure:
 {{
     "summary": "Brief summary of what will be done",
     "risk_level": "Low|Medium|High|Critical",
-    "estimated_minutes": 30,
     "tasks": [
         {{
             "id": "task-1",
@@ -255,7 +246,6 @@ Return a JSON object matching this structure:
     "rollback_strategy": "How to undo changes if needed",
     "success_criteria": ["Criterion 1", "Criterion 2"],
     "resource_requirements": {{
-        "time_estimate_minutes": 30,
         "required_agents": ["Claude Code"],
         "special_requirements": []
     }}
@@ -290,9 +280,6 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
         // Assess overall risk
         let risk_level = Self::assess_risk(&tasks, &analysis);
         
-        // Calculate time estimate
-        let estimated_minutes = Self::estimate_time(&tasks);
-        
         // Identify specific risks
         let identified_risks = Self::identify_risks(&tasks, &analysis, request);
         
@@ -305,13 +292,11 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
             request_id: request.id.clone(),
             summary: Self::generate_summary(&tasks, request),
             risk_level,
-            estimated_minutes,
             tasks,
             identified_risks,
             rollback_strategy: "Git snapshot created before changes. Can rollback to previous commit if needed.".to_string(),
             success_criteria,
             resource_requirements: ResourceRequirements {
-                time_estimate_minutes: estimated_minutes,
                 required_agents: vec!["Claude Code".to_string()],
                 special_requirements: vec![],
             },
@@ -469,20 +454,6 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
         } else {
             RiskLevel::Low
         }
-    }
-    
-    /// Estimate total time needed
-    fn estimate_time(tasks: &[PlannedTask]) -> u32 {
-        tasks.iter()
-            .map(|t| match t.complexity {
-                1 => 5,   // 5 minutes for trivial
-                2 => 15,  // 15 minutes for easy
-                3 => 30,  // 30 minutes for medium
-                4 => 60,  // 1 hour for complex
-                5 => 120, // 2 hours for very complex
-                _ => 30,  // Default to 30 minutes
-            })
-            .sum()
     }
     
     /// Identify specific risks
@@ -670,8 +641,7 @@ pub fn format_plan_for_discord(plan: &ImplementationPlan) -> String {
     
     output.push_str(&format!("## 📋 Implementation Plan: {}\n\n", plan.plan_id));
     output.push_str(&format!("**Summary**: {}\n\n", plan.summary));
-    output.push_str(&format!("**Risk Level**: {:?}\n", plan.risk_level));
-    output.push_str(&format!("**Estimated Time**: {} minutes\n\n", plan.estimated_minutes));
+    output.push_str(&format!("**Risk Level**: {:?}\n\n", plan.risk_level));
     
     output.push_str("### 📝 Tasks\n");
     for (i, task) in plan.tasks.iter().enumerate() {

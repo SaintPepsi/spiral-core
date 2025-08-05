@@ -286,7 +286,6 @@ mod tests {
             request_id: "test-request-123".to_string(),
             summary: "Test plan".to_string(),
             risk_level: super::super::planner::RiskLevel::Low,
-            estimated_minutes: 30,
             tasks: vec![PlannedTask {
                 id: "task-1".to_string(),
                 description: "Test task".to_string(),
@@ -300,7 +299,6 @@ mod tests {
             rollback_strategy: "Git rollback".to_string(),
             success_criteria: vec!["Tests pass".to_string()],
             resource_requirements: ResourceRequirements {
-                time_estimate_minutes: 30,
                 required_agents: vec!["Claude Code".to_string()],
                 special_requirements: vec![],
             },
