@@ -29,6 +29,12 @@ const MAX_AGENT_TIMEOUT: Duration = Duration::from_secs(600);
 /// Timeout multiplier for exponential backoff
 const TIMEOUT_MULTIPLIER: f64 = 1.5;
 
+// Phase 1 validation agent paths
+const CLAUDE_AGENT_CODE_REVIEW: &str = ".claude/validation-agents/phase1/code-review-standards.md";
+const CLAUDE_AGENT_TESTING: &str = ".claude/validation-agents/phase1/comprehensive-testing.md";
+const CLAUDE_AGENT_SECURITY: &str = ".claude/validation-agents/phase1/security-audit.md";
+const CLAUDE_AGENT_INTEGRATION: &str = ".claude/validation-agents/phase1/system-integration.md";
+
 // Phase 2 Claude agent paths - single source of truth for agent locations
 const CLAUDE_AGENT_COMPILATION_FIX: &str = ".claude/validation-agents/phase2/compilation-fixer.md";
 const CLAUDE_AGENT_TEST_FIX: &str = ".claude/validation-agents/phase2/test-failure-analyzer.md";
@@ -1634,60 +1640,224 @@ impl ValidationPipeline {
 
     // Phase 1 check implementations
 
-    async fn run_code_review(&self) -> Result<CheckResult> {
+    async fn run_code_review(&mut self) -> Result<CheckResult> {
         let start = Instant::now();
         info!("[Phase1] Running code review standards check");
 
-        // Note: Claude agent integration pending
-        // Agent path: .claude/validation-agents/phase1/code-review-standards.md
+        if let Some(_claude_client) = &self.claude_client {
+            // Create a minimal context for Phase 1
+            let phase1_context = PipelineContext {
+                pipeline_iterations: self.context.pipeline_iterations,
+                total_duration_ms: self.start_time.elapsed().as_millis() as u64,
+                final_status: PipelineStatus::Success,
+                phase1_results: self.context.phase1_results.clone(),
+                phase2_attempts: vec![],
+                files_modified: vec![],
+                changes_applied: vec![],
+                critical_errors: vec![],
+                warnings: vec![],
+                patterns: ExecutionPatterns::default(),
+            };
 
-        Ok(CheckResult {
-            passed: true,
-            findings: vec!["Code review agent integration pending".to_string()],
-            duration_ms: start.elapsed().as_millis() as u64,
-        })
+            // Spawn Claude agent for code review
+            match self.spawn_claude_agent(CLAUDE_AGENT_CODE_REVIEW, &phase1_context).await {
+                Ok(response) => {
+                    if response.success {
+                        Ok(CheckResult {
+                            passed: true,
+                            findings: vec![response.explanation],
+                            duration_ms: start.elapsed().as_millis() as u64,
+                        })
+                    } else {
+                        Ok(CheckResult {
+                            passed: false,
+                            findings: vec!["Code review failed".to_string(), response.explanation],
+                            duration_ms: start.elapsed().as_millis() as u64,
+                        })
+                    }
+                }
+                Err(e) => {
+                    warn!("[Phase1] Code review agent error: {}", e);
+                    Ok(CheckResult {
+                        passed: false,
+                        findings: vec![format!("Code review agent error: {}", e)],
+                        duration_ms: start.elapsed().as_millis() as u64,
+                    })
+                }
+            }
+        } else {
+            // No Claude client - return mock result
+            Ok(CheckResult {
+                passed: true,
+                findings: vec!["Code review agent not available - skipping".to_string()],
+                duration_ms: start.elapsed().as_millis() as u64,
+            })
+        }
     }
 
-    async fn run_comprehensive_testing(&self) -> Result<CheckResult> {
+    async fn run_comprehensive_testing(&mut self) -> Result<CheckResult> {
         let start = Instant::now();
         info!("[Phase1] Running comprehensive testing check");
 
-        // Note: Claude agent integration pending
-        // Agent path: .claude/validation-agents/phase1/comprehensive-testing.md
+        if let Some(_claude_client) = &self.claude_client {
+            // Create a minimal context for Phase 1
+            let phase1_context = PipelineContext {
+                pipeline_iterations: self.context.pipeline_iterations,
+                total_duration_ms: self.start_time.elapsed().as_millis() as u64,
+                final_status: PipelineStatus::Success,
+                phase1_results: self.context.phase1_results.clone(),
+                phase2_attempts: vec![],
+                files_modified: vec![],
+                changes_applied: vec![],
+                critical_errors: vec![],
+                warnings: vec![],
+                patterns: ExecutionPatterns::default(),
+            };
 
-        Ok(CheckResult {
-            passed: true,
-            findings: vec!["Testing analysis agent integration pending".to_string()],
-            duration_ms: start.elapsed().as_millis() as u64,
-        })
+            // Spawn Claude agent for testing analysis
+            match self.spawn_claude_agent(CLAUDE_AGENT_TESTING, &phase1_context).await {
+                Ok(response) => {
+                    if response.success {
+                        Ok(CheckResult {
+                            passed: true,
+                            findings: vec![response.explanation],
+                            duration_ms: start.elapsed().as_millis() as u64,
+                        })
+                    } else {
+                        Ok(CheckResult {
+                            passed: false,
+                            findings: vec!["Testing analysis failed".to_string(), response.explanation],
+                            duration_ms: start.elapsed().as_millis() as u64,
+                        })
+                    }
+                }
+                Err(e) => {
+                    warn!("[Phase1] Testing analysis agent error: {}", e);
+                    Ok(CheckResult {
+                        passed: false,
+                        findings: vec![format!("Testing analysis agent error: {}", e)],
+                        duration_ms: start.elapsed().as_millis() as u64,
+                    })
+                }
+            }
+        } else {
+            // No Claude client - return mock result
+            Ok(CheckResult {
+                passed: true,
+                findings: vec!["Testing analysis agent not available - skipping".to_string()],
+                duration_ms: start.elapsed().as_millis() as u64,
+            })
+        }
     }
 
-    async fn run_security_audit(&self) -> Result<CheckResult> {
+    async fn run_security_audit(&mut self) -> Result<CheckResult> {
         let start = Instant::now();
         info!("[Phase1] Running security audit");
 
-        // Note: Claude agent integration pending
-        // Agent path: .claude/validation-agents/phase1/security-audit.md
+        if let Some(_claude_client) = &self.claude_client {
+            // Create a minimal context for Phase 1
+            let phase1_context = PipelineContext {
+                pipeline_iterations: self.context.pipeline_iterations,
+                total_duration_ms: self.start_time.elapsed().as_millis() as u64,
+                final_status: PipelineStatus::Success,
+                phase1_results: self.context.phase1_results.clone(),
+                phase2_attempts: vec![],
+                files_modified: vec![],
+                changes_applied: vec![],
+                critical_errors: vec![],
+                warnings: vec![],
+                patterns: ExecutionPatterns::default(),
+            };
 
-        Ok(CheckResult {
-            passed: true,
-            findings: vec!["Security audit agent integration pending".to_string()],
-            duration_ms: start.elapsed().as_millis() as u64,
-        })
+            // Spawn Claude agent for security audit
+            match self.spawn_claude_agent(CLAUDE_AGENT_SECURITY, &phase1_context).await {
+                Ok(response) => {
+                    if response.success {
+                        Ok(CheckResult {
+                            passed: true,
+                            findings: vec![response.explanation],
+                            duration_ms: start.elapsed().as_millis() as u64,
+                        })
+                    } else {
+                        Ok(CheckResult {
+                            passed: false,
+                            findings: vec!["Security audit failed".to_string(), response.explanation],
+                            duration_ms: start.elapsed().as_millis() as u64,
+                        })
+                    }
+                }
+                Err(e) => {
+                    warn!("[Phase1] Security audit agent error: {}", e);
+                    Ok(CheckResult {
+                        passed: false,
+                        findings: vec![format!("Security audit agent error: {}", e)],
+                        duration_ms: start.elapsed().as_millis() as u64,
+                    })
+                }
+            }
+        } else {
+            // No Claude client - return mock result
+            Ok(CheckResult {
+                passed: true,
+                findings: vec!["Security audit agent not available - skipping".to_string()],
+                duration_ms: start.elapsed().as_millis() as u64,
+            })
+        }
     }
 
-    async fn run_system_integration(&self) -> Result<CheckResult> {
+    async fn run_system_integration(&mut self) -> Result<CheckResult> {
         let start = Instant::now();
         info!("[Phase1] Running system integration check");
 
-        // Note: Claude agent integration pending
-        // Agent path: .claude/validation-agents/phase1/system-integration.md
+        if let Some(_claude_client) = &self.claude_client {
+            // Create a minimal context for Phase 1
+            let phase1_context = PipelineContext {
+                pipeline_iterations: self.context.pipeline_iterations,
+                total_duration_ms: self.start_time.elapsed().as_millis() as u64,
+                final_status: PipelineStatus::Success,
+                phase1_results: self.context.phase1_results.clone(),
+                phase2_attempts: vec![],
+                files_modified: vec![],
+                changes_applied: vec![],
+                critical_errors: vec![],
+                warnings: vec![],
+                patterns: ExecutionPatterns::default(),
+            };
 
-        Ok(CheckResult {
-            passed: true,
-            findings: vec!["Integration check agent integration pending".to_string()],
-            duration_ms: start.elapsed().as_millis() as u64,
-        })
+            // Spawn Claude agent for integration check
+            match self.spawn_claude_agent(CLAUDE_AGENT_INTEGRATION, &phase1_context).await {
+                Ok(response) => {
+                    if response.success {
+                        Ok(CheckResult {
+                            passed: true,
+                            findings: vec![response.explanation],
+                            duration_ms: start.elapsed().as_millis() as u64,
+                        })
+                    } else {
+                        Ok(CheckResult {
+                            passed: false,
+                            findings: vec!["Integration check failed".to_string(), response.explanation],
+                            duration_ms: start.elapsed().as_millis() as u64,
+                        })
+                    }
+                }
+                Err(e) => {
+                    warn!("[Phase1] Integration check agent error: {}", e);
+                    Ok(CheckResult {
+                        passed: false,
+                        findings: vec![format!("Integration check agent error: {}", e)],
+                        duration_ms: start.elapsed().as_millis() as u64,
+                    })
+                }
+            }
+        } else {
+            // No Claude client - return mock result
+            Ok(CheckResult {
+                passed: true,
+                findings: vec!["Integration check agent not available - skipping".to_string()],
+                duration_ms: start.elapsed().as_millis() as u64,
+            })
+        }
     }
 
     // Phase 2 check implementations
