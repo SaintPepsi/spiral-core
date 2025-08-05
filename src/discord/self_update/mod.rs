@@ -52,6 +52,7 @@
 //! # }
 //! ```
 
+mod executor;
 mod git_ops;
 pub mod pipeline;
 mod queue;
@@ -61,6 +62,7 @@ mod validation;
 
 pub mod claude_spawn_example;
 
+pub use executor::{UpdateExecutor, UpdateResult};
 pub use git_ops::{GitOperations, SnapshotManager};
 pub use pipeline::{
     CheckResult, ClaudeValidationResponse, ComplianceCheck, ExecutionPatterns, Phase1Results,

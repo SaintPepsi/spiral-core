@@ -8,8 +8,8 @@ use crate::{
         message_state_manager::{MessageStateConfig, MessageStateManager},
         messages::{self, emojis, risk_level_to_str},
         self_update::{
-            GitOperations, PreflightChecker, SelfUpdateRequest, StatusTracker, UpdateQueue,
-            UpdateStatus, UpdateType, UpdateValidator,
+            GitOperations, PreflightChecker, SelfUpdateRequest, StatusTracker, UpdateExecutor,
+            UpdateQueue, UpdateStatus, UpdateType, UpdateValidator,
         },
         IntentClassifier, IntentResponse, IntentType, MessageSecurityValidator, RiskLevel,
         SecureMessageHandler,
@@ -28,7 +28,6 @@ use serenity::{
 };
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
 /// Agent role name mappings for detection
@@ -157,7 +156,7 @@ pub struct SpiralConstellationBot {
     security_validator: Arc<tokio::sync::Mutex<MessageSecurityValidator>>,
     intent_classifier: Arc<IntentClassifier>,
     pub secure_message_handler: Arc<SecureMessageHandler>,
-    update_queue: Arc<Mutex<UpdateQueue>>,
+    update_queue: Arc<UpdateQueue>,
     command_router: CommandRouter,
     discord_config: DiscordConfig,
 }
@@ -353,7 +352,7 @@ impl SpiralConstellationBot {
             security_validator,
             intent_classifier,
             secure_message_handler,
-            update_queue: Arc::new(Mutex::new(UpdateQueue::new())),
+            update_queue: Arc::new(UpdateQueue::new()),
             command_router: CommandRouter::new(),
             discord_config,
         })
@@ -395,7 +394,7 @@ impl SpiralConstellationBot {
             security_validator,
             intent_classifier,
             secure_message_handler,
-            update_queue: Arc::new(Mutex::new(UpdateQueue::new())),
+            update_queue: Arc::new(UpdateQueue::new()),
             command_router: CommandRouter::new(),
             discord_config,
         })
@@ -2016,7 +2015,7 @@ impl ConstellationBotHandler {
 
         // Add to queue with bounds checking
         {
-            let queue = self.bot.update_queue.lock().await;
+            let queue = self.bot.update_queue.clone();
 
             // Try to add request with bounds checking
             match queue.try_add_request(request).await {
@@ -2157,7 +2156,7 @@ impl ConstellationBotHandler {
     /// Process the update queue with comprehensive pipeline
     async fn process_update_queue(&self, ctx: &Context) {
         let request = {
-            let queue = self.bot.update_queue.lock().await;
+            let queue = self.bot.update_queue.clone();
             queue.next_request().await
         };
 
@@ -2255,7 +2254,7 @@ impl ConstellationBotHandler {
 
             // Mark as completed in queue
             {
-                let queue = self.bot.update_queue.lock().await;
+                let queue = self.bot.update_queue.clone();
                 queue.mark_completed().await;
             }
 
@@ -3226,7 +3225,7 @@ impl ConstellationBotHandler {
 
         // Mark queue as failed (clears all pending requests as per spec)
         {
-            let queue = self.bot.update_queue.lock().await;
+            let queue = self.bot.update_queue.clone();
             queue.mark_failed().await;
         }
     }
@@ -3322,14 +3321,41 @@ impl SpiralConstellationBotRunner {
             | GatewayIntents::GUILDS;
         // Commented out for now: | GatewayIntents::GUILD_MEMBERS;  // Requires "Server Members Intent"
 
-        let handler = ConstellationBotHandler::new(self.bot);
+        // Create handler and get reference to bot for UpdateExecutor
+        let bot_arc = Arc::new(self.bot);
+        let handler = ConstellationBotHandler {
+            bot: bot_arc.clone(),
+        };
 
         let mut client = Client::builder(&self.token, intents)
             .event_handler(handler)
             .await
             .map_err(|e| SpiralError::Discord(Box::new(e)))?;
 
-        info!("[SpiralConstellation] Discord client created, starting...");
+        // Get Discord HTTP client for UpdateExecutor
+        let discord_http = client.http.clone();
+
+        // 🔄 START UPDATE EXECUTOR: Background task for processing self-update requests
+        {
+            let update_queue = bot_arc.update_queue.clone();
+            let claude_client = bot_arc.claude_client.as_ref().map(|c| c.as_ref().clone());
+            let discord_http_clone = discord_http.clone();
+
+            tokio::spawn(async move {
+                info!("[UpdateExecutor] Starting background update processor...");
+
+                // Create UpdateExecutor
+                let mut update_executor =
+                    UpdateExecutor::new(update_queue, claude_client, Some(discord_http_clone));
+
+                // Run the queue processing loop
+                update_executor.process_queue().await;
+
+                warn!("[UpdateExecutor] Update processor stopped unexpectedly");
+            });
+        }
+
+        info!("[SpiralConstellation] Discord client created with update executor, starting...");
 
         // Use start_autosharded which blocks until the client disconnects
         if let Err(e) = client.start_autosharded().await {
