@@ -196,6 +196,24 @@ For complete patterns and examples, see [Decoupling Patterns](docs/DECOUPLING_PA
 
 **Implementation**: Follow the modular command structure in `src/discord/commands/` as the standard pattern.
 
+### Problem Space Boundary Standard
+
+**Definition**: Only suggest solutions and create implementations within the established problem space. Proactively identify what technologies and libraries are already in use rather than assuming.
+
+**Principles**:
+
+- **Discover, Don't Assume**: Check Cargo.toml, package.json, and existing code to identify current dependencies
+- **Stay Within Boundaries**: Only use languages and libraries already present in the project
+- **No New Dependencies Without Discussion**: Don't add new libraries without explicit user approval
+- **Check Before Suggesting**: Run `cargo tree` or `npm ls` to verify a library exists before using it
+
+**Examples**:
+
+- ✅ GOOD: "Let me check Cargo.toml to see what HTTP client we're using"
+- ❌ BAD: "Let's use reqwest for HTTP" (without checking if it's already in use)
+- ✅ GOOD: "I see we're using tokio, so I'll use tokio::spawn"
+- ❌ BAD: "Let's add async-std for better performance" (introducing new dependency)
+
 ### File-Struct Naming Convention Standard
 
 **Definition**: The main implementation struct in any file must share the same name as the file itself for consistency and discoverability.
@@ -523,7 +541,35 @@ if response.success {
 
 ## 🚨 CRITICAL: Task Completion Requirements
 
-**NEVER declare a task "complete" or "done" without running these validations:**
+### Pre-Completion Quality Checklist
+
+**Before marking ANY todo item as complete, verify:**
+
+1. **Correctness Analysis**
+   - Are the changes exactly what was requested?
+   - Do they solve the right problem?
+   - Is the implementation approach appropriate?
+
+2. **Specificity Check**
+   - Are all variable/function names specific and descriptive?
+   - No ambiguous names like `data`, `temp`, `thing`
+   - Clear intent from naming alone
+
+3. **Documentation Quality**
+   - All code blocks have language highlighting (```rust, ```typescript, etc.)
+   - No ambiguous instructions or explanations
+   - Clear examples where needed
+   - File paths are absolute and correct
+
+4. **Code Quality**
+   - Follows SOLID principles
+   - No code duplication (DRY)
+   - Error handling is explicit
+   - No mock data or fake implementations
+
+### Technical Validation
+
+**NEVER declare a task "complete" without running these validations:**
 
 1. **Run Tests** - `cargo test` (ALL tests MUST pass)
 2. **Check Compilation** - `cargo check --all-targets` (MUST compile)
