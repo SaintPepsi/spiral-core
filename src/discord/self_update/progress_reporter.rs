@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tokio::time::interval;
 use serenity::http::Http;
-use serenity::model::id::ChannelId;
+use serenity::model::id::{ChannelId, MessageId};
 use tracing::{debug, error, info};
 
 /// Progress information for an ongoing update
@@ -91,6 +91,8 @@ pub struct ProgressReporter {
     channel_id: ChannelId,
     /// Whether reporting is active
     active: Arc<RwLock<bool>>,
+    /// Message ID to edit (if editing mode is enabled)
+    message_id: Arc<RwLock<Option<MessageId>>>,
 }
 
 impl ProgressReporter {
@@ -117,7 +119,13 @@ impl ProgressReporter {
             discord_http,
             channel_id,
             active: Arc::new(RwLock::new(true)),
+            message_id: Arc::new(RwLock::new(None)),
         }
+    }
+    
+    /// Set the message ID to edit instead of sending new messages
+    pub async fn set_message_id(&self, message_id: MessageId) {
+        *self.message_id.write().await = Some(message_id);
     }
     
     /// Start the background progress reporting task
@@ -126,6 +134,7 @@ impl ProgressReporter {
         let discord_http = self.discord_http.clone();
         let channel_id = self.channel_id;
         let active = self.active.clone();
+        let message_id = self.message_id.clone();
         
         tokio::spawn(async move {
             let mut ticker = interval(report_interval);
@@ -142,31 +151,32 @@ impl ProgressReporter {
                 // Get current progress
                 let current = progress.read().await.clone();
                 
-                // Don't report if we just reported
-                if current.last_report_at.elapsed() < Duration::from_secs(5) {
+                // Don't report too frequently (Discord rate limit protection)
+                if current.last_report_at.elapsed() < Duration::from_millis(500) {
                     continue;
                 }
                 
-                // Format progress message
-                let elapsed = current.started_at.elapsed();
-                let progress_bar = Self::create_progress_bar(current.percent_complete);
-                
-                let message = format!(
-                    "{} **{}** ({}%)\n{}\n⏱️ {} | 📊 {}/{} tasks | 💬 {}",
-                    current.current_phase.emoji(),
-                    current.current_phase.name(),
-                    current.percent_complete,
-                    progress_bar,
-                    Self::format_duration(elapsed),
-                    current.tasks_completed,
-                    current.total_tasks,
-                    current.status_message
-                );
+                // Format progress message using the shared static method
+                let message = ProgressReporter::format_progress(&current);
                 
                 // Send to Discord if available
                 if let Some(ref http) = discord_http {
-                    if let Err(e) = channel_id.say(http, &message).await {
-                        error!("[ProgressReporter] Failed to send progress update: {}", e);
+                    // Check if we should edit an existing message or send a new one
+                    let msg_id = *message_id.read().await;
+                    if let Some(msg_id) = msg_id {
+                        // Edit existing message
+                        if let Err(e) = channel_id.edit_message(
+                            http,
+                            msg_id,
+                            serenity::builder::EditMessage::new().content(&message),
+                        ).await {
+                            error!("[ProgressReporter] Failed to edit progress message: {}", e);
+                        }
+                    } else {
+                        // Send new message (original behavior)
+                        if let Err(e) = channel_id.say(http, &message).await {
+                            error!("[ProgressReporter] Failed to send progress update: {}", e);
+                        }
                     }
                 }
                 
@@ -184,57 +194,132 @@ impl ProgressReporter {
     
     /// Update the current phase
     pub async fn set_phase(&self, phase: UpdatePhase) {
-        let mut progress = self.progress.write().await;
-        progress.current_phase = phase.clone();
+        {
+            let mut progress = self.progress.write().await;
+            progress.current_phase = phase.clone();
+            
+            // Update percentage based on phase
+            progress.percent_complete = match phase {
+                UpdatePhase::Initializing => 0,
+                UpdatePhase::PreflightChecks => 10,
+                UpdatePhase::Planning => 20,
+                UpdatePhase::AwaitingApproval => 30,
+                UpdatePhase::CreatingSnapshot => 40,
+                UpdatePhase::Implementing => 50,
+                UpdatePhase::Validating => 80,
+                UpdatePhase::Completing => 95,
+                UpdatePhase::Complete => 100,
+                UpdatePhase::Failed => progress.percent_complete, // Keep current
+            };
+            
+            info!(
+                "[ProgressReporter] Phase changed to {:?} ({}%)",
+                phase, progress.percent_complete
+            );
+        }
         
-        // Update percentage based on phase
-        progress.percent_complete = match phase {
-            UpdatePhase::Initializing => 0,
-            UpdatePhase::PreflightChecks => 10,
-            UpdatePhase::Planning => 20,
-            UpdatePhase::AwaitingApproval => 30,
-            UpdatePhase::CreatingSnapshot => 40,
-            UpdatePhase::Implementing => 50,
-            UpdatePhase::Validating => 80,
-            UpdatePhase::Completing => 95,
-            UpdatePhase::Complete => 100,
-            UpdatePhase::Failed => progress.percent_complete, // Keep current
-        };
-        
-        info!(
-            "[ProgressReporter] Phase changed to {:?} ({}%)",
-            phase, progress.percent_complete
-        );
+        // Automatically update the Discord message
+        self.force_update().await;
     }
     
     /// Update the status message
     pub async fn set_status(&self, message: String) {
-        let mut progress = self.progress.write().await;
-        progress.status_message = message.clone();
-        debug!("[ProgressReporter] Status: {}", message);
+        {
+            let mut progress = self.progress.write().await;
+            progress.status_message = message.clone();
+            debug!("[ProgressReporter] Status: {}", message);
+        }
+        
+        // Automatically update the Discord message
+        self.force_update().await;
     }
     
     /// Update task completion count
     pub async fn increment_tasks_completed(&self) {
-        let mut progress = self.progress.write().await;
-        progress.tasks_completed += 1;
-        
-        // Update percentage if in implementation phase
-        if progress.current_phase == UpdatePhase::Implementing {
-            let task_progress = (progress.tasks_completed as f32 / progress.total_tasks as f32) * 30.0;
-            progress.percent_complete = 50 + task_progress as u8;
+        {
+            let mut progress = self.progress.write().await;
+            progress.tasks_completed += 1;
+            
+            // Update percentage if in implementation phase
+            if progress.current_phase == UpdatePhase::Implementing {
+                let task_progress = (progress.tasks_completed as f32 / progress.total_tasks as f32) * 30.0;
+                progress.percent_complete = 50 + task_progress as u8;
+            }
         }
+        
+        // Automatically update the Discord message
+        self.force_update().await;
     }
     
     /// Set custom percentage
     pub async fn set_percent(&self, percent: u8) {
-        let mut progress = self.progress.write().await;
-        progress.percent_complete = percent.min(100);
+        {
+            let mut progress = self.progress.write().await;
+            progress.percent_complete = percent.min(100);
+        }
+        
+        // Automatically update the Discord message
+        self.force_update().await;
     }
     
     /// Stop progress reporting
     pub async fn stop(&self) {
         *self.active.write().await = false;
+    }
+    
+    /// Reset the start time (useful for demos that have setup time)
+    pub async fn reset_timer(&self) {
+        let mut progress = self.progress.write().await;
+        progress.started_at = Instant::now();
+        progress.last_report_at = Instant::now();
+    }
+    
+    /// Force an immediate progress update (bypasses rate limiting)
+    pub async fn force_update(&self) {
+        if let Some(ref http) = self.discord_http {
+            let message = self.format_progress_message().await;
+            
+            // Check if we should edit an existing message
+            let msg_id = *self.message_id.read().await;
+            if let Some(msg_id) = msg_id {
+                // Edit existing message
+                if let Err(e) = self.channel_id.edit_message(
+                    http,
+                    msg_id,
+                    serenity::builder::EditMessage::new().content(&message),
+                ).await {
+                    error!("[ProgressReporter] Failed to edit progress message: {}", e);
+                }
+            } else {
+                // Send new message
+                if let Err(e) = self.channel_id.say(http, &message).await {
+                    error!("[ProgressReporter] Failed to send progress update: {}", e);
+                }
+            }
+        }
+    }
+    
+    /// Format the current progress as a Discord message
+    pub async fn format_progress_message(&self) -> String {
+        let progress = self.progress.read().await;
+        Self::format_progress(&progress)
+    }
+    
+    /// Format progress data as a Discord message (static helper)
+    fn format_progress(progress: &UpdateProgress) -> String {
+        let elapsed = progress.started_at.elapsed();
+        
+        format!(
+            "{} **{}** ({}%)\n{}\n⏱️ {} | 📊 {}/{} tasks | 💬 {}",
+            progress.current_phase.emoji(),
+            progress.current_phase.name(),
+            progress.percent_complete,
+            Self::create_progress_bar(progress.percent_complete),
+            Self::format_duration(elapsed),
+            progress.tasks_completed,
+            progress.total_tasks,
+            progress.status_message
+        )
     }
     
     /// Create a visual progress bar
@@ -243,9 +328,9 @@ impl ProgressReporter {
         let empty = 20 - filled;
         
         format!(
-            "[{}{}]",
-            "█".repeat(filled),
-            "░".repeat(empty)
+            "{}{}",
+            "▰".repeat(filled),
+            "▱".repeat(empty)
         )
     }
     
@@ -268,11 +353,11 @@ mod tests {
     
     #[test]
     fn test_progress_bar_creation() {
-        assert_eq!(ProgressReporter::create_progress_bar(0), "[░░░░░░░░░░░░░░░░░░░░]");
-        assert_eq!(ProgressReporter::create_progress_bar(25), "[█████░░░░░░░░░░░░░░░]");
-        assert_eq!(ProgressReporter::create_progress_bar(50), "[██████████░░░░░░░░░░]");
-        assert_eq!(ProgressReporter::create_progress_bar(75), "[███████████████░░░░░]");
-        assert_eq!(ProgressReporter::create_progress_bar(100), "[████████████████████]");
+        assert_eq!(ProgressReporter::create_progress_bar(0), "▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱");
+        assert_eq!(ProgressReporter::create_progress_bar(25), "▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱");
+        assert_eq!(ProgressReporter::create_progress_bar(50), "▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱");
+        assert_eq!(ProgressReporter::create_progress_bar(75), "▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱");
+        assert_eq!(ProgressReporter::create_progress_bar(100), "▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰");
     }
     
     #[test]
