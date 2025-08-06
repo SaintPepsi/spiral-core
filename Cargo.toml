@@ -17,9 +17,9 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-axum = "0.7"
-tower = "0.4"
-tower-http = { version = "0.5", features = ["trace", "cors"] }
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors"] }
 clap = { version = "4.0", features = ["derive"] }
 config = "0.14"
 async-trait = "0.1"
@@ -43,7 +43,7 @@ serenity = { version = "0.12", default-features = false, features = ["client", "
 [dev-dependencies]
 tokio-test = "0.4"
 mockito = "1.0"
-tower = { version = "0.4", features = ["util"] }
+tower = { version = "0.5", features = ["util"] }
 serial_test = "3.0"
 futures = "0.3"
 tempfile = "3.0"

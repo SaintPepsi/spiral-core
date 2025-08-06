@@ -1,13 +1,13 @@
 #[cfg(test)]
 mod tests {
-    use super::super::UpdateLogger;
+    use super::super::StructuredLogger;
     use std::fs;
     use std::path::Path;
     
     #[tokio::test]
     async fn test_structured_logging() {
         // Create a logger
-        let mut logger = UpdateLogger::new(
+        let mut logger = StructuredLogger::new(
             "test-update-123".to_string(),
             "test-feature".to_string()
         ).expect("Failed to create logger");
