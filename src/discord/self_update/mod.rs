@@ -61,6 +61,7 @@ mod planner;
 mod progress_reporter;
 mod queue;
 mod status_tracker;
+mod structured_logger;
 mod system_lock;
 mod types;
 mod validation;
@@ -82,6 +83,7 @@ pub use planner::{
 pub use progress_reporter::{ProgressReporter, UpdatePhase, UpdateProgress};
 pub use queue::{UpdateQueue, UpdateQueueStatus};
 pub use status_tracker::{ImplementationProgress, StatusTracker, UpdateType};
+pub use structured_logger::StructuredLogger;
 pub use system_lock::{SystemLock, LockToken};
 pub use types::{SelfUpdateRequest, UpdateStatus};
 pub use validation::{PreflightChecker, UpdateValidator};
@@ -92,3 +94,5 @@ pub const MAX_UPDATE_CONTENT_SIZE: usize = 64 * 1024; // 64KB
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod structured_logger_test;

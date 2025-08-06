@@ -196,6 +196,17 @@ For complete patterns and examples, see [Decoupling Patterns](docs/DECOUPLING_PA
 
 **Implementation**: Follow the modular command structure in `src/discord/commands/` as the standard pattern.
 
+### File-Struct Naming Convention Standard
+
+**Definition**: The main implementation struct in any file must share the same name as the file itself for consistency and discoverability.
+
+**Examples**:
+- File: `structured_logger.rs` → Struct: `StructuredLogger`
+- File: `update_executor.rs` → Struct: `UpdateExecutor`
+- File: `approval_manager.rs` → Struct: `ApprovalManager`
+
+**Rationale**: This convention makes it easier to navigate the codebase and understand which file contains which implementation.
+
 ### No Bullshit Code Standard
 
 **Definition**: Never implement fake functionality, hardcoded status messages, or placeholder values that pretend to show real data when no actual implementation exists.

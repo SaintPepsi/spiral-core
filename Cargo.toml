@@ -32,6 +32,10 @@ governor = "0.6"
 subtle = "2.5"
 rand = "0.8"
 
+# Compression for log archiving
+flate2 = "1.0"
+tar = "0.4"
+
 # Discord integration
 serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model"] }
 
