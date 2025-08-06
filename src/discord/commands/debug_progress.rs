@@ -4,8 +4,8 @@ use crate::discord::{
     self_update::{ProgressReporter, UpdatePhase},
 };
 use serenity::{model::channel::Message, prelude::Context};
-use std::time::Duration;
-use tracing::info;
+use std::{sync::Arc, time::Duration};
+use tracing::{error, info};
 
 /// Debug command for testing progress bar
 pub struct DebugProgressCommand;
@@ -20,7 +20,7 @@ impl DebugProgressCommand {
         info!("[DebugProgressCommand] Starting progress bar demo");
         
         // Send initial message
-        if let Err(e) = msg.channel_id.say(&ctx.http, "🚀 Starting progress bar demo (10 seconds)...").await {
+        if let Err(e) = msg.channel_id.say(&ctx.http, "🚀 Starting progress bar demo (15 seconds)...").await {
             return format!("Failed to send message: {}", e);
         }
         
@@ -32,30 +32,41 @@ impl DebugProgressCommand {
             5, // 5 demo tasks
         );
         
-        // Start reporting with fast updates (every 2 seconds for demo)
-        progress_reporter.start_reporting(Duration::from_secs(2));
+        // Start reporting with fast updates (every 3 seconds for demo)
+        // This ensures we see updates since the min time between reports is 5 seconds
+        progress_reporter.start_reporting(Duration::from_secs(3));
         
-        // Simulate update phases over 10 seconds with delays between phases
+        // Wait a moment for the reporter to start
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        
+        // Phase 1: Initializing
         progress_reporter.set_phase(UpdatePhase::Initializing).await;
         progress_reporter.set_status("Starting demo update...".to_string()).await;
         
-        tokio::time::sleep(Duration::from_millis(1500)).await;
+        // Force an immediate update by manually sending
+        Self::send_progress_update(&progress_reporter, &ctx.http, msg.channel_id).await;
         
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        
+        // Phase 2: Preflight
         progress_reporter.set_phase(UpdatePhase::PreflightChecks).await;
         progress_reporter.set_status("Running preflight checks...".to_string()).await;
         
-        tokio::time::sleep(Duration::from_millis(1500)).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
         
+        // Phase 3: Planning  
         progress_reporter.set_phase(UpdatePhase::Planning).await;
         progress_reporter.set_status("Creating implementation plan...".to_string()).await;
         
-        tokio::time::sleep(Duration::from_millis(1500)).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
         
+        // Phase 4: Snapshot (this should trigger an auto-update since >5 seconds passed)
         progress_reporter.set_phase(UpdatePhase::CreatingSnapshot).await;
         progress_reporter.set_status("Creating git snapshot...".to_string()).await;
         
-        tokio::time::sleep(Duration::from_millis(1500)).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
         
+        // Phase 5: Implementing
         progress_reporter.set_phase(UpdatePhase::Implementing).await;
         progress_reporter.set_status("Implementing changes...".to_string()).await;
         
@@ -66,23 +77,52 @@ impl DebugProgressCommand {
             progress_reporter.set_status(format!("Implementing task {} of 5...", i)).await;
         }
         
-        tokio::time::sleep(Duration::from_millis(1000)).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
         
+        // Phase 6: Validating (should trigger another auto-update)
         progress_reporter.set_phase(UpdatePhase::Validating).await;
         progress_reporter.set_status("Running validation pipeline...".to_string()).await;
         
-        tokio::time::sleep(Duration::from_millis(1500)).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
         
+        // Phase 7: Complete
         progress_reporter.set_phase(UpdatePhase::Complete).await;
         progress_reporter.set_status("Demo completed successfully!".to_string()).await;
         
-        // Let the final status show
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        // Force final update
+        Self::send_progress_update(&progress_reporter, &ctx.http, msg.channel_id).await;
         
         // Stop reporting
         progress_reporter.stop().await;
         
-        "✅ **Progress Bar Demo Complete!**\nThe progress bar ran for ~10 seconds showing various update phases.\n\nTo test with a real update, mention the bot with an update request.".to_string()
+        "✅ **Progress Bar Demo Complete!**\nThe progress bar ran for ~15 seconds showing various update phases.\n\nYou should have seen 3-4 progress updates during the demo.".to_string()
+    }
+    
+    /// Manually send a progress update (for demo purposes)
+    async fn send_progress_update(
+        reporter: &ProgressReporter, 
+        http: &Arc<serenity::http::Http>,
+        channel_id: serenity::model::id::ChannelId
+    ) {
+        // Access the progress data
+        let progress = reporter.progress.read().await;
+        let elapsed = progress.started_at.elapsed();
+        
+        let message = format!(
+            "{} **{}** ({}%)\n{}\n⏱️ {} | 📊 {}/{} tasks | 💬 {}",
+            progress.current_phase.emoji(),
+            progress.current_phase.name(),
+            progress.percent_complete,
+            ProgressReporter::create_progress_bar(progress.percent_complete),
+            ProgressReporter::format_duration(elapsed),
+            progress.tasks_completed,
+            progress.total_tasks,
+            progress.status_message
+        );
+        
+        if let Err(e) = channel_id.say(http, &message).await {
+            error!("[DebugProgressCommand] Failed to send progress update: {}", e);
+        }
     }
 }
 

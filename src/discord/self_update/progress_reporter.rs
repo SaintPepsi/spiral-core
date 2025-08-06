@@ -84,7 +84,7 @@ impl UpdatePhase {
 /// Progress reporter that sends periodic updates to Discord
 pub struct ProgressReporter {
     /// Current progress state
-    progress: Arc<RwLock<UpdateProgress>>,
+    pub progress: Arc<RwLock<UpdateProgress>>,
     /// Discord HTTP client for sending updates
     discord_http: Option<Arc<Http>>,
     /// Channel to send updates to
@@ -238,7 +238,7 @@ impl ProgressReporter {
     }
     
     /// Create a visual progress bar
-    fn create_progress_bar(percent: u8) -> String {
+    pub fn create_progress_bar(percent: u8) -> String {
         let filled = (percent as usize * 20) / 100;
         let empty = 20 - filled;
         
@@ -250,7 +250,7 @@ impl ProgressReporter {
     }
     
     /// Format duration as human-readable string
-    fn format_duration(duration: Duration) -> String {
+    pub fn format_duration(duration: Duration) -> String {
         let secs = duration.as_secs();
         if secs < 60 {
             format!("{}s", secs)
