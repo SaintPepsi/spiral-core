@@ -428,12 +428,29 @@ impl UpdateExecutor {
             // Process the request
             let result = self.process_request(request.clone()).await;
 
-            // Update final status
-            let _final_status = if result.success {
-                UpdateStatus::Completed
+            // Update final status and handle retries
+            if result.success {
+                let _final_status = UpdateStatus::Completed;
             } else {
-                UpdateStatus::Failed(result.error.clone().unwrap_or_default())
-            };
+                let error_msg = result.error.clone().unwrap_or_default();
+                let _final_status = UpdateStatus::Failed(error_msg.clone());
+                
+                // Determine if this failure is retryable
+                if self.is_retryable_error(&error_msg) && request.retry_count < 3 {
+                    info!(
+                        "[UpdateExecutor] Request {} failed with retryable error, attempting retry {}/3",
+                        request.id, request.retry_count + 1
+                    );
+                    
+                    // Attempt to retry the request
+                    if let Err(e) = self.queue.retry_request(request.clone()).await {
+                        warn!("[UpdateExecutor] Failed to retry request: {}", e);
+                    } else {
+                        // Notify Discord about the retry
+                        self.notify_retry(&request, request.retry_count + 1).await;
+                    }
+                }
+            }
             // Queue will handle status updates internally
 
             // Send final result to Discord
@@ -701,6 +718,53 @@ Implement all tasks according to the plan."#,
         0
     }
 
+    /// Determine if an error is retryable
+    fn is_retryable_error(&self, error: &str) -> bool {
+        // Network/transient errors are retryable
+        if error.contains("network") || 
+           error.contains("timeout") || 
+           error.contains("connection") ||
+           error.contains("temporarily") {
+            return true;
+        }
+        
+        // Git conflicts might be resolved on retry
+        if error.contains("git") && error.contains("conflict") {
+            return true;
+        }
+        
+        // Claude API rate limits are retryable
+        if error.contains("rate limit") || error.contains("429") {
+            return true;
+        }
+        
+        // System resource issues might be temporary
+        if error.contains("memory") || error.contains("disk space") {
+            return true;
+        }
+        
+        // Most other errors are not retryable (compilation errors, validation failures, etc.)
+        false
+    }
+    
+    /// Notify Discord about a retry attempt
+    async fn notify_retry(&self, request: &SelfUpdateRequest, retry_number: u32) {
+        if let Some(ref http) = self.discord_http {
+            let channel_id = ChannelId::new(request.channel_id);
+            let message = format!(
+                "⚠️ **Update Retry**\n\n\
+                The update `{}` encountered a retryable error.\n\
+                Attempting retry {}/3...\n\
+                The update will be re-queued and processed again shortly.",
+                request.codename, retry_number
+            );
+            
+            if let Err(e) = channel_id.say(http, message).await {
+                warn!("[UpdateExecutor] Failed to send retry notification: {}", e);
+            }
+        }
+    }
+    
     /// Send final result to Discord
     async fn send_final_result(&self, result: &UpdateResult) {
         if let Some(ref http) = self.discord_http {
@@ -718,15 +782,22 @@ Implement all tasks according to the plan."#,
                     result.snapshot_id.as_deref().unwrap_or("N/A")
                 )
             } else {
+                let retry_info = if result.request.retry_count > 0 {
+                    format!("\n**Retries**: {}/3", result.request.retry_count)
+                } else {
+                    String::new()
+                };
+                
                 format!(
                     "❌ **Update Failed**\n\n\
                     **Request**: {}\n\
                     **Codename**: {}\n\
-                    **Error**: {}\n\
+                    **Error**: {}\n{}\
                     **Status**: Changes rolled back",
                     result.request.description,
                     result.request.codename,
-                    result.error.as_deref().unwrap_or("Unknown error")
+                    result.error.as_deref().unwrap_or("Unknown error"),
+                    retry_info
                 )
             };
 

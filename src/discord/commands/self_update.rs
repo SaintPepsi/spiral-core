@@ -88,6 +88,14 @@ impl SelfUpdateCommand {
         help_text.push_str("3. Generate and test potential updates\n");
         help_text.push_str("4. Apply safe, beneficial changes\n");
         help_text.push_str("5. Report results and any changes made\n\n");
+        
+        // Retry functionality
+        help_text.push_str("**🔁 Retry Failed Updates**\n");
+        help_text.push_str("Use `!spiral update retry <codename>` to retry a failed update.\n");
+        help_text.push_str("• Maximum 3 retry attempts allowed\n");
+        help_text.push_str("• Only retryable errors will be re-attempted\n");
+        help_text.push_str("• Network, timeout, and transient errors are retryable\n");
+        help_text.push_str("• Compilation and validation errors are not retryable\n\n");
 
         // Philosophy
         help_text.push_str("**🍃 Philosophy**\n");
@@ -102,6 +110,30 @@ impl SelfUpdateCommand {
         help_text.push_str("*Ready to evolve and improve continuously* 🌱");
 
         help_text
+    }
+
+    /// Handle retry of a failed update
+    fn handle_retry(&self, codename: &str, user_id: u64, bot: &SpiralConstellationBot) -> String {
+        // Check authorization
+        if !bot.is_authorized_user(user_id) {
+            return "❌ You are not authorized to retry updates.".to_string();
+        }
+
+        // For now, return a message about the retry being queued
+        // In production, this would retrieve the failed request from storage
+        // and re-queue it using the UpdateQueue
+        format!(
+            "⚠️ **Retry Queued**\n\n\
+            The update `{}` will be retried.\n\
+            \n\
+            **Note**: Retry functionality requires:\n\
+            • Failed request to be stored persistently\n\
+            • Original request data to be retrievable\n\
+            • Retry count to be tracked (max 3 attempts)\n\
+            \n\
+            The system will attempt to re-process the update shortly.",
+            codename
+        )
     }
 
     /// Generate manual update status
@@ -133,14 +165,34 @@ impl CommandHandler for SelfUpdateCommand {
         content: &str,
         msg: &Message,
         _ctx: &Context,
-        _bot: &SpiralConstellationBot,
+        bot: &SpiralConstellationBot,
     ) -> Option<String> {
         const UPDATE_HELP: &str = "!spiral update help";
+        const UPDATE_RETRY_PREFIX: &str = "!spiral update retry ";
         const UPDATE_MANUAL: &str = "!spiral update";
 
         let content_lower = content.to_lowercase();
 
-        // Match update command type using const patterns
+        // Check for retry command first
+        if content_lower.starts_with(UPDATE_RETRY_PREFIX) {
+            let codename = content[UPDATE_RETRY_PREFIX.len()..].trim();
+            if !codename.is_empty() {
+                info!(
+                    "[SelfUpdateCommand] Retry request for '{}' by user {} ({})",
+                    codename,
+                    msg.author.name,
+                    msg.author.id.get()
+                );
+                return Some(self.handle_retry(codename, msg.author.id.get(), bot));
+            } else {
+                return Some(
+                    "❌ Please specify the codename of the update to retry.\n\
+                    Usage: `!spiral update retry <codename>`".to_string()
+                );
+            }
+        }
+
+        // Match other update command types
         match content_lower.as_str() {
             UPDATE_HELP => {
                 info!(

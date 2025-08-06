@@ -153,6 +153,37 @@ impl UpdateQueue {
         // Clear entire queue on failure as per spec
         inner.requests.clear();
     }
+    
+    /// Retry a failed request by re-queuing it with incremented retry count
+    pub async fn retry_request(&self, mut request: SelfUpdateRequest) -> Result<()> {
+        const MAX_RETRIES: u32 = 3;
+        
+        // Check if we've exceeded max retries
+        if request.retry_count >= MAX_RETRIES {
+            return Err(SpiralError::Validation(format!(
+                "Request {} has exceeded maximum retries ({})",
+                request.id, MAX_RETRIES
+            )));
+        }
+        
+        // Increment retry count
+        request.retry_count += 1;
+        
+        // Reset status to queued
+        request.status = UpdateStatus::Queued;
+        
+        // Generate new ID with retry suffix
+        if !request.id.contains("-retry-") {
+            request.id = format!("{}-retry-{}", request.id, request.retry_count);
+        } else {
+            // Update existing retry suffix
+            let base_id = request.id.split("-retry-").next().unwrap_or(&request.id);
+            request.id = format!("{}-retry-{}", base_id, request.retry_count);
+        }
+        
+        // Add back to queue
+        self.try_add_request(request).await
+    }
 
     /// Check if system is shutting down
     pub async fn is_shutting_down(&self) -> bool {
