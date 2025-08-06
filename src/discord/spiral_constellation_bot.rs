@@ -10,7 +10,7 @@ use crate::{
         reaction_handler,
         self_update::{
             ApprovalManager, GitOperations, PreflightChecker, SelfUpdateRequest, StatusTracker,
-            UpdateExecutor, UpdateQueue, UpdateStatus, UpdateType, UpdateValidator,
+            SystemLock, UpdateExecutor, UpdateQueue, UpdateStatus, UpdateType, UpdateValidator,
         },
         IntentClassifier, IntentResponse, IntentType, MessageSecurityValidator, RiskLevel,
         SecureMessageHandler,
@@ -163,6 +163,7 @@ pub struct SpiralConstellationBot {
     pub secure_message_handler: Arc<SecureMessageHandler>,
     update_queue: Arc<UpdateQueue>,
     approval_manager: Arc<ApprovalManager>,
+    system_lock: Arc<SystemLock>,
     command_router: CommandRouter,
     discord_config: DiscordConfig,
     reaction_handler_manager: Arc<reaction_handler::ReactionHandlerManager>,
@@ -361,6 +362,7 @@ impl SpiralConstellationBot {
             secure_message_handler,
             update_queue: Arc::new(UpdateQueue::new()),
             approval_manager: Arc::new(ApprovalManager::new()),
+            system_lock: Arc::new(SystemLock::new()),
             command_router: CommandRouter::new(),
             discord_config,
             reaction_handler_manager: Arc::new(reaction_handler::ReactionHandlerManager::new()),
@@ -405,6 +407,7 @@ impl SpiralConstellationBot {
             secure_message_handler,
             update_queue: Arc::new(UpdateQueue::new()),
             approval_manager: Arc::new(ApprovalManager::new()),
+            system_lock: Arc::new(SystemLock::new()),
             command_router: CommandRouter::new(),
             discord_config,
             reaction_handler_manager: Arc::new(reaction_handler::ReactionHandlerManager::new()),
@@ -3681,6 +3684,7 @@ impl SpiralConstellationBotRunner {
             let claude_client = bot_arc.claude_client.as_ref().map(|c| c.as_ref().clone());
             let discord_http_clone = discord_http.clone();
             let approval_manager = bot_arc.approval_manager.clone();
+            let system_lock = bot_arc.system_lock.clone();
 
             tokio::spawn(async move {
                 info!("[UpdateExecutor] Starting background update processor...");
@@ -3691,6 +3695,7 @@ impl SpiralConstellationBotRunner {
                     claude_client,
                     Some(discord_http_clone),
                     approval_manager,
+                    system_lock,
                 );
 
                 // Run the queue processing loop

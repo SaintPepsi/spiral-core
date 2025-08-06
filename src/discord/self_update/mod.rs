@@ -59,6 +59,7 @@ pub mod pipeline;
 mod planner;
 mod queue;
 mod status_tracker;
+mod system_lock;
 mod types;
 mod validation;
 
@@ -77,6 +78,7 @@ pub use planner::{
 };
 pub use queue::{UpdateQueue, UpdateQueueStatus};
 pub use status_tracker::{ImplementationProgress, StatusTracker, UpdateType};
+pub use system_lock::{SystemLock, LockToken};
 pub use types::{SelfUpdateRequest, UpdateStatus};
 pub use validation::{PreflightChecker, UpdateValidator};
 

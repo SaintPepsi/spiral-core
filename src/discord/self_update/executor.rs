@@ -5,8 +5,8 @@
 
 use super::{
     format_plan_for_discord, ApprovalManager, ApprovalResult, GitOperations, ImplementationPlan,
-    PreflightChecker, SelfUpdateRequest, StatusTracker, UpdatePlanner, UpdateQueue, UpdateStatus,
-    ValidationPipeline, format_approval_instructions,
+    PreflightChecker, SelfUpdateRequest, StatusTracker, SystemLock, UpdatePlanner, 
+    UpdateQueue, UpdateStatus, ValidationPipeline, format_approval_instructions,
 };
 use crate::{claude_code::ClaudeCodeClient, Result, error::SpiralError};
 use serenity::{http::Http, model::id::ChannelId};
@@ -37,14 +37,14 @@ pub struct UpdateExecutor {
     queue: Arc<UpdateQueue>,
     /// Claude Code client for AI operations
     claude_client: Option<ClaudeCodeClient>,
-    /// Validation pipeline for checking changes
-    pipeline: ValidationPipeline,
     /// Status tracker for monitoring progress
     status_tracker: Arc<RwLock<StatusTracker>>,
     /// Discord HTTP client for sending updates
     discord_http: Option<Arc<Http>>,
     /// Approval manager for handling plan approvals
     approval_manager: Arc<ApprovalManager>,
+    /// System lock to prevent concurrent updates
+    system_lock: Arc<SystemLock>,
 }
 
 impl UpdateExecutor {
@@ -54,14 +54,15 @@ impl UpdateExecutor {
         claude_client: Option<ClaudeCodeClient>,
         discord_http: Option<Arc<Http>>,
         approval_manager: Arc<ApprovalManager>,
+        system_lock: Arc<SystemLock>,
     ) -> Self {
         Self {
             queue,
             claude_client,
-            pipeline: ValidationPipeline::new(),
             status_tracker: Arc::new(RwLock::new(StatusTracker)),
             discord_http,
             approval_manager,
+            system_lock,
         }
     }
 
@@ -71,6 +72,50 @@ impl UpdateExecutor {
             "[UpdateExecutor] Processing update request: {} ({})",
             request.id, request.codename
         );
+
+        // Try to acquire system lock
+        let lock_token = match self.system_lock.try_acquire(request.id.clone()).await {
+            Ok(Some(token)) => token,
+            Ok(None) => {
+                // Another update is in progress
+                if let Some((holder_id, duration)) = self.system_lock.current_holder().await {
+                    let message = format!(
+                        "Another update ({}) is currently in progress (running for {} seconds). Please wait for it to complete.",
+                        holder_id,
+                        duration.as_secs()
+                    );
+                    warn!("[UpdateExecutor] {}", message);
+                    self.update_discord_status(&request, &format!("🔒 {}", message)).await;
+                    return self.create_failure_result(request, message);
+                } else {
+                    return self.create_failure_result(
+                        request,
+                        "System is locked by another update. Please try again later.".to_string(),
+                    );
+                }
+            }
+            Err(e) => {
+                error!("[UpdateExecutor] Failed to acquire system lock: {}", e);
+                return self.create_failure_result(
+                    request,
+                    format!("Failed to acquire system lock: {}", e),
+                );
+            }
+        };
+        
+        info!("[UpdateExecutor] System lock acquired for {}", request.id);
+        
+        // Create a scope to ensure lock is released at the end
+        let result = self.execute_update_with_lock(request, &lock_token).await;
+        
+        // Release the lock
+        self.system_lock.release(lock_token).await;
+        
+        result
+    }
+    
+    /// Execute the update while holding the lock
+    async fn execute_update_with_lock(&mut self, request: SelfUpdateRequest, _lock_token: &super::LockToken) -> UpdateResult {
 
         // Update status to processing
         self.update_discord_status(&request, "🔧 Processing update request...")
@@ -405,14 +450,17 @@ Implement all tasks according to the plan."#,
     }
 
     /// Run the validation pipeline on the changes
-    async fn run_validation_pipeline(&mut self, request: &SelfUpdateRequest) -> Result<String> {
+    async fn run_validation_pipeline(&self, request: &SelfUpdateRequest) -> Result<String> {
         debug!(
             "[UpdateExecutor] Running validation pipeline for {}",
             request.id
         );
 
+        // Create a new validation pipeline for this run
+        let mut pipeline = ValidationPipeline::new();
+        
         // Run the validation pipeline
-        let result = self.pipeline.execute().await?;
+        let result = pipeline.execute().await?;
 
         // Format results for return
         let results = format!(
@@ -547,7 +595,8 @@ mod tests {
     async fn test_update_executor_creation() {
         let queue = Arc::new(UpdateQueue::new());
         let approval_manager = Arc::new(ApprovalManager::new());
-        let executor = UpdateExecutor::new(queue, None, None, approval_manager);
+        let system_lock = Arc::new(SystemLock::new());
+        let executor = UpdateExecutor::new(queue, None, None, approval_manager, system_lock);
 
         assert!(executor.discord_http.is_none());
         assert!(executor.claude_client.is_none());
@@ -557,7 +606,8 @@ mod tests {
     async fn test_failure_result_creation() {
         let queue = Arc::new(UpdateQueue::new());
         let approval_manager = Arc::new(ApprovalManager::new());
-        let executor = UpdateExecutor::new(queue, None, None, approval_manager);
+        let system_lock = Arc::new(SystemLock::new());
+        let executor = UpdateExecutor::new(queue, None, None, approval_manager, system_lock);
 
         let request = SelfUpdateRequest {
             id: "test-123".to_string(),
