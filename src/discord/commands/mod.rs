@@ -3,6 +3,7 @@ use serenity::{model::channel::Message, prelude::Context};
 
 pub mod admin;
 pub mod debug;
+pub mod debug_progress;
 pub mod help;
 pub mod rate_limit;
 pub mod roles;
