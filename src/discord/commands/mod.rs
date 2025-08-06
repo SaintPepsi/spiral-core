@@ -74,7 +74,7 @@ pub const AVAILABLE_COMMANDS: &[CommandInfo] = &[
     CommandInfo {
         name: "debug progress",
         prefix: "!spiral debug progress",
-        description: "Demo the progress bar functionality (10 second test)",
+        description: "Demo the progress bar functionality",
         category: CommandCategory::Debug,
         requires_auth: false,
     },

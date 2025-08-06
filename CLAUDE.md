@@ -28,13 +28,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **NEVER provide time estimates** for any task, feature, or implementation. Time is irrelevant to quality.
 
+**NEVER hardcode time estimates** in user-facing messages or documentation. If showing duration, calculate it dynamically from actual elapsed time.
+
 **ALWAYS provide:**
 
 - **Risk Level**: Using Fibonacci scale (?, 1, 2, 3, 5, 8, 13, ∞)
 - **Complexity Rating**: Using Fibonacci scale (?, 1, 2, 3, 5, 8, 13, ∞)
 - **Specific Risk Factors**: What could go wrong and why
 
-**Why**: Time estimates create artificial pressure and lead to rushed, poor-quality code. Risk and complexity metrics help make informed decisions about implementation approach and testing requirements.
+**Why**: Time estimates create artificial pressure and lead to rushed, poor-quality code. Risk and complexity metrics help make informed decisions about implementation approach and testing requirements. Hardcoded time estimates become inaccurate and misleading.
 
 **📊 See [Fibonacci Scale Documentation](docs/FIBONACCI_SCALE.md)** for detailed scale definitions, usage guidelines, and examples.
 
