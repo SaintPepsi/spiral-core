@@ -79,6 +79,13 @@ pub const AVAILABLE_COMMANDS: &[CommandInfo] = &[
         requires_auth: true,
     },
     CommandInfo {
+        name: "debug progress",
+        prefix: "!spiral debug progress",
+        description: "Demo the progress bar functionality (10 second test)",
+        category: CommandCategory::Debug,
+        requires_auth: false,
+    },
+    CommandInfo {
         name: "help",
         prefix: "!spiral help",
         description: "Show available commands and usage information",
@@ -119,6 +126,7 @@ pub const AVAILABLE_COMMANDS: &[CommandInfo] = &[
 pub struct CommandRouter {
     pub admin: admin::AdminCommand,
     pub debug: debug::DebugCommand,
+    pub debug_progress: debug_progress::DebugProgressCommand,
     pub help: help::HelpCommand,
     pub rate_limit: rate_limit::RateLimitCommand,
     pub roles: roles::RolesCommand,
@@ -137,6 +145,7 @@ impl CommandRouter {
         Self {
             admin: admin::AdminCommand::new(),
             debug: debug::DebugCommand::new(),
+            debug_progress: debug_progress::DebugProgressCommand::new(),
             help: help::HelpCommand::new(),
             rate_limit: rate_limit::RateLimitCommand::new(),
             roles: roles::RolesCommand::new(),
@@ -167,6 +176,7 @@ impl CommandRouter {
                 return match command_info.name {
                     "admin" => self.admin.handle(content, msg, ctx, bot).await,
                     "debug" => self.debug.handle(content, msg, ctx, bot).await,
+                    "debug progress" => self.debug_progress.handle(content, msg, ctx, bot).await,
                     "help" => self.help.handle(content, msg, ctx, bot).await,
                     "ratelimit" => self.rate_limit.handle(content, msg, ctx, bot).await,
                     "roles" => self.roles.handle(content, msg, ctx, bot).await,

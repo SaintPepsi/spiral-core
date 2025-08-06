@@ -518,6 +518,20 @@ if response.success {
 4. **Run Clippy** - `cargo clippy --all-targets` (NO errors allowed)
 5. **Verify Changes** - Manually verify your changes work as intended
 
+## 📚 Discord Command Documentation
+
+**When adding new Discord commands, ALWAYS update:**
+
+1. **AVAILABLE_COMMANDS** array in `src/discord/commands/mod.rs`
+   - Add CommandInfo entry with name, prefix, description, category, and auth requirement
+2. **CommandRouter struct** in `src/discord/commands/mod.rs`
+   - Add the command handler field
+3. **CommandRouter::new()** method
+   - Initialize the command handler
+4. **CommandRouter::route_command()** match statement
+   - Add routing case for the command name
+5. **Help documentation** if the command should be user-visible
+
 See [Claude Completion Checklist](docs/CLAUDE_COMPLETION_CHECKLIST.md) for detailed requirements.
 
 **If ANY validation fails, you are NOT done - fix the issues first!**
