@@ -10,7 +10,7 @@ license = "MIT"
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.12", features = ["json"] }
 anyhow = "1.0"
 thiserror = "1.0"
 uuid = { version = "1.0", features = ["v4", "serde"] }
