@@ -72,18 +72,18 @@ pub const AVAILABLE_COMMANDS: &[CommandInfo] = &[
         requires_auth: true,
     },
     CommandInfo {
-        name: "debug",
-        prefix: "!spiral debug",
-        description: "Debug information and security analysis",
-        category: CommandCategory::Debug,
-        requires_auth: true,
-    },
-    CommandInfo {
         name: "debug progress",
         prefix: "!spiral debug progress",
         description: "Demo the progress bar functionality (10 second test)",
         category: CommandCategory::Debug,
         requires_auth: false,
+    },
+    CommandInfo {
+        name: "debug",
+        prefix: "!spiral debug",
+        description: "Debug information and security analysis",
+        category: CommandCategory::Debug,
+        requires_auth: true,
     },
     CommandInfo {
         name: "help",
