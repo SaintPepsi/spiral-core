@@ -29,6 +29,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **NEVER provide time estimates** for any task, feature, or implementation. Time is irrelevant to quality.
 
 **ALWAYS provide:**
+
 - **Risk Level**: Using Fibonacci scale (?, 1, 2, 3, 5, 8, 13, ∞)
 - **Complexity Rating**: Using Fibonacci scale (?, 1, 2, 3, 5, 8, 13, ∞)
 - **Specific Risk Factors**: What could go wrong and why

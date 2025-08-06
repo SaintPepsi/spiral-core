@@ -5,8 +5,8 @@
 
 use super::{
     format_plan_for_discord, ApprovalManager, ApprovalResult, GitOperations, ImplementationPlan,
-    PreflightChecker, SelfUpdateRequest, StatusTracker, SystemLock, UpdatePlanner, 
-    UpdateQueue, UpdateStatus, ValidationPipeline, format_approval_instructions,
+    PreflightChecker, ProgressReporter, SelfUpdateRequest, StatusTracker, SystemLock, UpdatePhase,
+    UpdatePlanner, UpdateQueue, UpdateStatus, ValidationPipeline, format_approval_instructions,
 };
 use crate::{claude_code::ClaudeCodeClient, Result, error::SpiralError};
 use serenity::{http::Http, model::id::ChannelId};
@@ -116,19 +116,41 @@ impl UpdateExecutor {
     
     /// Execute the update while holding the lock
     async fn execute_update_with_lock(&mut self, request: SelfUpdateRequest, _lock_token: &super::LockToken) -> UpdateResult {
+        // Create progress reporter
+        let channel_id = ChannelId::new(request.channel_id);
+        let total_tasks = 7; // Approximate number of major steps
+        let progress_reporter = ProgressReporter::new(
+            request.id.clone(),
+            self.discord_http.clone(),
+            channel_id,
+            total_tasks,
+        );
+        
+        // Start background progress reporting (every 30 seconds)
+        progress_reporter.start_reporting(std::time::Duration::from_secs(30));
+        
+        // Set initial phase
+        progress_reporter.set_phase(UpdatePhase::Initializing).await;
+        progress_reporter.set_status("Starting update process...".to_string()).await;
 
         // Update status to processing
         self.update_discord_status(&request, "🔧 Processing update request...")
             .await;
 
         // Step 1: Run preflight checks
+        progress_reporter.set_phase(UpdatePhase::PreflightChecks).await;
+        progress_reporter.set_status("Running preflight checks...".to_string()).await;
         let preflight_result = self.run_preflight_checks(&request).await;
         if let Err(e) = preflight_result {
             error!("[UpdateExecutor] Preflight checks failed: {}", e);
+            progress_reporter.set_phase(UpdatePhase::Failed).await;
+            progress_reporter.stop().await;
             return self.create_failure_result(request, format!("Preflight checks failed: {}", e));
         }
 
         // Step 2: Create implementation plan
+        progress_reporter.set_phase(UpdatePhase::Planning).await;
+        progress_reporter.set_status("Creating implementation plan with Claude Code...".to_string()).await;
         self.update_discord_status(&request, "📋 Creating implementation plan...")
             .await;
         let planner = UpdatePlanner::new(self.claude_client.clone());
@@ -136,11 +158,15 @@ impl UpdateExecutor {
             Ok(p) => p,
             Err(e) => {
                 error!("[UpdateExecutor] Failed to create plan: {}", e);
+                progress_reporter.set_phase(UpdatePhase::Failed).await;
+                progress_reporter.stop().await;
                 return self.create_failure_result(request, format!("Planning failed: {}", e));
             }
         };
 
         // Step 3: Present plan for approval and wait
+        progress_reporter.set_phase(UpdatePhase::AwaitingApproval).await;
+        progress_reporter.set_status("Waiting for user approval...".to_string()).await;
         let plan_message_id = self.present_plan_for_approval(&request, &plan).await;
         
         // Register plan for approval
@@ -164,6 +190,8 @@ impl UpdateExecutor {
             Ok(result) => result,
             Err(e) => {
                 error!("[UpdateExecutor] Failed to wait for approval: {}", e);
+                progress_reporter.set_phase(UpdatePhase::Failed).await;
+                progress_reporter.stop().await;
                 return self.create_failure_result(request, format!("Approval wait failed: {}", e));
             }
         };
@@ -176,6 +204,8 @@ impl UpdateExecutor {
             }
             ApprovalResult::Rejected(reason) => {
                 info!("[UpdateExecutor] Plan rejected: {}", reason);
+                progress_reporter.set_phase(UpdatePhase::Failed).await;
+                progress_reporter.stop().await;
                 return self.create_failure_result(
                     request,
                     format!("Update cancelled: Plan rejected - {}", reason),
@@ -183,6 +213,8 @@ impl UpdateExecutor {
             }
             ApprovalResult::ModifyRequested(details) => {
                 info!("[UpdateExecutor] Modifications requested: {}", details);
+                progress_reporter.set_phase(UpdatePhase::Failed).await;
+                progress_reporter.stop().await;
                 return self.create_failure_result(
                     request,
                     format!("Update paused: Modifications requested - {}", details),
@@ -190,6 +222,8 @@ impl UpdateExecutor {
             }
             ApprovalResult::TimedOut => {
                 info!("[UpdateExecutor] Approval timed out");
+                progress_reporter.set_phase(UpdatePhase::Failed).await;
+                progress_reporter.stop().await;
                 return self.create_failure_result(
                     request,
                     "Update cancelled: Approval timed out (10 minutes)".to_string(),
@@ -198,6 +232,8 @@ impl UpdateExecutor {
         }
 
         // Step 4: Create git snapshot
+        progress_reporter.set_phase(UpdatePhase::CreatingSnapshot).await;
+        progress_reporter.set_status("Creating git snapshot for rollback safety...".to_string()).await;
         self.update_discord_status(&request, "📸 Creating git snapshot...")
             .await;
         let snapshot_result = self.create_snapshot(&request).await;
@@ -208,17 +244,23 @@ impl UpdateExecutor {
             }
             Err(e) => {
                 error!("[UpdateExecutor] Failed to create snapshot: {}", e);
+                progress_reporter.set_phase(UpdatePhase::Failed).await;
+                progress_reporter.stop().await;
                 return self
                     .create_failure_result(request, format!("Snapshot creation failed: {}", e));
             }
         };
 
         // Step 5: Execute Claude Code to implement changes
+        progress_reporter.set_phase(UpdatePhase::Implementing).await;
+        progress_reporter.set_status(format!("Implementing {} tasks with Claude Code...", plan.tasks.len())).await;
         self.update_discord_status(&request, "🤖 Implementing changes with Claude Code...")
             .await;
         let claude_result = self.execute_claude_update(&request, &plan).await;
         if let Err(e) = claude_result {
             error!("[UpdateExecutor] Claude execution failed: {}", e);
+            progress_reporter.set_phase(UpdatePhase::Failed).await;
+            progress_reporter.stop().await;
             // Rollback if we have a snapshot
             if let Some(ref id) = snapshot_id {
                 self.rollback_changes(id).await;
@@ -228,14 +270,22 @@ impl UpdateExecutor {
         }
 
         // Step 6: Run validation pipeline
+        progress_reporter.set_phase(UpdatePhase::Validating).await;
+        progress_reporter.set_status("Running validation pipeline (Phase 1 & 2)...".to_string()).await;
         self.update_discord_status(&request, "✅ Validating changes...")
             .await;
         let validation_result = self.run_validation_pipeline(&request).await;
         match validation_result {
             Ok(results) => {
                 info!("[UpdateExecutor] Validation passed");
+                progress_reporter.set_phase(UpdatePhase::Complete).await;
+                progress_reporter.set_status("Update completed successfully!".to_string()).await;
                 self.update_discord_status(&request, "🎉 Update completed successfully!")
                     .await;
+                
+                // Stop progress reporting
+                progress_reporter.stop().await;
+                
                 UpdateResult {
                     request,
                     success: true,
@@ -247,10 +297,17 @@ impl UpdateExecutor {
             }
             Err(e) => {
                 error!("[UpdateExecutor] Validation failed: {}", e);
+                progress_reporter.set_phase(UpdatePhase::Failed).await;
+                progress_reporter.set_status(format!("Validation failed: {}", e)).await;
+                
                 // Rollback changes
                 if let Some(ref id) = snapshot_id {
                     self.rollback_changes(id).await;
                 }
+                
+                // Stop progress reporting
+                progress_reporter.stop().await;
+                
                 self.create_failure_result(request, format!("Validation failed: {}", e))
             }
         }

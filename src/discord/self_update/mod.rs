@@ -57,6 +57,7 @@ mod executor;
 mod git_ops;
 pub mod pipeline;
 mod planner;
+mod progress_reporter;
 mod queue;
 mod status_tracker;
 mod system_lock;
@@ -76,6 +77,7 @@ pub use planner::{
     format_plan_for_discord, ApprovalStatus, ImplementationPlan, PlannedTask, ResourceRequirements,
     RiskLevel as PlanRiskLevel, TaskCategory, UpdatePlanner,
 };
+pub use progress_reporter::{ProgressReporter, UpdatePhase, UpdateProgress};
 pub use queue::{UpdateQueue, UpdateQueueStatus};
 pub use status_tracker::{ImplementationProgress, StatusTracker, UpdateType};
 pub use system_lock::{SystemLock, LockToken};

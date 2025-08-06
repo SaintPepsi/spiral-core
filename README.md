@@ -238,6 +238,7 @@ See [Setup Guide](docs/SETUP.md#troubleshooting) for detailed troubleshooting.
 ## Documentation
 
 ### Core Documentation
+
 - **[Architecture](docs/ARCHITECTURE.md)** - System design and components
 - **[Setup Guide](docs/SETUP.md)** - Installation and configuration
 - **[Development](docs/DEVELOPMENT.md)** - Standards and practices
@@ -245,6 +246,7 @@ See [Setup Guide](docs/SETUP.md#troubleshooting) for detailed troubleshooting.
 - **[Operations](docs/OPERATIONS.md)** - Deployment and monitoring
 
 ### Implementation Documentation
+
 - **[Agent Guides](src/agents/docs/)** - Agent-specific implementation
 - **[Integration Patterns](src/integrations/docs/)** - Integration examples
 - **[Implementation Phases](src/implementation/docs/)** - Development roadmap
