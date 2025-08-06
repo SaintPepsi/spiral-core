@@ -56,6 +56,7 @@ mod approval;
 mod executor;
 mod git_ops;
 mod health_monitor;
+mod message_templates;
 pub mod pipeline;
 mod planner;
 mod progress_reporter;
@@ -72,6 +73,7 @@ pub use approval::{ApprovalManager, ApprovalResult, PendingApproval, format_appr
 pub use executor::{UpdateExecutor, UpdateResult};
 pub use git_ops::{GitOperations, SnapshotManager};
 pub use health_monitor::{HealthMonitor, HealthCheckResult, HealthCheck, HealthCategory};
+pub use message_templates::UpdateMessageTemplates;
 pub use pipeline::{
     CheckResult, ClaudeValidationResponse, ComplianceCheck, ExecutionPatterns, Phase1Results,
     Phase2Attempt, Phase2Checks, PipelineContext, PipelineStatus, ValidationPipeline,

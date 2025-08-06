@@ -6,7 +6,8 @@
 use super::{
     format_plan_for_discord, ApprovalManager, ApprovalResult, GitOperations, ImplementationPlan,
     PreflightChecker, ProgressReporter, SelfUpdateRequest, StatusTracker, StructuredLogger, SystemLock,
-    UpdatePhase, UpdatePlanner, UpdateQueue, UpdateStatus, ValidationPipeline, format_approval_instructions,
+    UpdateMessageTemplates, UpdatePhase, UpdatePlanner, UpdateQueue, UpdateStatus, ValidationPipeline, 
+    format_approval_instructions,
 };
 use crate::{claude_code::ClaudeCodeClient, Result, error::SpiralError};
 use serenity::{http::Http, model::id::ChannelId};
