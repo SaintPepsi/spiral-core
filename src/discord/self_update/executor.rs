@@ -445,133 +445,55 @@ impl UpdateExecutor {
         }
     }
     
-    /// Process all pending requests in the queue with concurrent execution
+    /// Process all pending requests in the queue
     pub async fn process_queue(&mut self) {
-        info!("[UpdateExecutor] Starting queue processing with concurrent execution");
-        
-        // Create a channel for task completion notifications
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(String, UpdateResult)>();
-        
-        // Track active tasks
-        let mut active_tasks = std::collections::HashMap::new();
+        info!("[UpdateExecutor] Starting queue processing");
 
         loop {
-            // Try to spawn new tasks if we have capacity
-            while let Some(mut request) = self.queue.next_request().await {
-                // Update request status
-                request.status = UpdateStatus::Executing;
-                let request_id = request.id.clone();
+            // Get next request from queue
+            let request = self.queue.next_request().await;
+            let Some(mut request) = request else {
+                // No requests, sleep and check again
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                continue;
+            };
+
+            // Update request status
+            request.status = UpdateStatus::Executing;
+
+            // Process the request
+            let result = self.process_request(request.clone()).await;
+
+            // Mark as completed in queue
+            self.queue.complete_request(&result.request.id).await;
+
+            // Update final status and handle retries
+            if result.success {
+                let _final_status = UpdateStatus::Completed;
+            } else {
+                let error_msg = result.error.clone().unwrap_or_default();
+                let _final_status = UpdateStatus::Failed(error_msg.clone());
                 
-                info!("[UpdateExecutor] Starting concurrent processing of {}", request_id);
-                
-                // Clone necessary components for the task
-                let mut executor_clone = self.clone_for_task();
-                let tx_clone = tx.clone();
-                
-                // Spawn task for this request
-                let handle = tokio::spawn(async move {
-                    let result = executor_clone.process_request(request).await;
-                    let request_id = result.request.id.clone();
+                // Determine if this failure is retryable
+                if self.is_retryable_error(&error_msg) && request.retry_count < 3 {
+                    info!(
+                        "[UpdateExecutor] Request {} failed with retryable error, attempting retry {}/3",
+                        request.id, request.retry_count + 1
+                    );
                     
-                    // Send result back through channel
-                    let _ = tx_clone.send((request_id, result));
-                });
-                
-                active_tasks.insert(request_id, handle);
-            }
-            
-            // Wait for task completions or timeout
-            let timeout = tokio::time::Duration::from_secs(5);
-            match tokio::time::timeout(timeout, rx.recv()).await {
-                Ok(Some((request_id, result))) => {
-                    // Remove from active tasks
-                    active_tasks.remove(&request_id);
-                    
-                    // Mark request as completed in queue
-                    self.queue.complete_request(&request_id).await;
-                    
-                    // Handle result and retries
-                    self.handle_request_completion(result).await;
-                }
-                Ok(None) => {
-                    // Channel closed, should not happen
-                    warn!("[UpdateExecutor] Task completion channel closed unexpectedly");
-                }
-                Err(_) => {
-                    // Timeout - check if we have any tasks or pending requests
-                    if active_tasks.is_empty() {
-                        // No active tasks, just continue to check for new requests
-                        continue;
+                    // Attempt to retry the request
+                    if let Err(e) = self.queue.retry_request(request.clone()).await {
+                        warn!("[UpdateExecutor] Failed to retry request: {}", e);
+                    } else {
+                        // Notify Discord about the retry
+                        self.notify_retry(&request, request.retry_count + 1).await;
                     }
                 }
             }
-            
-            // Check for completed tasks periodically
-            let mut completed = Vec::new();
-            for (id, handle) in active_tasks.iter() {
-                if handle.is_finished() {
-                    completed.push(id.clone());
-                }
-            }
-            
-            // Clean up completed tasks
-            for id in completed {
-                if let Some(handle) = active_tasks.remove(&id) {
-                    match handle.await {
-                        Ok(()) => {
-                            debug!("[UpdateExecutor] Task {} completed", id);
-                        }
-                        Err(e) => {
-                            error!("[UpdateExecutor] Task {} panicked: {}", id, e);
-                            self.queue.mark_failed(&id, false).await;
-                        }
-                    }
-                }
-            }
+
+            // Send final result to Discord
+            self.send_final_result(&result).await;
         }
-    }
-    
-    /// Clone necessary components for concurrent task execution
-    fn clone_for_task(&self) -> UpdateExecutor {
-        UpdateExecutor {
-            queue: self.queue.clone(),
-            claude_client: self.claude_client.clone(),
-            status_tracker: self.status_tracker.clone(),
-            discord_http: self.discord_http.clone(),
-            approval_manager: self.approval_manager.clone(),
-            system_lock: self.system_lock.clone(),
-        }
-    }
-    
-    /// Handle completion of a request (success or failure)
-    async fn handle_request_completion(&self, result: UpdateResult) {
-        let request = &result.request;
-        
-        if result.success {
-            info!("[UpdateExecutor] Request {} completed successfully", request.id);
-        } else {
-            let error_msg = result.error.clone().unwrap_or_default();
-            error!("[UpdateExecutor] Request {} failed: {}", request.id, error_msg);
-            
-            // Determine if this failure is retryable
-            if self.is_retryable_error(&error_msg) && request.retry_count < 3 {
-                info!(
-                    "[UpdateExecutor] Request {} failed with retryable error, attempting retry {}/3",
-                    request.id, request.retry_count + 1
-                );
-                
-                // Attempt to retry the request
-                if let Err(e) = self.queue.retry_request(request.clone()).await {
-                    warn!("[UpdateExecutor] Failed to retry request: {}", e);
-                } else {
-                    // Notify Discord about the retry
-                    self.notify_retry(request, request.retry_count + 1).await;
-                }
-            }
-        }
-        
-        // Send final result to Discord
-        self.send_final_result(&result).await;
     }
 
     /// Run preflight checks
