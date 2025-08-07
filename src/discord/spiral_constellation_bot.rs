@@ -2257,7 +2257,7 @@ impl EventHandler for ConstellationBotHandler {
                         let unauthorized_msg = format!(
                             "🚫 **Authorization Required**\n\n\
                             **User:** <@{}>\n\
-                            **Action:** Self-healing retry\n\
+                            **Action:** Self-updating retry\n\
                             **Status:** Unauthorized\n\n\
                             You must be authorized to retry Auto Core Update operations.",
                             user.id

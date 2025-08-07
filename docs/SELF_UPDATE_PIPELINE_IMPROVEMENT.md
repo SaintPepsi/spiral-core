@@ -2,7 +2,11 @@
 
 ## Objective
 
-Modify the SPIRAL_CONSTELLATION_SELF_HEALING_SYSTEM validation pipeline to implement a robust, two-phase Rust code quality assurance process with intelligent error handling and recovery mechanisms.
+Modify the SPIRAL_CONSTELLATION_SELF_UPDATING_SYSTEM validation pipeline to implement a robust, two-phase Rust code quality assurance process with intelligent error handling and recovery mechanisms.
+
+## Context
+
+This validation pipeline operates on the working directory after Claude has made modifications but BEFORE the system restarts with the new code. The goal is to ensure changes are safe before applying them to the live running system.
 
 ## Pipeline Architecture Overview
 
@@ -90,7 +94,7 @@ Execute the following checks in sequence. **If ANY check requires a retry, the e
 ### Happy Path Flow
 
 ```
-Phase 1 (AQA) → Phase 2 (CRCC - no retries) → Success Analysis Protocol
+Phase 1 (AQA) → Phase 2 (CRCC - no retries) → System Restart → Post-Restart Validation → Git Commit & Push → Success Analysis Protocol
 ```
 
 ### Critical Path Flow (Maximum Iterations)
@@ -135,6 +139,8 @@ Tasks:
 3. Recommend any optimisations for future pipeline runs
 4. Create deployment readiness checklist
 5. Generate change impact summary for stakeholders
+6. Confirm successful git push to remote repository
+7. Document commit hash and push timestamp
 
 Focus on providing actionable insights and maintaining high code quality standards.
 ```

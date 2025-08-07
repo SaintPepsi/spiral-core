@@ -1,4 +1,4 @@
-## Phase 1: Core Self-Healing Foundation Philosophy
+## Phase 1: Core Self-Updating Foundation Philosophy
 
 ### Goals
 
@@ -136,9 +136,13 @@ Before proceeding to implementation, the system must generate:
 1. **Initiation**: Processing acknowledgment
 2. **Planning Phase**: Analysis and plan creation
 3. **Plan Presentation**: Present detailed plan to user for approval
-4. **Update Start**: Begin implementation after plan approval
-5. **Progress Updates**: Periodic status updates indicating current phase
-6. **System Lock**: Implement update lock mechanism to prevent corruption
+4. **Git Snapshot**: Create safety backup before changes
+5. **Implementation**: Claude applies changes to working directory
+6. **Pre-Restart Validation**: Validate changes before system restart
+7. **System Restart**: Apply validated changes to live system
+8. **Post-Restart Validation**: Verify system health
+9. **Git Operations**: Commit and push validated changes
+10. **System Lock**: Maintained throughout to prevent corruption
 
 ### Change Implementation
 
@@ -153,43 +157,46 @@ Before proceeding to implementation, the system must generate:
 
 ### Phase 1: Pre-Implementation Validation
 
-**Objective**: Validate changes BEFORE applying to live system
+**Objective**: Validate changes BEFORE restarting the live system
+
+**Note**: At this stage, Claude has already modified files in the working directory. Validation ensures these changes are safe before the system restarts with the new code.
 
 #### Validation Requirements
 
-- Execute comprehensive testing protocols
-- Perform security validation
-- Conduct thorough code/change review
-- Verify system integration compatibility
+- Execute comprehensive testing protocols on modified working directory
+- Perform security validation on current changes
+- Conduct thorough code/change review of modifications
+- Verify system integration compatibility with changes
 
 #### Pre-Implementation Gate
 
 - **Requirement**: ALL Phase 1 validation steps must pass
-- **Action on Failure**: Do NOT apply changes; fix issues and re-run Phase 1
-- **Action on Success**: Proceed to implementation and Phase 2 validation
+- **Action on Failure**: Rollback changes to snapshot; do NOT restart system
+- **Action on Success**: Proceed to system restart and Phase 2 validation
 
-### Phase 2: Post-Implementation Validation
+### Phase 2: Post-Restart Validation
 
-**Objective**: Final validation after changes are applied but before system restart
+**Objective**: Validate system health after restart with new code
 
-#### Post-Implementation Testing
+#### Post-Restart Testing
 
-- Re-run full validation suite after implementation
-- Confirm changes integrate properly
+- Verify system started successfully with changes
+- Re-run full validation suite on live system
+- Confirm changes integrate properly in production
 - Verify no existing functionality has been broken
 
 #### Final Validation
 
-- Complete final testing pass
+- Complete final testing pass on running system
 - Perform final security verification
 - Conduct last comprehensive review
-- Confirm system readiness for restart
+- Confirm system is stable and healthy
 
-#### Post-Implementation Gate
+#### Post-Restart Gate
 
 - **Requirement**: ALL Phase 2 validation steps must pass
-- **Action on Failure**: Rollback to pre-update snapshot; do NOT restart system
-- **Action on Success**: Proceed to system restart
+- **Action on Failure**: Rollback to pre-update snapshot and restart with old code
+- **Action on Success**: Commit changes and push to repository
 
 ### Timeout Handling
 
@@ -205,8 +212,11 @@ Before proceeding to implementation, the system must generate:
 1. **Pre-restart Notification**: System restart announcement
 2. **System Shutdown**: Terminate existing processes
 3. **System Startup**: Initialise new system instance
-4. **Completion Notification**: System back online confirmation
-5. **Change Report**: Detailed summary of modifications and validations passed
+4. **Post-Restart Validation**: Verify system health with new code
+5. **Git Commit**: Commit validated changes with descriptive message
+6. **Git Push**: Push changes to remote repository
+7. **Completion Notification**: System back online confirmation
+8. **Change Report**: Detailed summary of modifications and validations passed
 
 ### Failure Path
 
