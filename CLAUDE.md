@@ -344,6 +344,7 @@ This CLAUDE.md file serves as the orchestrator for specialized documentation mod
 
 - **[Code Patterns](docs/PATTERNS.md)** - Reusable patterns for DRY code and consistent implementation
 - **[Claude Improver Agent](.claude/utility-agents/claude-improver.md)** - Automated code quality analysis and refactoring
+- **[DRY Analyzer Agent](.claude/utility-agents/dry-analyzer.md)** - Detection and elimination of code duplication
 
 ### Core System Modules
 
