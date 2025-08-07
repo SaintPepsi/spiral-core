@@ -61,6 +61,7 @@ pub mod pipeline;
 mod planner;
 mod progress_reporter;
 mod queue;
+mod scope_limiter;
 mod status_tracker;
 mod structured_logger;
 mod system_lock;
@@ -84,6 +85,7 @@ pub use planner::{
 };
 pub use progress_reporter::{ProgressReporter, UpdatePhase, UpdateProgress};
 pub use queue::{UpdateQueue, UpdateQueueStatus};
+pub use scope_limiter::{ScopeLimiter, ScopeLimits, ChangeScope};
 pub use status_tracker::{ImplementationProgress, StatusTracker, UpdateType};
 pub use structured_logger::StructuredLogger;
 pub use system_lock::{SystemLock, LockToken};

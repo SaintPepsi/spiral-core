@@ -1,11 +1,13 @@
 pub mod developer;
 pub mod orchestrator;
+pub mod project_manager;
 // 🔧 UTILITY MODULES: Extracted via 3-strikes abstraction rule
 pub mod language_detection;
 pub mod task_utils;
 
 pub use developer::SoftwareDeveloperAgent;
 pub use orchestrator::AgentOrchestrator;
+pub use project_manager::ProjectManagerAgent;
 
 use crate::{
     claude_code::TaskAnalysis,

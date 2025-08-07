@@ -5,9 +5,8 @@
 
 use super::{
     ApprovalResult, ImplementationPlan, PlanRiskLevel, SelfUpdateRequest, 
-    UpdatePhase, UpdateStatus, HealthCheckResult, HealthCheck
+    UpdatePhase, HealthCheckResult
 };
-use chrono::{DateTime, Utc};
 
 /// Message builder for self-update communications
 pub struct UpdateMessageTemplates;

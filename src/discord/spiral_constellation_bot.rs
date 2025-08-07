@@ -2595,7 +2595,7 @@ impl ConstellationBotHandler {
             // Mark as completed in queue
             {
                 let queue = self.bot.update_queue.clone();
-                queue.mark_completed().await;
+                queue.mark_completed(&request.id).await;
             }
 
             // Update implementation status tracking
@@ -3566,7 +3566,8 @@ impl ConstellationBotHandler {
         // Mark queue as failed (clears all pending requests as per spec)
         {
             let queue = self.bot.update_queue.clone();
-            queue.mark_failed().await;
+            // Clear entire queue on failure as per original spec
+            queue.mark_failed(&request.id, true).await;
         }
     }
 

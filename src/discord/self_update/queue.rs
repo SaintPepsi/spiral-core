@@ -18,7 +18,7 @@
 use super::types::{SelfUpdateRequest, UpdateStatus};
 use super::{MAX_QUEUE_SIZE, MAX_UPDATE_CONTENT_SIZE};
 use crate::error::{Result, SpiralError};
-use std::collections::VecDeque;
+use std::collections::{VecDeque, HashSet};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -30,18 +30,23 @@ pub struct UpdateQueue {
 #[derive(Debug)]
 struct UpdateQueueInner {
     requests: VecDeque<SelfUpdateRequest>,
-    is_processing: bool,
-    current_request: Option<String>, // Current request ID
-    rejected_count: u64,             // Track rejected requests for monitoring
+    processing_requests: HashSet<String>, // Track multiple concurrent requests
+    max_concurrent: usize,                // Maximum concurrent updates allowed
+    rejected_count: u64,                  // Track rejected requests for monitoring
 }
 
 impl UpdateQueue {
     pub fn new() -> Self {
+        Self::with_max_concurrent(3) // Default to 3 concurrent updates
+    }
+    
+    /// Create a new queue with specified max concurrent updates
+    pub fn with_max_concurrent(max_concurrent: usize) -> Self {
         Self {
             inner: Arc::new(Mutex::new(UpdateQueueInner {
                 requests: VecDeque::new(),
-                is_processing: false,
-                current_request: None,
+                processing_requests: HashSet::new(),
+                max_concurrent: max_concurrent.max(1), // Ensure at least 1
                 rejected_count: 0,
             })),
         }
@@ -89,32 +94,35 @@ impl UpdateQueue {
         Ok(())
     }
 
-    /// Get next request from queue and mark as processing
+    /// Get next request from queue if under concurrent limit
     pub async fn next_request(&self) -> Option<SelfUpdateRequest> {
         let mut inner = self.inner.lock().await;
 
-        if inner.is_processing {
+        // Check if we've reached the concurrent limit
+        if inner.processing_requests.len() >= inner.max_concurrent {
             return None;
         }
 
-        if let Some(mut request) = inner.requests.pop_front() {
-            inner.is_processing = true;
-            inner.current_request = Some(request.id.clone());
+        // Find the next request that isn't already being processed
+        while let Some(mut request) = inner.requests.pop_front() {
+            // Skip if this request is somehow already being processed
+            if inner.processing_requests.contains(&request.id) {
+                continue;
+            }
+            
+            // Mark as processing
+            inner.processing_requests.insert(request.id.clone());
             request.status = UpdateStatus::PreflightChecks;
-            Some(request)
-        } else {
-            None
+            return Some(request);
         }
+        
+        None
     }
 
-    /// Mark current request as completed and clear processing flag
+    /// Mark a specific request as completed
     pub async fn complete_request(&self, request_id: &str) {
         let mut inner = self.inner.lock().await;
-
-        if inner.current_request.as_deref() == Some(request_id) {
-            inner.is_processing = false;
-            inner.current_request = None;
-        }
+        inner.processing_requests.remove(request_id);
     }
 
     /// Get queue status for monitoring
@@ -125,8 +133,10 @@ impl UpdateQueue {
             queue_size: inner.requests.len(),
             max_size: MAX_QUEUE_SIZE,
             rejected_count: inner.rejected_count,
-            is_processing: inner.is_processing,
-            current_request: inner.current_request.clone(),
+            is_processing: !inner.processing_requests.is_empty(),
+            current_request: None, // Deprecated - use processing_requests instead
+            processing_requests: inner.processing_requests.clone(),
+            max_concurrent: inner.max_concurrent,
         }
     }
 
@@ -134,24 +144,23 @@ impl UpdateQueue {
     pub async fn clear_queue(&self) {
         let mut inner = self.inner.lock().await;
         inner.requests.clear();
-        inner.is_processing = false;
-        inner.current_request = None;
+        // Note: We don't clear processing_requests as those are actively running
     }
 
-    /// Mark current request as completed
-    pub async fn mark_completed(&self) {
-        let mut inner = self.inner.lock().await;
-        inner.is_processing = false;
-        inner.current_request = None;
+    /// Mark a specific request as completed (deprecated - use complete_request)
+    pub async fn mark_completed(&self, request_id: &str) {
+        self.complete_request(request_id).await;
     }
 
-    /// Mark current request as failed and clear queue
-    pub async fn mark_failed(&self) {
+    /// Mark a specific request as failed
+    pub async fn mark_failed(&self, request_id: &str, clear_queue: bool) {
         let mut inner = self.inner.lock().await;
-        inner.is_processing = false;
-        inner.current_request = None;
-        // Clear entire queue on failure as per spec
-        inner.requests.clear();
+        inner.processing_requests.remove(request_id);
+        
+        // Optionally clear entire queue on critical failure
+        if clear_queue {
+            inner.requests.clear();
+        }
     }
     
     /// Retry a failed request by re-queuing it with incremented retry count
@@ -192,14 +201,24 @@ impl UpdateQueue {
         let _inner = self.inner.lock().await;
         false // Placeholder - would check shutdown flag
     }
+    
+    /// Get the number of currently processing requests
+    pub async fn processing_count(&self) -> usize {
+        let inner = self.inner.lock().await;
+        inner.processing_requests.len()
+    }
+    
+    /// Check if a specific request is currently being processed
+    pub async fn is_processing(&self, request_id: &str) -> bool {
+        let inner = self.inner.lock().await;
+        inner.processing_requests.contains(request_id)
+    }
 
     /// Initiate shutdown
     pub async fn shutdown(&self) {
         let mut inner = self.inner.lock().await;
-        // Clear queue and mark as not processing
+        // Clear queue but keep processing_requests to track what's still running
         inner.requests.clear();
-        inner.is_processing = false;
-        inner.current_request = None;
     }
 }
 
@@ -216,5 +235,7 @@ pub struct UpdateQueueStatus {
     pub max_size: usize,
     pub rejected_count: u64,
     pub is_processing: bool,
-    pub current_request: Option<String>,
+    pub current_request: Option<String>, // Deprecated - kept for compatibility
+    pub processing_requests: HashSet<String>, // Currently processing request IDs
+    pub max_concurrent: usize, // Maximum concurrent updates allowed
 }

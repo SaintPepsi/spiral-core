@@ -303,6 +303,8 @@ mod tests {
                 special_requirements: vec![],
             },
             approval_status: ApprovalStatus::Pending,
+            requires_human_approval: false,
+            approval_reason: None,
         }
     }
 

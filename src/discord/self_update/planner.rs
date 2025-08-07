@@ -65,6 +65,10 @@ pub struct ImplementationPlan {
     pub summary: String,
     /// Overall risk assessment
     pub risk_level: RiskLevel,
+    /// Whether this plan requires human approval regardless of risk
+    pub requires_human_approval: bool,
+    /// Reason for requiring human approval (if applicable)
+    pub approval_reason: Option<String>,
     /// Ordered list of tasks to execute
     pub tasks: Vec<PlannedTask>,
     /// Key risks identified
@@ -164,6 +168,9 @@ impl UpdatePlanner {
                         plan.plan_id = format!("plan-{}-{}", request.codename, chrono::Utc::now().timestamp());
                         plan.request_id = request.id.clone();
                         plan.approval_status = ApprovalStatus::Pending;
+                        
+                        // Check if human approval is required based on risk and content
+                        self.check_human_approval_requirements(&mut plan);
                         
                         info!(
                             "[UpdatePlanner] Claude created plan {} with {} tasks, risk level: {:?}",
@@ -299,7 +306,7 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
         let success_criteria = Self::define_success_criteria(&tasks, request);
         
         // Create the plan
-        let plan = ImplementationPlan {
+        let mut plan = ImplementationPlan {
             plan_id: format!("plan-{}-{}", request.codename, chrono::Utc::now().timestamp()),
             request_id: request.id.clone(),
             summary: Self::generate_summary(&tasks, request),
@@ -313,7 +320,12 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
                 special_requirements: vec![],
             },
             approval_status: ApprovalStatus::Pending,
+            requires_human_approval: false, // Will be checked next
+            approval_reason: None,
         };
+        
+        // Check if human approval is required
+        self.check_human_approval_requirements(&mut plan);
         
         info!(
             "[UpdatePlanner] Created keyword-based plan {} with {} tasks, risk level: {:?}",
@@ -637,6 +649,73 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
         
         factors
     }
+    
+    /// Check if the plan requires human approval based on risk and content
+    fn check_human_approval_requirements(&self, plan: &mut ImplementationPlan) {
+        // Always require human approval for high-risk changes
+        if matches!(plan.risk_level, RiskLevel::High | RiskLevel::Nuclear | RiskLevel::DoNotImplement) {
+            plan.requires_human_approval = true;
+            plan.approval_reason = Some(format!(
+                "High risk level ({:?}) requires human review",
+                plan.risk_level
+            ));
+            return;
+        }
+        
+        // Check for critical task categories
+        let has_critical_tasks = plan.tasks.iter().any(|task| {
+            matches!(task.category, TaskCategory::Security | TaskCategory::Configuration)
+        });
+        
+        if has_critical_tasks {
+            plan.requires_human_approval = true;
+            plan.approval_reason = Some("Security or configuration changes require human review".to_string());
+            return;
+        }
+        
+        // Check for changes to critical files
+        let critical_paths = vec![
+            ".env", "Cargo.toml", "package.json", ".github", 
+            "src/main.rs", "src/lib.rs", "src/discord/self_update/"
+        ];
+        
+        let touches_critical = plan.tasks.iter().any(|task| {
+            task.affected_components.iter().any(|component| {
+                critical_paths.iter().any(|critical| component.contains(critical))
+            })
+        });
+        
+        if touches_critical {
+            plan.requires_human_approval = true;
+            plan.approval_reason = Some("Changes to critical system files require human review".to_string());
+            return;
+        }
+        
+        // Check total complexity
+        let total_complexity: u32 = plan.tasks.iter().map(|t| t.complexity as u32).sum();
+        if total_complexity > 21 { // Fibonacci: 13 + 8
+            plan.requires_human_approval = true;
+            plan.approval_reason = Some(format!(
+                "High total complexity ({}) requires human review",
+                total_complexity
+            ));
+            return;
+        }
+        
+        // Check for many files being changed
+        if plan.tasks.len() > 10 {
+            plan.requires_human_approval = true;
+            plan.approval_reason = Some(format!(
+                "Large number of tasks ({}) requires human review",
+                plan.tasks.len()
+            ));
+            return;
+        }
+        
+        // Default: no special human approval required beyond normal flow
+        plan.requires_human_approval = false;
+        plan.approval_reason = None;
+    }
 }
 
 /// Internal struct for request analysis
@@ -684,6 +763,16 @@ pub fn format_plan_for_discord(plan: &ImplementationPlan) -> String {
     let mut output = String::new();
     
     output.push_str(&format!("## 📋 Implementation Plan: {}\n\n", plan.plan_id));
+    
+    // Show human approval requirement prominently
+    if plan.requires_human_approval {
+        output.push_str("⚠️ **HUMAN APPROVAL REQUIRED** ⚠️\n");
+        if let Some(ref reason) = plan.approval_reason {
+            output.push_str(&format!("**Reason**: {}\n", reason));
+        }
+        output.push_str("\n");
+    }
+    
     output.push_str(&format!("**Summary**: {}\n\n", plan.summary));
     output.push_str(&format!("**Risk Level**: {}\n\n", format_risk_level(&plan.risk_level)));
     
