@@ -8,6 +8,7 @@ use super::{
     PreflightChecker, ProgressReporter, SelfUpdateRequest, ScopeLimiter, StatusTracker, 
     StructuredLogger, SystemLock, UpdatePhase, UpdatePlanner, UpdateQueue, UpdateStatus, 
     ValidationPipeline, format_approval_instructions,
+    pre_validation::{PreImplementationValidator, PreValidationResult},
 };
 use crate::{claude_code::ClaudeCodeClient, Result, error::SpiralError};
 use serenity::{http::Http, model::id::ChannelId};
@@ -161,7 +162,15 @@ impl UpdateExecutor {
             return result;
         }
         
-        // Run validation pipeline
+        // Run pre-restart validation on modified files
+        if let Err(result) = self.execute_pre_validation_phase(&mut context, &snapshot_id).await {
+            return result;
+        }
+        
+        // System restart would happen here (not implemented yet)
+        // TODO: Implement system restart
+        
+        // Run post-restart validation pipeline
         self.execute_validation_phase(&mut context, snapshot_id).await
     }
 
@@ -397,11 +406,70 @@ impl UpdateExecutor {
         Ok(())
     }
     
-    /// Execute validation phase
+    /// Execute pre-restart validation phase
+    async fn execute_pre_validation_phase(&self, context: &mut UpdateContext, snapshot_id: &Option<String>) -> std::result::Result<(), UpdateResult> {
+        context.progress_reporter.set_phase(UpdatePhase::Validating).await;
+        context.progress_reporter.set_status("Running pre-restart validation on modified files...".to_string()).await;
+        self.update_discord_status(&context.request, "🔍 Validating changes before restart...").await;
+        
+        // Create pre-implementation validator
+        let validator = PreImplementationValidator::new(self.claude_client.clone());
+        
+        // Run validation on current working directory
+        match validator.validate_current_state(&context.request, &mut context.logger).await {
+            Ok(result) => {
+                if result.all_passed() {
+                    info!("[UpdateExecutor] Pre-restart validation passed");
+                    context.progress_reporter.set_status(format!(
+                        "Pre-restart validation passed ({} checks in {} iterations)",
+                        result.total_checks_run,
+                        result.pipeline_iterations
+                    )).await;
+                    Ok(())
+                } else {
+                    error!("[UpdateExecutor] Pre-restart validation failed");
+                    let error_msg = format!(
+                        "Pre-restart validation failed: Engineering Review={}, Assembly Checklist={}, Details: {:?}",
+                        result.engineering_review_passed,
+                        result.assembly_checklist_passed,
+                        result.error_details
+                    );
+                    
+                    context.progress_reporter.set_phase(UpdatePhase::Failed).await;
+                    context.progress_reporter.stop().await;
+                    
+                    // Rollback changes since validation failed
+                    if let Some(ref id) = snapshot_id {
+                        self.rollback_changes(id).await;
+                        self.update_discord_status(&context.request, "❌ Validation failed - changes rolled back").await;
+                    }
+                    
+                    Err(self.create_failure_result(context.request.clone(), error_msg))
+                }
+            }
+            Err(e) => {
+                error!("[UpdateExecutor] Pre-restart validation error: {}", e);
+                context.progress_reporter.set_phase(UpdatePhase::Failed).await;
+                context.progress_reporter.stop().await;
+                
+                // Rollback on error
+                if let Some(ref id) = snapshot_id {
+                    self.rollback_changes(id).await;
+                }
+                
+                Err(self.create_failure_result(
+                    context.request.clone(),
+                    format!("Pre-restart validation error: {}", e)
+                ))
+            }
+        }
+    }
+    
+    /// Execute post-restart validation phase
     async fn execute_validation_phase(&self, context: &mut UpdateContext, snapshot_id: Option<String>) -> UpdateResult {
         context.progress_reporter.set_phase(UpdatePhase::Validating).await;
-        context.progress_reporter.set_status("Running validation pipeline (Phase 1 & 2)...".to_string()).await;
-        self.update_discord_status(&context.request, "✅ Validating changes...").await;
+        context.progress_reporter.set_status("Running post-restart validation pipeline...".to_string()).await;
+        self.update_discord_status(&context.request, "✅ Validating system after restart...").await;
         
         match self.run_validation_pipeline(&context.request).await {
             Ok(results) => {

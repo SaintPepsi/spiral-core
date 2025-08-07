@@ -25,17 +25,17 @@ This document clarifies the complete flow of the self-update system, including a
 12. **Change Tracking** - Log all modifications for audit trail
 
 ### Phase 5: Pre-Restart Validation
-13. **Phase 1 AQA** - Advanced Quality Assurance checks on modified files
-    - Code review & standards compliance
-    - Comprehensive testing analysis
-    - Security audit
-    - System integration verification
-14. **Phase 2 CRCC** - Core Rust Compliance Checks on modified files
-    - `cargo check` - Compilation verification
-    - `cargo test` - Test suite validation
-    - `cargo fmt` - Code formatting
-    - `cargo clippy` - Linting compliance
-    - `cargo doc` - Documentation generation
+13. **Phase 1: Engineering Review** - Engineers reviewing all the work on modified files
+    - Part 1: Code Standards Review
+    - Part 2: Test Coverage Analysis
+    - Part 3: Security Inspection
+    - Part 4: Integration Review
+14. **Phase 2: Final Assembly Checklist** - Ticking boxes before rolling off the line
+    - Part 1: ✓ Compilation Check (`cargo check`)
+    - Part 2: ✓ Test Execution (`cargo test`)
+    - Part 3: ✓ Formatting Check (`cargo fmt`)
+    - Part 4: ✓ Linting Check (`cargo clippy`)
+    - Part 5: ✓ Documentation Build (`cargo doc`)
 15. **Validation Gate** - If ANY check fails, rollback to snapshot
 
 ### Phase 6: System Restart

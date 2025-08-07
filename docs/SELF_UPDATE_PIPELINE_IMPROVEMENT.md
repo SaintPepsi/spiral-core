@@ -12,44 +12,44 @@ This validation pipeline operates on the working directory after Claude has made
 
 The pipeline operates in two phases with conditional looping:
 
-1. **Phase 1**: Advanced Quality Assurance (AQA)
-2. **Phase 2**: Core Rust Compliance Checks (CRCC)
+1. **Phase 1: Engineering Review** - Like engineers reviewing all the work
+2. **Phase 2: Final Assembly Checklist** - Ticking boxes before rolling off the line
 
 **Flow Logic**: If any compliance check in Phase 2 requires a retry, the entire pipeline loops back to Phase 1. Maximum 3 complete pipeline iterations before failure analysis.
 
-## Phase 1: Advanced Quality Assurance
+## Phase 1: Engineering Review
 
-Execute the following checks in sequence. Each check has a maximum of 3 retry attempts with Claude Code instances:
+Like engineers reviewing all the work, this phase performs deep quality inspection. Execute the following checks in sequence. Each check has a maximum of 3 retry attempts with Claude Code instances:
 
-### 1. Code Review & Standards Compliance
+### Part 1: Code Standards Review
 
 - **Execution**: Spawn Claude Code instance with prompt: "Perform comprehensive code review against project standards. Verify architectural consistency, naming conventions, error handling patterns, and adherence to established codebase guidelines. Provide specific improvement recommendations."
 - **Success Criteria**: Full compliance with coding standards
 - **Max Retries**: 3
 
-### 2. Comprehensive Testing
+### Part 2: Test Coverage Analysis
 
 - **Execution**: Spawn Claude Code instance with prompt: "Perform comprehensive testing analysis focused on pressure points and critical failure scenarios. Run all test suites and identify coverage gaps. Implement ONLY high-value test cases for: error boundaries, resource exhaustion, concurrent access patterns, data corruption scenarios, network failures, and system limits. Avoid trivial tests for straightforward function calls with clear implementations. Focus on edge cases that could cause system failure."
 - **Success Criteria**: Zero test failures, critical scenarios covered
 - **Max Retries**: 3
 
-### 3. Security Audit
+### Part 3: Security Inspection
 
 - **Execution**: Spawn Claude Code instance with prompt: "Conduct thorough security audit. Identify potential vulnerabilities, unsafe code patterns, dependency security issues, and data validation gaps. Provide specific remediation steps for any issues found."
 - **Success Criteria**: Zero critical vulnerabilities
 - **Max Retries**: 3
 
-### 4. System Integration Verification
+### Part 4: Integration Review
 
 - **Execution**: Spawn Claude Code instance with prompt: "Verify system integration integrity. Test that changes don't break existing functionality, APIs remain compatible, and all integration points function correctly. Run integration test suites and verify system behaviour."
 - **Success Criteria**: No integration regressions
 - **Max Retries**: 3
 
-## Phase 2: Core Rust Compliance Checks
+## Phase 2: Final Assembly Checklist
 
-Execute the following checks in sequence. **If ANY check requires a retry, the entire pipeline loops back to Phase 1.**
+Like ticking boxes before the car rolls off the assembly line, this phase performs mechanical verification. Execute the following checks in sequence. **If ANY check requires a retry, the entire pipeline loops back to Phase 1.**
 
-### 1. Compilation Verification (`cargo check`)
+### Part 1: ✓ Compilation Check (`cargo check`)
 
 - **Purpose**: Ensure code compiles without errors
 - **Failure Action**: Spawn Claude Code instance with prompt: "Fix all compilation errors identified by `cargo check`. Focus on type errors, missing dependencies, and syntax issues. Provide detailed explanation of changes made."
@@ -57,7 +57,7 @@ Execute the following checks in sequence. **If ANY check requires a retry, the e
 - **Max Retries**: 3
 - **Loop Trigger**: Any retry triggers return to Phase 1
 
-### 2. Test Suite Validation (`cargo test`)
+### Part 2: ✓ Test Execution (`cargo test`)
 
 - **Purpose**: Verify all existing and new tests pass
 - **Failure Action**: Spawn Claude Code instance with prompt: "Analyse and fix failing tests. DO NOT delete tests unless they are fundamentally invalid. Investigate root causes and implement proper fixes. Document any test modifications with justification."
@@ -65,7 +65,7 @@ Execute the following checks in sequence. **If ANY check requires a retry, the e
 - **Max Retries**: 3
 - **Loop Trigger**: Any retry triggers return to Phase 1
 
-### 3. Code Formatting (`cargo fmt`)
+### Part 3: ✓ Formatting Check (`cargo fmt`)
 
 - **Purpose**: Ensure consistent code style
 - **Failure Action**: Spawn Claude Code instance with prompt: "Apply Rust standard formatting using `cargo fmt`. Resolve any formatting conflicts or issues that prevent automatic formatting."
@@ -73,7 +73,7 @@ Execute the following checks in sequence. **If ANY check requires a retry, the e
 - **Max Retries**: 3
 - **Loop Trigger**: Any retry triggers return to Phase 1
 
-### 4. Linting Compliance (`cargo clippy`)
+### Part 4: ✓ Linting Check (`cargo clippy`)
 
 - **Purpose**: Identify and fix code quality issues
 - **Failure Action**: Spawn Claude Code instance with prompt: "Fix all Clippy warnings and errors. Prioritise performance, correctness, and idiomatic Rust patterns. Explain reasoning for any clippy directives added."
@@ -81,7 +81,7 @@ Execute the following checks in sequence. **If ANY check requires a retry, the e
 - **Max Retries**: 3
 - **Loop Trigger**: Any retry triggers return to Phase 1
 
-### 5. Documentation Generation (`cargo doc`)
+### Part 5: ✓ Documentation Build (`cargo doc`)
 
 - **Purpose**: Verify documentation builds successfully
 - **Failure Action**: Spawn Claude Code instance with prompt: "Fix documentation build errors. Ensure all public APIs have proper documentation. Fix broken doc links and malformed doc comments."

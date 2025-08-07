@@ -59,6 +59,7 @@ mod health_monitor;
 mod message_templates;
 pub mod pipeline;
 mod planner;
+mod pre_validation;
 mod progress_reporter;
 mod queue;
 mod scope_limiter;
@@ -67,6 +68,7 @@ mod structured_logger;
 mod system_lock;
 mod types;
 mod validation;
+mod validation_agents;
 
 pub mod claude_spawn_example;
 

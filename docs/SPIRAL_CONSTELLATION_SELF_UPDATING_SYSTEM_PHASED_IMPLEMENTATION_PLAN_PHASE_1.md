@@ -155,48 +155,46 @@ Before proceeding to implementation, the system must generate:
 
 ### 1.6 Two-Phase Validation Pipeline
 
-### Phase 1: Pre-Implementation Validation
+### Phase 1: Engineering Review
 
-**Objective**: Validate changes BEFORE restarting the live system
+**Objective**: Like engineers reviewing all the work - validate changes BEFORE restarting the live system
 
 **Note**: At this stage, Claude has already modified files in the working directory. Validation ensures these changes are safe before the system restarts with the new code.
 
-#### Validation Requirements
+#### Engineering Review Parts
 
-- Execute comprehensive testing protocols on modified working directory
-- Perform security validation on current changes
-- Conduct thorough code/change review of modifications
-- Verify system integration compatibility with changes
+- Part 1: Code Standards Review - Architecture and patterns inspection
+- Part 2: Test Coverage Analysis - Critical path verification
+- Part 3: Security Inspection - Vulnerability assessment
+- Part 4: Integration Review - System cohesion check
 
-#### Pre-Implementation Gate
+#### Engineering Review Gate
 
-- **Requirement**: ALL Phase 1 validation steps must pass
+- **Requirement**: ALL Engineering Review parts must pass
 - **Action on Failure**: Rollback changes to snapshot; do NOT restart system
-- **Action on Success**: Proceed to system restart and Phase 2 validation
+- **Action on Success**: Proceed to Final Assembly Checklist
 
-### Phase 2: Post-Restart Validation
+### Phase 2: Final Assembly Checklist
 
-**Objective**: Validate system health after restart with new code
+**Objective**: Like ticking boxes before the car rolls off the line - mechanical verification
 
-#### Post-Restart Testing
+#### Assembly Line Checks
 
-- Verify system started successfully with changes
-- Re-run full validation suite on live system
-- Confirm changes integrate properly in production
-- Verify no existing functionality has been broken
+- Part 1: ✓ Compilation Check - Verify system compiles
+- Part 2: ✓ Test Execution - Run all tests
+- Part 3: ✓ Formatting Check - Ensure code style compliance  
+- Part 4: ✓ Linting Check - Verify code quality standards
+- Part 5: ✓ Documentation Build - Confirm docs generate
 
-#### Final Validation
+#### Final Assembly Gate
 
-- Complete final testing pass on running system
-- Perform final security verification
-- Conduct last comprehensive review
-- Confirm system is stable and healthy
+- **Requirement**: ALL checklist items must pass
+- **Action on Failure**: Loop back to Engineering Review (max 3 iterations)
+- **Action on Success**: Proceed to system restart
 
-#### Post-Restart Gate
+### Post-Restart Validation
 
-- **Requirement**: ALL Phase 2 validation steps must pass
-- **Action on Failure**: Rollback to pre-update snapshot and restart with old code
-- **Action on Success**: Commit changes and push to repository
+After system restart, the same two-phase validation runs again to verify the live system.
 
 ### Timeout Handling
 
