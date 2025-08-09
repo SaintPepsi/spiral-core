@@ -473,23 +473,40 @@ impl UpdateExecutor {
         
         match self.run_validation_pipeline(&context.request).await {
             Ok(results) => {
-                info!("[UpdateExecutor] Validation passed");
+                info!("[UpdateExecutor] Validation passed, committing and pushing changes");
+                
+                // Git operations: Commit and push validated changes
+                let git_result = self.commit_and_push_changes(&context.request).await;
+                
                 context.progress_reporter.set_phase(UpdatePhase::Complete).await;
                 context.progress_reporter.set_status("Update completed successfully!".to_string()).await;
-                self.update_discord_status(&context.request, "🎉 Update completed successfully!").await;
+                
+                let final_message = match git_result {
+                    Ok(commit_hash) => {
+                        self.update_discord_status(&context.request, 
+                            &format!("🎉 Update completed and pushed! Commit: {}", &commit_hash[..8])).await;
+                        format!("Update completed successfully and pushed to remote ({})", &commit_hash[..8])
+                    }
+                    Err(e) => {
+                        warn!("[UpdateExecutor] Git operations failed: {}", e);
+                        self.update_discord_status(&context.request, 
+                            "⚠️ Update completed but Git push failed - changes are local only").await;
+                        format!("Update completed but Git operations failed: {}", e)
+                    }
+                };
                 
                 // Stop progress reporting
                 context.progress_reporter.stop().await;
                 
                 // Log validation results and create summary
                 let _ = context.logger.log_validation_results("Final", &results).await;
-                let _ = context.logger.create_summary(true, "Update completed successfully", context.start_time.elapsed()).await;
-                info!("[UpdateExecutor] Update completed successfully. Logs at: {}", context.logger.get_log_dir().display());
+                let _ = context.logger.create_summary(true, &final_message, context.start_time.elapsed()).await;
+                info!("[UpdateExecutor] {}. Logs at: {}", final_message, context.logger.get_log_dir().display());
                 
                 UpdateResult {
                     request: context.request.clone(),
                     success: true,
-                    message: "Update completed successfully".to_string(),
+                    message: final_message,
                     snapshot_id,
                     error: None,
                     validation_results: Some(results),
@@ -786,6 +803,30 @@ Implement all tasks according to the plan."#,
         info!("[UpdateExecutor] Rolling back to snapshot: {}", snapshot_id);
         if let Err(e) = GitOperations::rollback_to_snapshot(snapshot_id).await {
             error!("[UpdateExecutor] Rollback failed: {}", e);
+        }
+    }
+    
+    /// Commit and push validated changes to remote repository
+    async fn commit_and_push_changes(&self, request: &SelfUpdateRequest) -> Result<String> {
+        info!("[UpdateExecutor] Committing and pushing validated changes");
+        
+        // Commit the changes with descriptive message
+        let commit_hash = GitOperations::commit_validated_changes(
+            &request.codename,
+            &request.description
+        ).await?;
+        
+        // Push to remote repository
+        match GitOperations::push_to_remote(None).await {
+            Ok(()) => {
+                info!("[UpdateExecutor] Successfully pushed changes to remote");
+                Ok(commit_hash)
+            }
+            Err(e) => {
+                warn!("[UpdateExecutor] Push failed but changes are committed locally: {}", e);
+                // Return commit hash even if push fails - changes are still saved locally
+                Ok(commit_hash)
+            }
         }
     }
 

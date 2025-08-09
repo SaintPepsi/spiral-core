@@ -102,3 +102,7 @@ pub const MAX_UPDATE_CONTENT_SIZE: usize = 64 * 1024; // 64KB
 mod tests;
 #[cfg(test)]
 mod structured_logger_test;
+#[cfg(test)]
+mod pre_validation_tests;
+#[cfg(test)]
+pub mod test_harness;
