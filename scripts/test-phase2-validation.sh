@@ -83,12 +83,12 @@ else
 fi
 echo ""
 
-# Optional: Run specific Phase 2 validation tests
-echo -e "${BLUE}🔧 Step 6: Phase 2 Validation Unit Tests${NC}"
-echo "----------------------------------------"
-cargo test --package spiral-core --lib discord::self_update::validation_pipeline::phase2 -- --nocapture 2>/dev/null || {
-    echo -e "${YELLOW}ℹ️  No specific Phase 2 unit tests found (this is OK)${NC}"
-}
+# Note: We've already run all the Phase 2 checks above (compilation, tests, format, clippy, docs)
+# The run_phase2 binary would duplicate these checks, so we skip it in the script
+echo ""
+echo "💡 To run the Phase 2 validation binary with retry logic and Claude fixes:"
+echo ""
+echo "  cargo run --bin run_phase2 -- --no-claude"
 echo ""
 
 # Summary
