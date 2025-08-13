@@ -9,7 +9,7 @@ use crate::config::ClaudeCodeConfig;
 use crate::Result;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{info, warn};
+use tracing::info;
 use uuid;
 
 /// Test harness for simulating self-updates
@@ -213,8 +213,7 @@ mod harness_tests {
         
         // With real Claude, should see actual validation results
         if let Some(validation) = result.validation_results {
-            println!("Phase 1 passed: {}", validation.engineering_review_passed);
-            println!("Phase 2 passed: {}", validation.assembly_checklist_passed);
+            println!("Validation results: {}", validation);
         }
     }
 }
@@ -236,7 +235,7 @@ pub async fn run_validation_test_suite() -> Result<()> {
     // Test 2: Pre-flight checks
     println!("\n🔍 Test 2: Pre-flight Checks");
     {
-        let validator = UpdateValidator::new();
+        let validator = UpdateValidator;
         let request = SelfUpdateRequest {
             id: "preflight-test".to_string(),
             codename: "test".to_string(),

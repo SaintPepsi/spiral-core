@@ -8,7 +8,7 @@ use spiral_core::{
 };
 use std::sync::Arc;
 use tokio::signal;
-use tracing::{error, info, warn, Level};
+use tracing::{debug, error, info, warn, Level};
 
 /// 🚀 SPIRAL CORE MAIN ENTRY POINT
 /// DECISION: Graceful startup/shutdown with proper resource management
@@ -56,18 +56,27 @@ async fn main() -> anyhow::Result<()> {
 
     // 🤖 STARTUP PHASE 4.5: Initialize Discord integration (optional)
     let discord_handle = if !config.discord.token.is_empty() {
-        info!("Starting Discord integration with orchestrator...");
+        info!("[Main] Discord token detected, preparing Discord integration...");
+        debug!("[Main] Discord token length: {}", config.discord.token.len());
+        
         let config_clone = config.clone();
         let orchestrator_clone = orchestrator.clone();
 
+        info!("[Main] Spawning Discord integration task...");
         Some(tokio::spawn(async move {
-            if let Err(e) = start_discord_with_orchestrator(config_clone, orchestrator_clone).await
-            {
-                error!("Discord integration failed: {}", e);
+            info!("[Main] Discord integration task started");
+            match start_discord_with_orchestrator(config_clone, orchestrator_clone).await {
+                Ok(()) => {
+                    info!("[Main] Discord integration completed successfully");
+                },
+                Err(e) => {
+                    error!("[Main] Discord integration failed: {}", e);
+                    error!("[Main] Discord error details: {:?}", e);
+                }
             }
         }))
     } else {
-        info!("Discord token not provided - Discord integration disabled");
+        warn!("[Main] Discord token not provided - Discord integration disabled");
         None
     };
 

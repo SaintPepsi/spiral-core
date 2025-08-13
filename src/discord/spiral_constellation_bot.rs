@@ -1301,10 +1301,15 @@ impl ConstellationBotHandler {
 #[async_trait]
 impl EventHandler for ConstellationBotHandler {
     async fn message(&self, ctx: Context, msg: Message) {
+        debug!("[Event] Message received from {} in channel {}", msg.author.name, msg.channel_id);
+        debug!("[Event] Message content: {}", msg.content);
+        
         // Ignore bot messages
         if msg.author.bot {
+            debug!("[Event] Ignoring bot message");
             return;
         }
+        debug!("[Event] Processing user message");
 
         // 🛡️ SECURITY VALIDATION: Multi-layer security check before processing
         // ARCHITECTURE DECISION: Validate all messages through security pipeline first
@@ -2023,12 +2028,17 @@ impl EventHandler for ConstellationBotHandler {
 
     async fn ready(&self, ctx: Context, ready: Ready) {
         info!(
-            "🌌 SpiralConstellation bot {} is connected and ready!",
+            "[Event] 🌌 SpiralConstellation bot {} is connected and ready!",
             ready.user.name
         );
-        info!("Available personas: SpiralDev, SpiralPM, SpiralQA, SpiralDecide, SpiralCreate, SpiralCoach");
-        info!("Role support: Discord roles can be created with '!spiral setup roles'");
-        info!("Usage: @SpiralDev, role mentions, or !spiral join <role>");
+        info!("[Event] Bot ID: {}", ready.user.id);
+        info!("[Event] Connected to {} guilds", ready.guilds.len());
+        debug!("[Event] Session ID: {}", ready.session_id);
+        debug!("[Event] Ready version: {}", ready.version);
+        
+        info!("[Event] Available personas: SpiralDev, SpiralPM, SpiralQA, SpiralDecide, SpiralCreate, SpiralCoach");
+        info!("[Event] Role support: Discord roles can be created with '!spiral setup roles'");
+        info!("[Event] Usage: @SpiralDev, role mentions, or !spiral join <role>");
 
         // Set bot activity status to show the commands
         use serenity::all::ActivityData;
@@ -3649,32 +3659,54 @@ impl SpiralConstellationBotRunner {
     pub async fn run(self) -> Result<()> {
         use serenity::{all::GatewayIntents, Client};
 
-        info!("[SpiralConstellation] Starting Discord bot...");
+        info!("[SpiralConstellation] Starting Discord bot runner...");
+        debug!("[SpiralConstellation] Token length: {}", self.token.len());
+        debug!("[SpiralConstellation] Token starts with: {}...", &self.token[..10.min(self.token.len())]);
 
         // REDUCED INTENTS: Use minimal set for basic functionality
         // If you get "Disallowed intent(s)" error, enable these in Discord Developer Portal:
         // - MESSAGE CONTENT INTENT (critical)
         // - SERVER MEMBERS INTENT (for role management)
+        debug!("[SpiralConstellation] Setting up Gateway intents...");
         let intents = GatewayIntents::GUILD_MESSAGES
             | GatewayIntents::DIRECT_MESSAGES
             | GatewayIntents::MESSAGE_CONTENT  // Requires "Message Content Intent" enabled
             | GatewayIntents::GUILD_MESSAGE_REACTIONS  // For trash bin reaction handling
             | GatewayIntents::GUILDS;
         // Commented out for now: | GatewayIntents::GUILD_MEMBERS;  // Requires "Server Members Intent"
+        debug!("[SpiralConstellation] Gateway intents configured: {:?}", intents);
 
         // Setup reaction handlers before starting
+        debug!("[SpiralConstellation] Setting up reaction handlers...");
         self.bot.setup_reaction_handlers().await;
+        debug!("[SpiralConstellation] Reaction handlers configured");
         
         // Create handler and get reference to bot for UpdateExecutor
+        debug!("[SpiralConstellation] Creating bot handler...");
         let bot_arc = Arc::new(self.bot);
         let handler = ConstellationBotHandler {
             bot: bot_arc.clone(),
         };
+        debug!("[SpiralConstellation] Bot handler created");
 
-        let mut client = Client::builder(&self.token, intents)
+        info!("[SpiralConstellation] Building Discord client...");
+        let mut client = match Client::builder(&self.token, intents)
             .event_handler(handler)
-            .await
-            .map_err(|e| SpiralError::Discord(Box::new(e)))?;
+            .await {
+                Ok(client) => {
+                    info!("[SpiralConstellation] ✅ Discord client built successfully");
+                    client
+                },
+                Err(e) => {
+                    error!("[SpiralConstellation] ❌ Failed to build Discord client: {}", e);
+                    error!("[SpiralConstellation] Common causes:");
+                    error!("  - Invalid token format");
+                    error!("  - Token revoked or expired");
+                    error!("  - Network connectivity issues");
+                    error!("  - Discord API is down");
+                    return Err(SpiralError::Discord(Box::new(e)));
+                }
+            };
 
         // Get Discord HTTP client for UpdateExecutor
         let discord_http = client.http.clone();
@@ -3706,13 +3738,25 @@ impl SpiralConstellationBotRunner {
             });
         }
 
-        info!("[SpiralConstellation] Discord client created with update executor, starting...");
+        info!("[SpiralConstellation] Discord client created with update executor");
+        info!("[SpiralConstellation] 🔄 Attempting to connect to Discord Gateway...");
 
         // Use start_autosharded which blocks until the client disconnects
-        if let Err(e) = client.start_autosharded().await {
-            return Err(SpiralError::Discord(Box::new(e)));
+        match client.start_autosharded().await {
+            Ok(()) => {
+                info!("[SpiralConstellation] ✅ Discord bot connected and running successfully");
+                Ok(())
+            },
+            Err(e) => {
+                error!("[SpiralConstellation] ❌ Failed to start Discord client: {}", e);
+                error!("[SpiralConstellation] Error details: {:?}", e);
+                error!("[SpiralConstellation] Common causes:");
+                error!("  - Invalid bot token");
+                error!("  - Missing required intents in Discord Developer Portal");
+                error!("  - Bot not added to any servers");
+                error!("  - Rate limited by Discord");
+                Err(SpiralError::Discord(Box::new(e)))
+            }
         }
-
-        Ok(())
     }
 }

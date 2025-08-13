@@ -1,5 +1,6 @@
 use crate::discord::spiral_constellation_bot::SpiralConstellationBot;
 use serenity::{model::channel::Message, prelude::Context};
+use tracing::debug;
 
 pub mod admin;
 pub mod debug;
@@ -167,13 +168,19 @@ impl CommandRouter {
         // 2. Route to appropriate handler based on match
         // 3. Handler parses action and executes
 
+        debug!("[CommandRouter] Routing command: {}", content);
+        debug!("[CommandRouter] From user: {} ({})", msg.author.name, msg.author.id);
+        
         let content_lower = content.to_lowercase();
 
         // Find matching command from static definitions
         for command_info in AVAILABLE_COMMANDS {
             if content_lower.starts_with(&command_info.prefix.to_lowercase()) {
+                debug!("[CommandRouter] Matched command: {} (prefix: {})", command_info.name, command_info.prefix);
+                debug!("[CommandRouter] Command requires auth: {}", command_info.requires_auth);
+                
                 // Route to appropriate handler based on command name
-                return match command_info.name {
+                let result = match command_info.name {
                     "admin" => self.admin.handle(content, msg, ctx, bot).await,
                     "debug" => self.debug.handle(content, msg, ctx, bot).await,
                     "debug progress" => self.debug_progress.handle(content, msg, ctx, bot).await,
@@ -182,11 +189,18 @@ impl CommandRouter {
                     "roles" => self.roles.handle(content, msg, ctx, bot).await,
                     "security" => self.security.handle(content, msg, ctx, bot).await,
                     "update" => self.self_update.handle(content, msg, ctx, bot).await,
-                    _ => None,
+                    _ => {
+                        debug!("[CommandRouter] No handler for command: {}", command_info.name);
+                        None
+                    },
                 };
+                
+                debug!("[CommandRouter] Command result: {}", if result.is_some() { "response generated" } else { "no response" });
+                return result;
             }
         }
 
+        debug!("[CommandRouter] No matching command found for: {}", content);
         None
     }
 }

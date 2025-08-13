@@ -73,7 +73,9 @@
       "Bash(git commit:*)",
       "Bash(npx prettier:*)",
       "Bash(claude --version)",
-      "Bash(git config:*)"
+      "Bash(git config:*)",
+      "Bash(./scripts/test-phase2-validation.sh:*)",
+      "Bash(env)"
     ],
     "deny": [
       "Bash(npm install -g:*)",
