@@ -134,11 +134,21 @@ start_spiral_core() {
     export RUST_BACKTRACE=${RUST_BACKTRACE:-1}
     
     # Start the server in background
-    nohup cargo run --release --bin spiral-core \
-        > "${LOG_DIR}/spiral-core.log" 2>&1 &
+    # Use the built binary directly for better PID tracking
+    if [ -f "${SCRIPT_DIR}/target/release/spiral-core" ]; then
+        nohup "${SCRIPT_DIR}/target/release/spiral-core" \
+            > "${LOG_DIR}/spiral-core.log" 2>&1 &
+    else
+        # Fallback to cargo run if binary doesn't exist
+        nohup cargo run --release --bin spiral-core \
+            > "${LOG_DIR}/spiral-core.log" 2>&1 &
+    fi
     
     local pid=$!
     echo $pid > "${PID_DIR}/spiral-core.pid"
+    
+    # Also save the actual process name for verification
+    echo "spiral-core" > "${PID_DIR}/spiral-core.name"
     
     # Wait for server to start
     sleep 3

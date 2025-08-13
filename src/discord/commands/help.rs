@@ -18,72 +18,40 @@ impl HelpCommand {
         Self {}
     }
 
-    /// Generate comprehensive help information
+    /// Generate comprehensive help information (compact version)
     fn generate_help_content(&self, is_authorized: bool) -> String {
         let mut help_text = String::new();
 
-        help_text.push_str("🌌 **SpiralConstellation Help Center**\n\n");
+        help_text.push_str("🌌 **Spiral Core Help**\n\n");
 
-        // Basic usage section
-        help_text.push_str("**🚀 Quick Start**\n");
-        help_text.push_str("• Mention agents: @SpiralDev create a function\n");
-        help_text.push_str("• Join agent roles: `!spiral join SpiralDev`\n");
-        help_text.push_str("• Get agent role: `!spiral join SpiralKing`\n");
-        help_text.push_str("• Setup server roles: `!spiral setup roles`\n\n");
+        // Quick start
+        help_text.push_str("**Quick Start**\n");
+        help_text.push_str("• Mention agents: `@SpiralDev write code`\n");
+        help_text.push_str("• Join roles: `!spiral join SpiralDev`\n\n");
 
         // Core commands
-        help_text.push_str("**🎮 Core Commands**\n");
-        help_text.push_str("• `!spiral help` - Show this detailed help\n");
-        help_text.push_str("• `!spiral commands` - Show concise command list\n");
-        help_text.push_str("• `!spiral join <role>` - Join an agent role\n");
-        help_text.push_str("• `!spiral setup roles` - Create agent roles\n");
-        help_text.push_str("• `!spiral ratelimit` - Check your rate limit status\n");
-        help_text.push_str("• `!spiral update help` - Learn about the self-update system\n\n");
+        help_text.push_str("**Commands**\n");
+        help_text.push_str("• `!spiral help` - This help\n");
+        help_text.push_str("• `!spiral commands` - Command list\n");
+        help_text.push_str("• `!spiral join <role>` - Join agent role\n");
+        help_text.push_str("• `!spiral setup roles` - Create roles\n");
+        help_text.push_str("• `!spiral ratelimit` - Check limits\n\n");
 
-        // Authorization-specific commands
+        // Admin commands (only if authorized)
         if is_authorized {
-            help_text.push_str("**🔐 Admin Commands** (Authorized Access)\n");
-            help_text.push_str("• `!spiral admin` - Admin dashboard with system overview\n");
-            help_text.push_str("• `!spiral security stats` - View security metrics\n");
-            help_text.push_str("• `!spiral security reset` - Reset security metrics\n");
-            help_text.push_str("• `!spiral security report` - Generate security report\n");
-            help_text
-                .push_str("• `!spiral debug` - Debug any issue (reply to problematic message)\n");
-            help_text.push_str("• `!spiral ratelimit @user` - Check user's rate limit\n");
-            help_text.push_str("• `!spiral reset ratelimit @user` - Reset user's rate limit\n\n");
+            help_text.push_str("**Admin**\n");
+            help_text.push_str("• `!spiral admin` - Dashboard\n");
+            help_text.push_str("• `!spiral security stats` - Metrics\n");
+            help_text.push_str("• `!spiral debug` - Debug (reply to msg)\n\n");
         }
 
-        // Agent personas section
-        help_text.push_str("**🤖 Available Agent Personas**\n");
-        help_text.push_str("• **SpiralDev** 💻 - Code generation and development\n");
-        help_text.push_str("• **SpiralPM** 📋 - Project management and planning\n");
-        help_text.push_str("• **SpiralQA** 🔍 - Quality assurance and testing\n");
-        help_text.push_str("• **SpiralKing** 👑 - Leadership and decision making\n");
-        help_text.push_str("• **SpiralDecide** ⚖️ - Analysis and recommendations\n");
-        help_text.push_str("• **SpiralCreate** 🎨 - Creative solutions and innovation\n");
-        help_text.push_str("• **SpiralCoach** 🏃 - Process optimization and guidance\n\n");
+        // Agent list (compact)
+        help_text.push_str("**Agents**\n");
+        help_text.push_str("💻 SpiralDev | 📋 SpiralPM | 🔍 SpiralQA\n");
+        help_text.push_str("👑 SpiralKing | ⚖️ SpiralDecide\n");
+        help_text.push_str("🎨 SpiralCreate | 🏃 SpiralCoach\n\n");
 
-        // Usage examples
-        help_text.push_str("**💡 Usage Examples**\n");
-        help_text.push_str("• `@SpiralDev create a REST API for user management`\n");
-        help_text.push_str("• `@SpiralPM help me plan this feature`\n");
-        help_text.push_str("• `@SpiralQA review this code for issues`\n");
-        help_text.push_str("• `!spiral join SpiralDev` (to get the developer role)\n\n");
-
-        // System information
-        help_text.push_str("**ℹ️ System Information**\n");
-        help_text.push_str("• **Security**: Universal authorization required for all commands\n");
-        help_text.push_str("• **Rate Limiting**: Active to prevent abuse\n");
-        help_text.push_str("• **Privacy**: Messages processed securely\n");
-        help_text.push_str("• **Logging**: Security events are logged for audit\n\n");
-
-        // Footer
-        help_text.push_str("**🆘 Need More Help?**\n");
-        help_text.push_str("• Use `!spiral commands` for a quick command reference\n");
-        help_text.push_str("• Check the project documentation for detailed guides\n");
-        help_text.push_str("• Report issues through the proper channels\n\n");
-
-        help_text.push_str("*Spiral Core - AI Agent Orchestration System* 🌌");
+        help_text.push_str("Use `!spiral commands` for full list");
 
         help_text
     }

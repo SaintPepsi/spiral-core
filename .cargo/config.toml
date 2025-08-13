@@ -1,0 +1,9 @@
+# Cargo configuration for Spiral Core
+
+[alias]
+# Custom aliases for common tasks
+test-all = "test --all-features"
+check-all = "check --all-targets"
+
+# Run pre-commit checks manually
+pre-commit = "run --bin pre-commit-check"

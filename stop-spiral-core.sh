@@ -119,9 +119,22 @@ main() {
     stop_service "spiral-core"
     stop_service "discord-bot"  # In case it becomes separate
     
-    # Clean up any stray processes (optional)
+    # Clean up any stray processes
     log_info "Checking for stray processes..."
-    pkill -f "spiral-core" 2>/dev/null || true
+    
+    # Kill any processes running the spiral-core binary
+    if pgrep -f "target/release/spiral-core" > /dev/null 2>&1; then
+        log_info "Found spiral-core processes, stopping..."
+        pkill -f "target/release/spiral-core" 2>/dev/null || true
+        sleep 1
+    fi
+    
+    # Also check for cargo run processes
+    if pgrep -f "cargo.*spiral-core" > /dev/null 2>&1; then
+        log_info "Found cargo run spiral-core processes, stopping..."
+        pkill -f "cargo.*spiral-core" 2>/dev/null || true
+        sleep 1
+    fi
     
     # Final status
     echo ""

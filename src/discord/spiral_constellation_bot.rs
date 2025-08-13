@@ -9,8 +9,9 @@ use crate::{
         messages::{self, emojis, risk_level_to_str},
         reaction_handler,
         self_update::{
-            ApprovalManager, GitOperations, PreflightChecker, SelfUpdateRequest, StatusTracker,
-            SystemLock, UpdateExecutor, UpdateQueue, UpdateStatus, UpdateType, UpdateValidator,
+            ApprovalManager, FixableIssueTracker, GitOperations, PreflightChecker,
+            SelfUpdateRequest, StatusTracker, SystemLock, UpdateExecutor, UpdateQueue,
+            UpdateStatus, UpdateType, UpdateValidator,
         },
         IntentClassifier, IntentResponse, IntentType, MessageSecurityValidator, RiskLevel,
         SecureMessageHandler,
@@ -164,6 +165,7 @@ pub struct SpiralConstellationBot {
     update_queue: Arc<UpdateQueue>,
     approval_manager: Arc<ApprovalManager>,
     system_lock: Arc<SystemLock>,
+    fixable_issues_tracker: Option<Arc<FixableIssueTracker>>,
     command_router: CommandRouter,
     discord_config: DiscordConfig,
     reaction_handler_manager: Arc<reaction_handler::ReactionHandlerManager>,
@@ -363,6 +365,7 @@ impl SpiralConstellationBot {
             update_queue: Arc::new(UpdateQueue::new()),
             approval_manager: Arc::new(ApprovalManager::new()),
             system_lock: Arc::new(SystemLock::new()),
+            fixable_issues_tracker: Some(Arc::new(FixableIssueTracker::new())),
             command_router: CommandRouter::new(),
             discord_config,
             reaction_handler_manager: Arc::new(reaction_handler::ReactionHandlerManager::new()),
@@ -408,6 +411,7 @@ impl SpiralConstellationBot {
             update_queue: Arc::new(UpdateQueue::new()),
             approval_manager: Arc::new(ApprovalManager::new()),
             system_lock: Arc::new(SystemLock::new()),
+            fixable_issues_tracker: Some(Arc::new(FixableIssueTracker::new())),
             command_router: CommandRouter::new(),
             discord_config,
             reaction_handler_manager: Arc::new(reaction_handler::ReactionHandlerManager::new()),
@@ -1569,10 +1573,24 @@ impl EventHandler for ConstellationBotHandler {
                     }
                 }
                 Err(e) => {
+                    let error_str = e.to_string();
                     warn!(
                         "[SpiralConstellation] Failed to send command response: {}",
-                        e
+                        error_str
                     );
+
+                    // Track if this is a message size issue
+                    if error_str.contains("too large") || error_str.contains("2000") {
+                        if let Some(tracker) = &self.bot.fixable_issues_tracker {
+                            let context = format!(
+                                "Command: {}",
+                                msg.content.chars().take(50).collect::<String>()
+                            );
+                            tracker
+                                .log_message_too_large(&context, command_response.len())
+                                .await;
+                        }
+                    }
                 }
             }
             return;

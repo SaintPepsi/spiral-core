@@ -54,6 +54,7 @@
 
 mod approval;
 mod executor;
+mod fixable_issues;
 mod git_ops;
 mod health_monitor;
 mod message_templates;
@@ -76,6 +77,7 @@ pub use approval::{
     format_approval_instructions, ApprovalManager, ApprovalResult, PendingApproval,
 };
 pub use executor::{UpdateExecutor, UpdateResult};
+pub use fixable_issues::{FixableIssue, FixableIssueTracker, IssueCategory};
 pub use git_ops::{GitOperations, SnapshotManager};
 pub use health_monitor::{HealthCategory, HealthCheck, HealthCheckResult, HealthMonitor};
 pub use message_templates::UpdateMessageTemplates;
