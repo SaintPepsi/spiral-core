@@ -94,6 +94,13 @@ pub const AVAILABLE_COMMANDS: &[CommandInfo] = &[
         requires_auth: false,
     },
     CommandInfo {
+        name: "commands",
+        prefix: "!spiral commands",
+        description: "Show concise command list",
+        category: CommandCategory::General,
+        requires_auth: false,
+    },
+    CommandInfo {
         name: "ratelimit",
         prefix: "!spiral ratelimit",
         description: "Check and manage user rate limits",
@@ -194,6 +201,7 @@ impl CommandRouter {
                     "debug" => self.debug.handle(content, msg, ctx, bot).await,
                     "debug progress" => self.debug_progress.handle(content, msg, ctx, bot).await,
                     "help" => self.help.handle(content, msg, ctx, bot).await,
+                    "commands" => self.help.handle(content, msg, ctx, bot).await, // Help handles both
                     "ratelimit" => self.rate_limit.handle(content, msg, ctx, bot).await,
                     "roles" => self.roles.handle(content, msg, ctx, bot).await,
                     "security" => self.security.handle(content, msg, ctx, bot).await,

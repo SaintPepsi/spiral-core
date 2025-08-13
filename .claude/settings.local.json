@@ -78,7 +78,8 @@
       "Bash(env)",
       "Bash(tree:*)",
       "Bash(./scripts/test-phase1-validation.sh:*)",
-      "Bash(./scripts/setup-git-hooks.sh:*)"
+      "Bash(./scripts/setup-git-hooks.sh:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [
       "Bash(npm install -g:*)",

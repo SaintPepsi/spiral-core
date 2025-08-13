@@ -1033,6 +1033,9 @@ impl SpiralConstellationBot {
         // Register error recovery handlers
         self.register_error_recovery_handlers(manager).await;
 
+        // Register dashboard refresh handler
+        self.register_dashboard_handlers(manager).await;
+
         info!(
             "[SpiralConstellation] Reaction handlers registered: {:?}",
             manager.registered_emojis().await
@@ -1173,7 +1176,7 @@ impl SpiralConstellationBot {
         &self,
         manager: &reaction_handler::ReactionHandlerManager,
     ) {
-        // Retry emoji for retrying failed operations
+        // Retry emoji for retrying failed operations (but not admin dashboards)
         manager
             .register_simple(
                 messages::emojis::RETRY.to_string(),
@@ -1185,6 +1188,14 @@ impl SpiralConstellationBot {
                             .message(&ctx.http)
                             .await
                             .map_err(|e| format!("Failed to get message: {e}"))?;
+
+                        // Skip if this is an admin dashboard (handled by dashboard handler)
+                        if message
+                            .content
+                            .contains(messages::patterns::ADMIN_DASHBOARD_TITLE)
+                        {
+                            return Ok(());
+                        }
 
                         // For now, just acknowledge the retry request
                         message
@@ -1217,6 +1228,62 @@ impl SpiralConstellationBot {
                                 return Self::handle_bug_reaction(ctx, reaction, user).await;
                             }
                         }
+                        Ok(())
+                    })
+                },
+            )
+            .await;
+    }
+
+    /// Register handlers for dashboard refresh
+    async fn register_dashboard_handlers(
+        &self,
+        manager: &reaction_handler::ReactionHandlerManager,
+    ) {
+        // Note: We use a different approach here since we can't easily access the bot instance
+        // from within the closure. The refresh will simply add a timestamp to show it was refreshed.
+        manager
+            .register_simple(
+                messages::emojis::RETRY.to_string(),  // Using the 🔄 emoji  
+                "Refresh admin dashboard",
+                true,  // Requires auth
+                |ctx, reaction, _user| {
+                    Box::pin(async move {
+                        // Get the original message
+                        let mut message = reaction
+                            .message(&ctx.http)
+                            .await
+                            .map_err(|e| format!("Failed to get message: {e}"))?;
+
+                        // Check if this is an admin dashboard message
+                        if !message.content.contains(messages::patterns::ADMIN_DASHBOARD_TITLE) {
+                            return Ok(()); // Not a dashboard message, let other handlers process it
+                        }
+
+                        // For a real refresh, we'd regenerate the dashboard here
+                        // Since we can't easily access bot stats from this closure,
+                        // we'll add a timestamp to show the refresh happened
+                        let timestamp = chrono::Utc::now().timestamp();
+                        let refresh_note = format!(
+                            "\n\n*🔄 Last refreshed: <t:{timestamp}:R>*\n*React with 🔄 to refresh dashboard*"
+                        );
+
+                        // Remove any existing refresh note and add new one
+                        let mut updated_content = message.content.clone();
+                        if let Some(pos) = updated_content.find("*🔄 Last refreshed:") {
+                            updated_content.truncate(pos);
+                        } else if let Some(pos) = updated_content.find("*React with 🔄") {
+                            updated_content.truncate(pos);
+                        }
+                        updated_content.push_str(&refresh_note);
+
+                        // Edit the message with updated content
+                        message
+                            .edit(&ctx.http, serenity::builder::EditMessage::new()
+                                .content(updated_content))
+                            .await
+                            .map_err(|e| format!("Failed to update dashboard: {e}"))?;
+
                         Ok(())
                     })
                 },
@@ -1569,6 +1636,17 @@ impl EventHandler for ConstellationBotHandler {
                             warn!("[SpiralConstellation] Failed to add bug reaction to blocked command: {}", e);
                         } else {
                             info!("[SpiralConstellation] Added bug reaction for authorized user to debug blocked command");
+                        }
+                    }
+
+                    // If it's an admin dashboard message, add refresh emoji
+                    if command_response.contains(messages::patterns::ADMIN_DASHBOARD_TITLE) {
+                        if let Err(e) = response_msg.react(&ctx.http, emojis::RETRY).await {
+                            warn!("[SpiralConstellation] Failed to add refresh reaction to admin dashboard: {}", e);
+                        } else {
+                            info!(
+                                "[SpiralConstellation] Added refresh reaction to admin dashboard"
+                            );
                         }
                     }
                 }

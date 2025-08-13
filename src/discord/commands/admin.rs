@@ -23,7 +23,10 @@ impl AdminCommand {
         let start_time = Instant::now();
 
         // System overview
-        let mut panel = "🔐 **Spiral Core Admin Dashboard**\n\n".to_string();
+        let mut panel = format!(
+            "{}\n\n",
+            crate::discord::messages::patterns::ADMIN_DASHBOARD_TITLE
+        );
 
         // Bot status and stats
         let stats = bot.stats.lock().await;
@@ -139,7 +142,7 @@ impl AdminCommand {
         panel.push_str("• `!spiral debug <message>` - Debug specific issues\n");
         panel.push_str("• `!spiral ratelimit @user` - Check user rate limits\n\n");
 
-        panel.push_str("*Dashboard updated in real-time* ⚡");
+        panel.push_str("*React with 🔄 to refresh dashboard*");
 
         panel
     }

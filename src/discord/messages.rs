@@ -247,6 +247,7 @@ impl MessageFormatter {
 pub mod patterns {
     pub const COMMAND_BLOCKED_PATTERN: &str = "⚠️ Command blocked";
     pub const MESSAGE_FLAGGED_PATTERN: &str = "🚫 Message flagged";
+    pub const ADMIN_DASHBOARD_TITLE: &str = "🔐 **Spiral Core Admin Dashboard**";
 }
 
 /// Emoji constants

@@ -305,6 +305,25 @@ impl CommandHandler for RolesCommand {
 
                 self.assign_role(ctx, msg, role_name).await
             }
+            "!spiral roles" => {
+                // Show help when just "!spiral roles" is called
+                Some(
+                    "**🌌 Spiral Roles Management**\n\n\
+                    **Available commands:**\n\
+                    • `!spiral roles setup` - Create all agent roles in the server\n\
+                    • `!spiral roles join <name>` - Join an agent role\n\n\
+                    **Example:** `!spiral roles join SpiralDev`\n\n\
+                    **Available agents:**\n\
+                    • SpiralDev - Code generation and development\n\
+                    • SpiralPM - Project management and planning\n\
+                    • SpiralQA - Quality assurance and testing\n\
+                    • SpiralKing - Leadership and decision making\n\
+                    • SpiralDecide - Analysis and recommendations\n\
+                    • SpiralCreate - Creative solutions and innovation\n\
+                    • SpiralCoach - Process optimization and guidance"
+                        .to_string(),
+                )
+            }
             _ => None,
         }
     }
