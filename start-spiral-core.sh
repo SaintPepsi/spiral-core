@@ -210,16 +210,49 @@ show_status() {
     echo "Logs Directory: ${LOG_DIR}"
     echo "Main Log: ${LOG_DIR}/spiral-core.log"
     echo ""
-    echo "To monitor logs in real-time:"
-    echo "  tail -f ${LOG_DIR}/spiral-core.log"
-    echo ""
+    
+    if [ "$AUTO_TAIL" = false ]; then
+        echo "To monitor logs in real-time:"
+        echo "  tail -f ${LOG_DIR}/spiral-core.log"
+        echo ""
+    fi
+    
     echo "To stop all services:"
     echo "  ${SCRIPT_DIR}/stop-spiral-core.sh"
     echo ""
 }
 
+# Tail logs automatically
+tail_logs() {
+    echo ""
+    echo "📋 Following log output (press Ctrl+C to stop)..."
+    echo "========================================="
+    echo ""
+    
+    # Trap Ctrl+C to show a clean exit message
+    trap 'echo ""; echo "Log monitoring stopped. Service continues running in background."; exit 0' INT
+    
+    # Tail the log file
+    tail -f "${LOG_DIR}/spiral-core.log"
+}
+
 # Main execution
 main() {
+    # Parse arguments - defaults
+    AUTO_TAIL=true
+    AUTO_BUILD=true
+    
+    for arg in "$@"; do
+        case "$arg" in
+            --no-build)
+                AUTO_BUILD=false
+                ;;
+            --no-tail)
+                AUTO_TAIL=false
+                ;;
+        esac
+    done
+    
     echo ""
     echo "🌀 Starting Spiral Core System..."
     echo "=================================="
@@ -231,11 +264,14 @@ main() {
     # Run checks
     check_environment
     
-    # Build if requested or if binary doesn't exist
-    if [ "$1" == "--build" ] || [ ! -f "${SCRIPT_DIR}/target/release/spiral-core" ]; then
+    # Build unless explicitly disabled
+    if [ "$AUTO_BUILD" = true ]; then
+        build_project
+    elif [ ! -f "${SCRIPT_DIR}/target/release/spiral-core" ]; then
+        log_warning "Binary not found, building anyway..."
         build_project
     else
-        log_info "Skipping build (use --build to force rebuild)"
+        log_info "Skipping build (use without --no-build to rebuild)"
     fi
     
     # Start services
@@ -250,24 +286,34 @@ main() {
     show_status
     
     log_success "Spiral Core system started successfully!"
+    
+    # Auto-tail logs unless disabled
+    if [ "$AUTO_TAIL" = true ]; then
+        tail_logs
+    fi
 }
 
 # Handle script arguments
-case "${1:-}" in
-    --help|-h)
-        echo "Usage: $0 [OPTIONS]"
-        echo ""
-        echo "Options:"
-        echo "  --build    Force rebuild before starting"
-        echo "  --help     Show this help message"
-        echo ""
-        echo "This script starts the Spiral Core system including:"
-        echo "  - Spiral Core server (agent orchestration)"
-        echo "  - Discord bot integration"
-        echo ""
-        exit 0
-        ;;
-    *)
-        main "$@"
-        ;;
-esac
+if [[ " $* " == *" --help "* ]] || [[ " $* " == *" -h "* ]]; then
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  --no-build  Skip the build step (unless binary is missing)"
+    echo "  --no-tail   Don't automatically tail logs after startup"
+    echo "  --help      Show this help message"
+    echo ""
+    echo "By default, the script will:"
+    echo "  - Build the project (cargo build --release)"
+    echo "  - Start the Spiral Core system"
+    echo "  - Automatically tail the logs (press Ctrl+C to stop tailing)"
+    echo ""
+    echo "Examples:"
+    echo "  $0                      # Build, start, and tail logs (default)"
+    echo "  $0 --no-build           # Start without building, then tail"
+    echo "  $0 --no-tail            # Build and start without tailing"
+    echo "  $0 --no-build --no-tail # Start quickly without build or tail"
+    echo ""
+    exit 0
+else
+    main "$@"
+fi
