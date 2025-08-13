@@ -66,3 +66,5 @@ docker-build/
 
 test_logs
 logs
+
+pids
