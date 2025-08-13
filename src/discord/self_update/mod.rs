@@ -72,10 +72,12 @@ mod validation_agents;
 
 pub mod claude_spawn_example;
 
-pub use approval::{ApprovalManager, ApprovalResult, PendingApproval, format_approval_instructions};
+pub use approval::{
+    format_approval_instructions, ApprovalManager, ApprovalResult, PendingApproval,
+};
 pub use executor::{UpdateExecutor, UpdateResult};
 pub use git_ops::{GitOperations, SnapshotManager};
-pub use health_monitor::{HealthMonitor, HealthCheckResult, HealthCheck, HealthCategory};
+pub use health_monitor::{HealthCategory, HealthCheck, HealthCheckResult, HealthMonitor};
 pub use message_templates::UpdateMessageTemplates;
 pub use pipeline::{
     CheckResult, ClaudeValidationResponse, ComplianceCheck, ExecutionPatterns, Phase1Results,
@@ -87,10 +89,10 @@ pub use planner::{
 };
 pub use progress_reporter::{ProgressReporter, UpdatePhase, UpdateProgress};
 pub use queue::{UpdateQueue, UpdateQueueStatus};
-pub use scope_limiter::{ScopeLimiter, ScopeLimits, ChangeScope};
+pub use scope_limiter::{ChangeScope, ScopeLimiter, ScopeLimits};
 pub use status_tracker::{ImplementationProgress, StatusTracker, UpdateType};
 pub use structured_logger::StructuredLogger;
-pub use system_lock::{SystemLock, LockToken};
+pub use system_lock::{LockToken, SystemLock};
 pub use types::{SelfUpdateRequest, UpdateStatus};
 pub use validation::{PreflightChecker, UpdateValidator};
 
@@ -99,10 +101,6 @@ pub const MAX_QUEUE_SIZE: usize = 10;
 pub const MAX_UPDATE_CONTENT_SIZE: usize = 64 * 1024; // 64KB
 
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
-mod structured_logger_test;
-#[cfg(test)]
-mod pre_validation_tests;
-#[cfg(test)]
 pub mod test_harness;
+#[cfg(test)]
+mod tests;

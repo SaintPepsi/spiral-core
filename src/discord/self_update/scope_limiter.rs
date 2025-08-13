@@ -3,8 +3,8 @@
 //! This module enforces limits on the scope of changes that can be made
 //! during a self-update to prevent accidental or malicious damage.
 
-use crate::Result;
 use crate::error::SpiralError;
+use crate::Result;
 use std::path::Path;
 use tracing::{info, warn};
 
@@ -40,7 +40,7 @@ impl Default for ScopeLimits {
                 ".env".to_string(),
                 "target".to_string(),
                 "node_modules".to_string(),
-                ".claude".to_string(),  // Protect validation agents
+                ".claude".to_string(), // Protect validation agents
             ],
             sensitive_extensions: vec![
                 ".env".to_string(),
@@ -73,21 +73,22 @@ impl ChangeScope {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Record a file modification
     pub fn record_modification(&mut self, file_path: &str, lines_changed: usize) {
         if !self.modified_files.contains(&file_path.to_string()) {
             self.modified_files.push(file_path.to_string());
         }
-        self.lines_per_file.insert(file_path.to_string(), lines_changed);
+        self.lines_per_file
+            .insert(file_path.to_string(), lines_changed);
         self.total_lines_changed += lines_changed;
     }
-    
+
     /// Record a file creation
     pub fn record_creation(&mut self, file_path: &str) {
         self.created_files.push(file_path.to_string());
     }
-    
+
     /// Record a file deletion
     pub fn record_deletion(&mut self, file_path: &str) {
         self.deleted_files.push(file_path.to_string());
@@ -106,25 +107,29 @@ impl ScopeLimiter {
             limits: ScopeLimits::default(),
         }
     }
-    
+
     /// Create a scope limiter with custom limits
     pub fn with_limits(limits: ScopeLimits) -> Self {
         Self { limits }
     }
-    
+
     /// Check if a path is protected
     fn is_protected_path(&self, path: &str) -> bool {
         let path = Path::new(path);
-        
+
         for protected in &self.limits.protected_paths {
-            if path.starts_with(protected) || path.components().any(|c| c.as_os_str() == protected.as_str()) {
+            if path.starts_with(protected)
+                || path
+                    .components()
+                    .any(|c| c.as_os_str() == protected.as_str())
+            {
                 return true;
             }
         }
-        
+
         false
     }
-    
+
     /// Check if a file has a sensitive extension
     fn has_sensitive_extension(&self, path: &str) -> bool {
         for ext in &self.limits.sensitive_extensions {
@@ -134,7 +139,7 @@ impl ScopeLimiter {
         }
         false
     }
-    
+
     /// Validate that changes are within scope limits
     pub fn validate_scope(&self, scope: &ChangeScope) -> Result<()> {
         // Check file modification limits
@@ -145,7 +150,7 @@ impl ScopeLimiter {
                 self.limits.max_files_modified
             )));
         }
-        
+
         // Check file creation limits
         if scope.created_files.len() > self.limits.max_files_created {
             return Err(SpiralError::Validation(format!(
@@ -154,7 +159,7 @@ impl ScopeLimiter {
                 self.limits.max_files_created
             )));
         }
-        
+
         // Check file deletion limits
         if scope.deleted_files.len() > self.limits.max_files_deleted {
             return Err(SpiralError::Validation(format!(
@@ -163,16 +168,15 @@ impl ScopeLimiter {
                 self.limits.max_files_deleted
             )));
         }
-        
+
         // Check total lines changed
         if scope.total_lines_changed > self.limits.max_total_lines {
             return Err(SpiralError::Validation(format!(
                 "Too many total lines changed: {} (max: {})",
-                scope.total_lines_changed,
-                self.limits.max_total_lines
+                scope.total_lines_changed, self.limits.max_total_lines
             )));
         }
-        
+
         // Check lines per file
         for (file, lines) in &scope.lines_per_file {
             if *lines > self.limits.max_lines_per_file {
@@ -182,7 +186,7 @@ impl ScopeLimiter {
                 )));
             }
         }
-        
+
         // Check for protected paths
         for file in &scope.modified_files {
             if self.is_protected_path(file) {
@@ -192,7 +196,7 @@ impl ScopeLimiter {
                 )));
             }
         }
-        
+
         for file in &scope.deleted_files {
             if self.is_protected_path(file) {
                 return Err(SpiralError::Validation(format!(
@@ -201,20 +205,20 @@ impl ScopeLimiter {
                 )));
             }
         }
-        
+
         // Warn about sensitive files (but don't block)
         for file in &scope.modified_files {
             if self.has_sensitive_extension(file) {
                 warn!("Modifying sensitive file: {}", file);
             }
         }
-        
+
         for file in &scope.created_files {
             if self.has_sensitive_extension(file) {
                 warn!("Creating sensitive file: {}", file);
             }
         }
-        
+
         info!(
             "Scope validation passed: {} files modified, {} created, {} deleted, {} total lines",
             scope.modified_files.len(),
@@ -222,21 +226,21 @@ impl ScopeLimiter {
             scope.deleted_files.len(),
             scope.total_lines_changed
         );
-        
+
         Ok(())
     }
-    
+
     /// Analyze git diff to build change scope
     pub async fn analyze_diff(&self, diff_output: &str) -> Result<ChangeScope> {
         let mut scope = ChangeScope::new();
-        
+
         // Parse git diff output
         let mut current_file: Option<String> = None;
         let mut is_new_file = false;
         let mut is_deleted_file = false;
         let mut additions = 0;
         let mut deletions = 0;
-        
+
         for line in diff_output.lines() {
             if line.starts_with("diff --git") {
                 // Save previous file stats
@@ -250,7 +254,7 @@ impl ScopeLimiter {
                     is_new_file = false;
                     is_deleted_file = false;
                 }
-                
+
                 // Extract file path from diff header
                 if let Some(path) = line.split(" b/").nth(1) {
                     current_file = Some(path.to_string());
@@ -271,7 +275,7 @@ impl ScopeLimiter {
                 deletions += 1;
             }
         }
-        
+
         // Save last file stats
         if let Some(ref file) = current_file {
             if !is_new_file && !is_deleted_file && (additions > 0 || deletions > 0) {
@@ -279,10 +283,10 @@ impl ScopeLimiter {
                 scope.record_modification(file, total_changes);
             }
         }
-        
+
         // Validate the scope
         self.validate_scope(&scope)?;
-        
+
         Ok(scope)
     }
 }
@@ -296,42 +300,42 @@ impl Default for ScopeLimiter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_scope_limits_validation() {
         let limiter = ScopeLimiter::new();
         let mut scope = ChangeScope::new();
-        
+
         // Should pass with no changes
         assert!(limiter.validate_scope(&scope).is_ok());
-        
+
         // Add some changes within limits
         scope.record_modification("src/main.rs", 50);
         scope.record_creation("src/new_module.rs");
         assert!(limiter.validate_scope(&scope).is_ok());
-        
+
         // Exceed file modification limit
         for i in 0..25 {
             scope.record_modification(&format!("src/file_{}.rs", i), 10);
         }
         assert!(limiter.validate_scope(&scope).is_err());
     }
-    
+
     #[test]
     fn test_protected_paths() {
         let limiter = ScopeLimiter::new();
         let mut scope = ChangeScope::new();
-        
+
         // Should fail when modifying protected path
         scope.record_modification(".git/config", 10);
         assert!(limiter.validate_scope(&scope).is_err());
-        
+
         // Should fail when deleting protected path
         let mut scope = ChangeScope::new();
         scope.record_deletion(".env");
         assert!(limiter.validate_scope(&scope).is_err());
     }
-    
+
     #[test]
     fn test_diff_parsing() {
         let diff = r#"diff --git a/src/main.rs b/src/main.rs
@@ -354,14 +358,14 @@ index 0000000..1234567
 +fn new_function() {
 +    // New code
 +}"#;
-        
+
         let limiter = ScopeLimiter::new();
         let scope = tokio_test::block_on(limiter.analyze_diff(diff));
-        
+
         assert!(scope.is_ok());
         let scope = scope.unwrap();
         assert_eq!(scope.modified_files.len(), 1); // main.rs was modified
-        assert_eq!(scope.created_files.len(), 1);  // new.rs was created
+        assert_eq!(scope.created_files.len(), 1); // new.rs was created
         assert_eq!(scope.deleted_files.len(), 0);
     }
 }

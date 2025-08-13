@@ -57,8 +57,11 @@ async fn main() -> anyhow::Result<()> {
     // 🤖 STARTUP PHASE 4.5: Initialize Discord integration (optional)
     let discord_handle = if !config.discord.token.is_empty() {
         info!("[Main] Discord token detected, preparing Discord integration...");
-        debug!("[Main] Discord token length: {}", config.discord.token.len());
-        
+        debug!(
+            "[Main] Discord token length: {}",
+            config.discord.token.len()
+        );
+
         let config_clone = config.clone();
         let orchestrator_clone = orchestrator.clone();
 
@@ -68,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
             match start_discord_with_orchestrator(config_clone, orchestrator_clone).await {
                 Ok(()) => {
                     info!("[Main] Discord integration completed successfully");
-                },
+                }
                 Err(e) => {
                     error!("[Main] Discord integration failed: {}", e);
                     error!("[Main] Discord error details: {:?}", e);

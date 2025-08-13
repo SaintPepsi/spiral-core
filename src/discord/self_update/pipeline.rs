@@ -635,7 +635,10 @@ impl Phase2Executor {
             async move {
                 if let Some(client) = client {
                     // Spawn Claude agent to handle compilation fixes
-                    let fix_handler = ClaudeFixHandler::new(client, validation_agents::assembly_checklist::COMPILATION_FIX);
+                    let fix_handler = ClaudeFixHandler::new(
+                        client,
+                        validation_agents::assembly_checklist::COMPILATION_FIX,
+                    );
                     fix_handler.attempt_fix("compilation", &error).await
                 } else {
                     Ok(false)
@@ -656,7 +659,10 @@ impl Phase2Executor {
             async move {
                 if let Some(client) = client {
                     // Spawn Claude agent to handle test failure analysis
-                    let fix_handler = ClaudeFixHandler::new(client, validation_agents::assembly_checklist::TEST_FIX);
+                    let fix_handler = ClaudeFixHandler::new(
+                        client,
+                        validation_agents::assembly_checklist::TEST_FIX,
+                    );
                     fix_handler.attempt_fix("tests", &error).await
                 } else {
                     Ok(false)
@@ -689,7 +695,10 @@ impl Phase2Executor {
 
                 // Then try Claude if auto-fix didn't work
                 if let Some(client) = client {
-                    let fix_handler = ClaudeFixHandler::new(client, validation_agents::assembly_checklist::FORMAT_FIX);
+                    let fix_handler = ClaudeFixHandler::new(
+                        client,
+                        validation_agents::assembly_checklist::FORMAT_FIX,
+                    );
                     fix_handler.attempt_fix("formatting", &error).await
                 } else {
                     Ok(false)
@@ -720,7 +729,10 @@ impl Phase2Executor {
             async move {
                 if let Some(client) = client {
                     // Spawn Claude agent to resolve clippy warnings
-                    let fix_handler = ClaudeFixHandler::new(client, validation_agents::assembly_checklist::CLIPPY_FIX);
+                    let fix_handler = ClaudeFixHandler::new(
+                        client,
+                        validation_agents::assembly_checklist::CLIPPY_FIX,
+                    );
                     fix_handler.attempt_fix("clippy", &error).await
                 } else {
                     Ok(false)
@@ -749,7 +761,10 @@ impl Phase2Executor {
             async move {
                 if let Some(client) = client {
                     // Spawn Claude agent to fix documentation issues
-                    let fix_handler = ClaudeFixHandler::new(client, validation_agents::assembly_checklist::DOC_FIX);
+                    let fix_handler = ClaudeFixHandler::new(
+                        client,
+                        validation_agents::assembly_checklist::DOC_FIX,
+                    );
                     fix_handler.attempt_fix("docs", &error).await
                 } else {
                     Ok(false)
@@ -1344,7 +1359,10 @@ impl ValidationPipeline {
             PipelineStatus::SuccessWithRetries => {
                 info!("[ValidationPipeline] Running success-with-issues analyzer agent");
                 let _ = self
-                    .spawn_claude_agent(validation_agents::analysis::SUCCESS_WITH_ISSUES, &context_clone)
+                    .spawn_claude_agent(
+                        validation_agents::analysis::SUCCESS_WITH_ISSUES,
+                        &context_clone,
+                    )
                     .await;
             }
             PipelineStatus::Failure => {
@@ -1642,7 +1660,13 @@ impl ValidationPipeline {
             };
 
             // Spawn Claude agent for code review
-            match self.spawn_claude_agent(validation_agents::engineering_review::CODE_STANDARDS, &phase1_context).await {
+            match self
+                .spawn_claude_agent(
+                    validation_agents::engineering_review::CODE_STANDARDS,
+                    &phase1_context,
+                )
+                .await
+            {
                 Ok(response) => {
                     if response.success {
                         Ok(CheckResult {
@@ -1697,7 +1721,13 @@ impl ValidationPipeline {
             };
 
             // Spawn Claude agent for testing analysis
-            match self.spawn_claude_agent(validation_agents::engineering_review::TEST_COVERAGE, &phase1_context).await {
+            match self
+                .spawn_claude_agent(
+                    validation_agents::engineering_review::TEST_COVERAGE,
+                    &phase1_context,
+                )
+                .await
+            {
                 Ok(response) => {
                     if response.success {
                         Ok(CheckResult {
@@ -1708,7 +1738,10 @@ impl ValidationPipeline {
                     } else {
                         Ok(CheckResult {
                             passed: false,
-                            findings: vec!["Testing analysis failed".to_string(), response.explanation],
+                            findings: vec![
+                                "Testing analysis failed".to_string(),
+                                response.explanation,
+                            ],
                             duration_ms: start.elapsed().as_millis() as u64,
                         })
                     }
@@ -1752,7 +1785,13 @@ impl ValidationPipeline {
             };
 
             // Spawn Claude agent for security audit
-            match self.spawn_claude_agent(validation_agents::engineering_review::SECURITY, &phase1_context).await {
+            match self
+                .spawn_claude_agent(
+                    validation_agents::engineering_review::SECURITY,
+                    &phase1_context,
+                )
+                .await
+            {
                 Ok(response) => {
                     if response.success {
                         Ok(CheckResult {
@@ -1763,7 +1802,10 @@ impl ValidationPipeline {
                     } else {
                         Ok(CheckResult {
                             passed: false,
-                            findings: vec!["Security audit failed".to_string(), response.explanation],
+                            findings: vec![
+                                "Security audit failed".to_string(),
+                                response.explanation,
+                            ],
                             duration_ms: start.elapsed().as_millis() as u64,
                         })
                     }
@@ -1807,7 +1849,13 @@ impl ValidationPipeline {
             };
 
             // Spawn Claude agent for integration check
-            match self.spawn_claude_agent(validation_agents::engineering_review::INTEGRATION, &phase1_context).await {
+            match self
+                .spawn_claude_agent(
+                    validation_agents::engineering_review::INTEGRATION,
+                    &phase1_context,
+                )
+                .await
+            {
                 Ok(response) => {
                     if response.success {
                         Ok(CheckResult {
@@ -1818,7 +1866,10 @@ impl ValidationPipeline {
                     } else {
                         Ok(CheckResult {
                             passed: false,
-                            findings: vec!["Integration check failed".to_string(), response.explanation],
+                            findings: vec![
+                                "Integration check failed".to_string(),
+                                response.explanation,
+                            ],
                             duration_ms: start.elapsed().as_millis() as u64,
                         })
                     }
@@ -1858,7 +1909,10 @@ impl ValidationPipeline {
             async move {
                 if let Some(client) = client {
                     // Spawn Claude agent to handle compilation fixes
-                    let fix_handler = ClaudeFixHandler::new(client, validation_agents::assembly_checklist::COMPILATION_FIX);
+                    let fix_handler = ClaudeFixHandler::new(
+                        client,
+                        validation_agents::assembly_checklist::COMPILATION_FIX,
+                    );
                     fix_handler.attempt_fix("compilation", &error).await
                 } else {
                     Ok(false)
@@ -1879,7 +1933,10 @@ impl ValidationPipeline {
             async move {
                 if let Some(client) = client {
                     // Spawn Claude agent to handle test failure analysis
-                    let fix_handler = ClaudeFixHandler::new(client, validation_agents::assembly_checklist::TEST_FIX);
+                    let fix_handler = ClaudeFixHandler::new(
+                        client,
+                        validation_agents::assembly_checklist::TEST_FIX,
+                    );
                     fix_handler.attempt_fix("tests", &error).await
                 } else {
                     Ok(false)
@@ -1912,7 +1969,10 @@ impl ValidationPipeline {
 
                 // Then try Claude if auto-fix didn't work
                 if let Some(client) = client {
-                    let fix_handler = ClaudeFixHandler::new(client, validation_agents::assembly_checklist::FORMAT_FIX);
+                    let fix_handler = ClaudeFixHandler::new(
+                        client,
+                        validation_agents::assembly_checklist::FORMAT_FIX,
+                    );
                     fix_handler.attempt_fix("formatting", &error).await
                 } else {
                     Ok(false)
@@ -1943,7 +2003,10 @@ impl ValidationPipeline {
             async move {
                 if let Some(client) = client {
                     // Spawn Claude agent to resolve clippy warnings
-                    let fix_handler = ClaudeFixHandler::new(client, validation_agents::assembly_checklist::CLIPPY_FIX);
+                    let fix_handler = ClaudeFixHandler::new(
+                        client,
+                        validation_agents::assembly_checklist::CLIPPY_FIX,
+                    );
                     fix_handler.attempt_fix("clippy", &error).await
                 } else {
                     Ok(false)
@@ -1972,7 +2035,10 @@ impl ValidationPipeline {
             async move {
                 if let Some(client) = client {
                     // Spawn Claude agent to fix documentation issues
-                    let fix_handler = ClaudeFixHandler::new(client, validation_agents::assembly_checklist::DOC_FIX);
+                    let fix_handler = ClaudeFixHandler::new(
+                        client,
+                        validation_agents::assembly_checklist::DOC_FIX,
+                    );
                     fix_handler.attempt_fix("docs", &error).await
                 } else {
                     Ok(false)

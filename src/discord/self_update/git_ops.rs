@@ -200,33 +200,36 @@ impl GitOperations {
     /// Commit validated changes with descriptive message
     pub async fn commit_validated_changes(codename: &str, description: &str) -> Result<String> {
         let safe_codename = Self::sanitize_codename(codename)?;
-        
-        info!("[GitOps] Committing validated changes for {}", safe_codename);
-        
+
+        info!(
+            "[GitOps] Committing validated changes for {}",
+            safe_codename
+        );
+
         // Stage all changes
         let add_output = Command::new("git")
             .args(["add", "-A"])
             .output()
             .map_err(|e| SpiralError::SystemError(format!("Failed to stage changes: {e}")))?;
-        
+
         if !add_output.status.success() {
             let stderr = String::from_utf8_lossy(&add_output.stderr);
             return Err(SpiralError::SystemError(format!(
                 "Failed to stage changes: {stderr}"
             )));
         }
-        
+
         // Check if there are changes to commit
         let status_output = Command::new("git")
             .args(["status", "--porcelain"])
             .output()
             .map_err(|e| SpiralError::SystemError(format!("Failed to check git status: {e}")))?;
-        
+
         if status_output.stdout.is_empty() {
             warn!("[GitOps] No changes to commit");
             return Ok("No changes to commit".to_string());
         }
-        
+
         // Create descriptive commit message
         let commit_message = format!(
             "🔄 Self-update: {}\n\nCodename: {}\nDescription: {}\nValidated: ✅\nTimestamp: {}",
@@ -235,26 +238,26 @@ impl GitOperations {
             description,
             chrono::Utc::now().to_rfc3339()
         );
-        
+
         // Create commit
         let commit_output = Command::new("git")
             .args(["commit", "-m", &commit_message])
             .output()
             .map_err(|e| SpiralError::SystemError(format!("Failed to create commit: {e}")))?;
-        
+
         if !commit_output.status.success() {
             let stderr = String::from_utf8_lossy(&commit_output.stderr);
             return Err(SpiralError::SystemError(format!(
                 "Failed to commit changes: {stderr}"
             )));
         }
-        
+
         // Get commit hash
         let hash_output = Command::new("git")
             .args(["rev-parse", "HEAD"])
             .output()
             .map_err(|e| SpiralError::SystemError(format!("Failed to get commit hash: {e}")))?;
-        
+
         if hash_output.status.success() {
             let commit_hash = String::from_utf8_lossy(&hash_output.stdout)
                 .trim()
@@ -267,11 +270,11 @@ impl GitOperations {
             ))
         }
     }
-    
+
     /// Push committed changes to remote repository
     pub async fn push_to_remote(branch: Option<&str>) -> Result<()> {
         info!("[GitOps] Pushing changes to remote repository");
-        
+
         // Get current branch if not specified
         let current_branch = if let Some(branch) = branch {
             branch.to_string()
@@ -279,33 +282,35 @@ impl GitOperations {
             let branch_output = Command::new("git")
                 .args(["rev-parse", "--abbrev-ref", "HEAD"])
                 .output()
-                .map_err(|e| SpiralError::SystemError(format!("Failed to get current branch: {e}")))?;
-            
+                .map_err(|e| {
+                    SpiralError::SystemError(format!("Failed to get current branch: {e}"))
+                })?;
+
             if !branch_output.status.success() {
                 return Err(SpiralError::SystemError(
                     "Failed to determine current branch".to_string(),
                 ));
             }
-            
+
             String::from_utf8_lossy(&branch_output.stdout)
                 .trim()
                 .to_string()
         };
-        
+
         info!("[GitOps] Pushing to branch: {}", current_branch);
-        
+
         // Push to remote
         let push_output = Command::new("git")
             .args(["push", "origin", &current_branch])
             .output()
             .map_err(|e| SpiralError::SystemError(format!("Failed to push to remote: {e}")))?;
-        
+
         if push_output.status.success() {
             info!("[GitOps] Successfully pushed changes to remote");
             Ok(())
         } else {
             let stderr = String::from_utf8_lossy(&push_output.stderr);
-            
+
             // Check if it's just because we're up to date
             if stderr.contains("Everything up-to-date") {
                 info!("[GitOps] Remote is already up-to-date");
@@ -317,14 +322,14 @@ impl GitOperations {
             }
         }
     }
-    
+
     /// Check if there are unpushed commits
     pub async fn has_unpushed_commits() -> Result<bool> {
         let output = Command::new("git")
             .args(["status", "-sb"])
             .output()
             .map_err(|e| SpiralError::SystemError(format!("Failed to check git status: {e}")))?;
-        
+
         if output.status.success() {
             let status = String::from_utf8_lossy(&output.stdout);
             // Check if status contains "ahead" which indicates unpushed commits
@@ -335,7 +340,7 @@ impl GitOperations {
             ))
         }
     }
-    
+
     /// Sanitize codename for safe use in git operations
     fn sanitize_codename(codename: &str) -> Result<String> {
         // Remove any characters that could be dangerous in git commands

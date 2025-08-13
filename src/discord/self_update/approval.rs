@@ -75,7 +75,7 @@ impl ApprovalManager {
 
         let mut approvals = self.pending_approvals.write().await;
         approvals.insert(plan_message_id, pending);
-        
+
         info!(
             "[ApprovalManager] Registered plan for approval: {} (message: {})",
             request_id, plan_message_id
@@ -95,7 +95,7 @@ impl ApprovalManager {
 
         // Simple polling approach - check for approval status changes
         let start_time = std::time::Instant::now();
-        
+
         loop {
             // Check if approval was processed
             let approval_status = {
@@ -108,7 +108,7 @@ impl ApprovalManager {
                     return Ok((ApprovalResult::TimedOut, None));
                 }
             };
-            
+
             // Check if approval status changed
             match approval_status {
                 ApprovalStatus::Approved => {
@@ -121,20 +121,26 @@ impl ApprovalManager {
                 }
                 ApprovalStatus::Modified => {
                     let plan = self.remove_pending_approval(plan_message_id).await;
-                    return Ok((ApprovalResult::ModifyRequested("Modifications requested".to_string()), plan.map(|p| p.plan)));
+                    return Ok((
+                        ApprovalResult::ModifyRequested("Modifications requested".to_string()),
+                        plan.map(|p| p.plan),
+                    ));
                 }
                 ApprovalStatus::Pending => {
                     // Still waiting, continue loop
                 }
             }
-            
+
             // Check for timeout
             if start_time.elapsed() >= timeout_duration {
-                info!("[ApprovalManager] Approval timed out for message {}", plan_message_id);
+                info!(
+                    "[ApprovalManager] Approval timed out for message {}",
+                    plan_message_id
+                );
                 let plan = self.remove_pending_approval(plan_message_id).await;
                 return Ok((ApprovalResult::TimedOut, plan.map(|p| p.plan)));
             }
-            
+
             // Sleep briefly before checking again
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
@@ -148,13 +154,13 @@ impl ApprovalManager {
         response: &str,
     ) -> Option<(String, ApprovalResult)> {
         let response_lower = response.trim().to_lowercase();
-        
+
         // Find pending approval for this user in this channel
         let approvals = self.pending_approvals.read().await;
-        let pending = approvals.values().find(|p| {
-            p.user_id == user_id && p.channel_id == channel_id
-        })?;
-        
+        let pending = approvals
+            .values()
+            .find(|p| p.user_id == user_id && p.channel_id == channel_id)?;
+
         let plan_message_id = pending.plan_message_id;
         let request_id = pending.request_id.clone();
         drop(approvals);
@@ -218,7 +224,7 @@ impl ApprovalManager {
     pub async fn cleanup_old_approvals(&self) {
         let mut approvals = self.pending_approvals.write().await;
         let now = std::time::Instant::now();
-        
+
         approvals.retain(|_, pending| {
             let age = now.duration_since(pending.requested_at);
             if age > Duration::from_secs(3600) {
@@ -236,7 +242,9 @@ impl ApprovalManager {
     /// Check if there's a pending approval for a user in a channel
     pub async fn has_pending_approval(&self, user_id: u64, channel_id: u64) -> bool {
         let approvals = self.pending_approvals.read().await;
-        approvals.values().any(|p| p.user_id == user_id && p.channel_id == channel_id)
+        approvals
+            .values()
+            .any(|p| p.user_id == user_id && p.channel_id == channel_id)
     }
 
     /// Get the pending approval for a user in a channel
@@ -312,7 +320,7 @@ mod tests {
     async fn test_approval_registration() {
         let manager = ApprovalManager::new();
         let plan = create_test_plan();
-        
+
         manager
             .register_for_approval(
                 plan.clone(),
@@ -330,7 +338,7 @@ mod tests {
     async fn test_approval_response_processing() {
         let manager = ApprovalManager::new();
         let plan = create_test_plan();
-        
+
         manager
             .register_for_approval(
                 plan.clone(),
@@ -356,7 +364,7 @@ mod tests {
     async fn test_approval_timeout() {
         let manager = ApprovalManager::new();
         let plan = create_test_plan();
-        
+
         manager
             .register_for_approval(
                 plan.clone(),
@@ -372,7 +380,7 @@ mod tests {
             .wait_for_approval(111222, Duration::from_millis(10))
             .await
             .unwrap();
-        
+
         assert!(matches!(result.0, ApprovalResult::TimedOut));
     }
 }

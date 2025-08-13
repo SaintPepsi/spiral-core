@@ -4,13 +4,13 @@
 //! git operations, Claude Code integration, validation pipeline, and result reporting.
 
 use super::{
-    format_plan_for_discord, ApprovalManager, ApprovalResult, GitOperations, ImplementationPlan,
-    PreflightChecker, ProgressReporter, SelfUpdateRequest, ScopeLimiter, StatusTracker, 
-    StructuredLogger, SystemLock, UpdatePhase, UpdatePlanner, UpdateQueue, UpdateStatus, 
-    ValidationPipeline, format_approval_instructions,
-    pre_validation::{PreImplementationValidator, PreValidationResult},
+    format_approval_instructions, format_plan_for_discord,
+    pre_validation::PreImplementationValidator, ApprovalManager, ApprovalResult, GitOperations,
+    ImplementationPlan, PreflightChecker, ProgressReporter, ScopeLimiter, SelfUpdateRequest,
+    StatusTracker, StructuredLogger, SystemLock, UpdatePhase, UpdatePlanner, UpdateQueue,
+    UpdateStatus, ValidationPipeline,
 };
-use crate::{claude_code::ClaudeCodeClient, Result, error::SpiralError};
+use crate::{claude_code::ClaudeCodeClient, error::SpiralError, Result};
 use serenity::{http::Http, model::id::ChannelId};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -40,7 +40,7 @@ pub struct UpdateExecutor {
     /// Claude Code client for AI operations
     claude_client: Option<ClaudeCodeClient>,
     /// Status tracker for monitoring progress
-    status_tracker: Arc<RwLock<StatusTracker>>,
+    _status_tracker: Arc<RwLock<StatusTracker>>,
     /// Discord HTTP client for sending updates
     discord_http: Option<Arc<Http>>,
     /// Approval manager for handling plan approvals
@@ -55,7 +55,7 @@ struct UpdateContext {
     logger: StructuredLogger,
     progress_reporter: ProgressReporter,
     start_time: std::time::Instant,
-    channel_id: ChannelId,
+    _channel_id: ChannelId,
 }
 
 impl UpdateExecutor {
@@ -70,7 +70,7 @@ impl UpdateExecutor {
         Self {
             queue,
             claude_client,
-            status_tracker: Arc::new(RwLock::new(StatusTracker)),
+            _status_tracker: Arc::new(RwLock::new(StatusTracker)),
             discord_http,
             approval_manager,
             system_lock,
@@ -96,7 +96,8 @@ impl UpdateExecutor {
                         duration.as_secs()
                     );
                     warn!("[UpdateExecutor] {}", message);
-                    self.update_discord_status(&request, &format!("🔒 {}", message)).await;
+                    self.update_discord_status(&request, &format!("🔒 {}", message))
+                        .await;
                     return self.create_failure_result(request, message);
                 } else {
                     return self.create_failure_result(
@@ -113,78 +114,95 @@ impl UpdateExecutor {
                 );
             }
         };
-        
+
         info!("[UpdateExecutor] System lock acquired for {}", request.id);
-        
+
         // Create a scope to ensure lock is released at the end
         let result = self.execute_update_with_lock(request, &lock_token).await;
-        
+
         // Release the lock
         self.system_lock.release(lock_token).await;
-        
+
         result
     }
-    
+
     /// Execute the update while holding the lock
-    async fn execute_update_with_lock(&mut self, request: SelfUpdateRequest, _lock_token: &super::LockToken) -> UpdateResult {
+    async fn execute_update_with_lock(
+        &mut self,
+        request: SelfUpdateRequest,
+        _lock_token: &super::LockToken,
+    ) -> UpdateResult {
         let start_time = std::time::Instant::now();
-        
+
         // Initialize update context
         let mut context = match self.initialize_update_context(request, start_time).await {
             Ok(ctx) => ctx,
             Err(result) => return result,
         };
-        
+
         // Execute preflight checks
         if let Err(result) = self.execute_preflight_phase(&mut context).await {
             return result;
         }
-        
+
         // Create implementation plan
         let plan = match self.execute_planning_phase(&mut context).await {
             Ok(p) => p,
             Err(result) => return result,
         };
-        
+
         // Get user approval
         if let Err(result) = self.execute_approval_phase(&mut context, &plan).await {
             return result;
         }
-        
+
         // Create git snapshot
         let snapshot_id = match self.execute_snapshot_phase(&mut context).await {
             Ok(id) => id,
             Err(result) => return result,
         };
-        
+
         // Execute Claude Code implementation
-        if let Err(result) = self.execute_implementation_phase(&mut context, &plan, &snapshot_id).await {
+        if let Err(result) = self
+            .execute_implementation_phase(&mut context, &plan, &snapshot_id)
+            .await
+        {
             return result;
         }
-        
+
         // Run pre-restart validation on modified files
-        if let Err(result) = self.execute_pre_validation_phase(&mut context, &snapshot_id).await {
+        if let Err(result) = self
+            .execute_pre_validation_phase(&mut context, &snapshot_id)
+            .await
+        {
             return result;
         }
-        
+
         // System restart would happen here (not implemented yet)
         // TODO: Implement system restart
-        
+
         // Run post-restart validation pipeline
-        self.execute_validation_phase(&mut context, snapshot_id).await
+        self.execute_validation_phase(&mut context, snapshot_id)
+            .await
     }
 
     /// Initialize the update context
-    async fn initialize_update_context(&self, request: SelfUpdateRequest, start_time: std::time::Instant) -> std::result::Result<UpdateContext, UpdateResult> {
+    async fn initialize_update_context(
+        &self,
+        request: SelfUpdateRequest,
+        start_time: std::time::Instant,
+    ) -> std::result::Result<UpdateContext, UpdateResult> {
         // Create structured logger for this update
         let mut logger = match StructuredLogger::new(request.id.clone(), request.codename.clone()) {
             Ok(l) => l,
             Err(e) => {
                 error!("[UpdateExecutor] Failed to create logger: {}", e);
-                return Err(self.create_failure_result(request, format!("Failed to create logger: {}", e)));
+                return Err(
+                    self.create_failure_result(request, format!("Failed to create logger: {}", e))
+                );
             }
         };
-        
+
         // Log the start of the update
         if let Err(e) = logger.log_to_main(&format!(
             "Starting update execution\nDescription: {}\nUser ID: {}\nChannel ID: {}",
@@ -192,7 +210,7 @@ impl UpdateExecutor {
         )) {
             warn!("[UpdateExecutor] Failed to log update start: {}", e);
         }
-        
+
         // Create progress reporter
         let channel_id = ChannelId::new(request.channel_id);
         let total_tasks = 7; // Approximate number of major steps
@@ -202,87 +220,162 @@ impl UpdateExecutor {
             channel_id,
             total_tasks,
         );
-        
+
         // Start background progress reporting (every 30 seconds)
         progress_reporter.start_reporting(std::time::Duration::from_secs(30));
-        
+
         // Set initial phase
         progress_reporter.set_phase(UpdatePhase::Initializing).await;
-        progress_reporter.set_status("Starting update process...".to_string()).await;
-        
+        progress_reporter
+            .set_status("Starting update process...".to_string())
+            .await;
+
         Ok(UpdateContext {
             request,
             logger,
             progress_reporter,
             start_time,
-            channel_id,
+            _channel_id: channel_id,
         })
     }
-    
+
     /// Execute preflight checks phase
-    async fn execute_preflight_phase(&self, context: &mut UpdateContext) -> std::result::Result<(), UpdateResult> {
-        context.progress_reporter.set_phase(UpdatePhase::PreflightChecks).await;
-        context.progress_reporter.set_status("Running preflight checks...".to_string()).await;
-        self.update_discord_status(&context.request, "🔧 Processing update request...").await;
-        
+    async fn execute_preflight_phase(
+        &self,
+        context: &mut UpdateContext,
+    ) -> std::result::Result<(), UpdateResult> {
+        context
+            .progress_reporter
+            .set_phase(UpdatePhase::PreflightChecks)
+            .await;
+        context
+            .progress_reporter
+            .set_status("Running preflight checks...".to_string())
+            .await;
+        self.update_discord_status(&context.request, "🔧 Processing update request...")
+            .await;
+
         let preflight_result = self.run_preflight_checks(&context.request).await;
         if let Err(e) = preflight_result {
             error!("[UpdateExecutor] Preflight checks failed: {}", e);
-            let _ = context.logger.log_error("PreflightChecks", &e.to_string(), None).await;
-            context.progress_reporter.set_phase(UpdatePhase::Failed).await;
+            let _ = context
+                .logger
+                .log_error("PreflightChecks", &e.to_string(), None)
+                .await;
+            context
+                .progress_reporter
+                .set_phase(UpdatePhase::Failed)
+                .await;
             context.progress_reporter.stop().await;
-            let _ = context.logger.create_summary(false, &format!("Preflight checks failed: {}", e), context.start_time.elapsed()).await;
-            return Err(self.create_failure_result(context.request.clone(), format!("Preflight checks failed: {}", e)));
+            let _ = context
+                .logger
+                .create_summary(
+                    false,
+                    &format!("Preflight checks failed: {}", e),
+                    context.start_time.elapsed(),
+                )
+                .await;
+            return Err(self.create_failure_result(
+                context.request.clone(),
+                format!("Preflight checks failed: {}", e),
+            ));
         }
-        
-        let _ = context.logger.log_to_phase("PreflightChecks", "Preflight checks passed successfully").await;
+
+        let _ = context
+            .logger
+            .log_to_phase("PreflightChecks", "Preflight checks passed successfully")
+            .await;
         Ok(())
     }
-    
+
     /// Execute planning phase
-    async fn execute_planning_phase(&self, context: &mut UpdateContext) -> std::result::Result<ImplementationPlan, UpdateResult> {
-        context.progress_reporter.set_phase(UpdatePhase::Planning).await;
-        context.progress_reporter.set_status("Creating implementation plan with Claude Code...".to_string()).await;
-        self.update_discord_status(&context.request, "📋 Creating implementation plan...").await;
-        
+    async fn execute_planning_phase(
+        &self,
+        context: &mut UpdateContext,
+    ) -> std::result::Result<ImplementationPlan, UpdateResult> {
+        context
+            .progress_reporter
+            .set_phase(UpdatePhase::Planning)
+            .await;
+        context
+            .progress_reporter
+            .set_status("Creating implementation plan with Claude Code...".to_string())
+            .await;
+        self.update_discord_status(&context.request, "📋 Creating implementation plan...")
+            .await;
+
         let planner = UpdatePlanner::new(self.claude_client.clone());
         match planner.create_plan(&context.request).await {
             Ok(p) => Ok(p),
             Err(e) => {
                 error!("[UpdateExecutor] Failed to create plan: {}", e);
-                let _ = context.logger.log_error("Planning", &e.to_string(), None).await;
-                context.progress_reporter.set_phase(UpdatePhase::Failed).await;
+                let _ = context
+                    .logger
+                    .log_error("Planning", &e.to_string(), None)
+                    .await;
+                context
+                    .progress_reporter
+                    .set_phase(UpdatePhase::Failed)
+                    .await;
                 context.progress_reporter.stop().await;
-                let _ = context.logger.create_summary(false, &format!("Planning failed: {}", e), context.start_time.elapsed()).await;
-                Err(self.create_failure_result(context.request.clone(), format!("Planning failed: {}", e)))
+                let _ = context
+                    .logger
+                    .create_summary(
+                        false,
+                        &format!("Planning failed: {}", e),
+                        context.start_time.elapsed(),
+                    )
+                    .await;
+                Err(self.create_failure_result(
+                    context.request.clone(),
+                    format!("Planning failed: {}", e),
+                ))
             }
         }
     }
-    
+
     /// Execute approval phase
-    async fn execute_approval_phase(&self, context: &mut UpdateContext, plan: &ImplementationPlan) -> std::result::Result<(), UpdateResult> {
-        context.progress_reporter.set_phase(UpdatePhase::AwaitingApproval).await;
-        
+    async fn execute_approval_phase(
+        &self,
+        context: &mut UpdateContext,
+        plan: &ImplementationPlan,
+    ) -> std::result::Result<(), UpdateResult> {
+        context
+            .progress_reporter
+            .set_phase(UpdatePhase::AwaitingApproval)
+            .await;
+
         // Check if human approval is specifically required
         if plan.requires_human_approval {
-            context.progress_reporter.set_status(format!(
-                "⚠️ Human approval required: {}",
-                plan.approval_reason.as_ref().unwrap_or(&"Critical changes detected".to_string())
-            )).await;
-            
+            context
+                .progress_reporter
+                .set_status(format!(
+                    "⚠️ Human approval required: {}",
+                    plan.approval_reason
+                        .as_ref()
+                        .unwrap_or(&"Critical changes detected".to_string())
+                ))
+                .await;
+
             self.update_discord_status(
                 &context.request,
                 &format!(
                     "⚠️ **Human Approval Required**\n\n{}\n\nPlease review the plan carefully.",
-                    plan.approval_reason.as_ref().unwrap_or(&"Critical changes detected".to_string())
-                )
-            ).await;
+                    plan.approval_reason
+                        .as_ref()
+                        .unwrap_or(&"Critical changes detected".to_string())
+                ),
+            )
+            .await;
         } else {
-            context.progress_reporter.set_status("Waiting for user approval...".to_string()).await;
+            context
+                .progress_reporter
+                .set_status("Waiting for user approval...".to_string())
+                .await;
         }
-        
+
         let plan_message_id = self.present_plan_for_approval(&context.request, plan).await;
-        
+
         // Register plan for approval
         self.approval_manager
             .register_for_approval(
@@ -293,32 +386,45 @@ impl UpdateExecutor {
                 plan_message_id,
             )
             .await;
-        
+
         // Wait for approval (10 minute timeout)
         let approval_timeout = tokio::time::Duration::from_secs(600);
         let (approval_result, _) = match self
             .approval_manager
             .wait_for_approval(plan_message_id, approval_timeout)
-            .await 
+            .await
         {
             Ok(result) => result,
             Err(e) => {
                 error!("[UpdateExecutor] Failed to wait for approval: {}", e);
-                context.progress_reporter.set_phase(UpdatePhase::Failed).await;
+                context
+                    .progress_reporter
+                    .set_phase(UpdatePhase::Failed)
+                    .await;
                 context.progress_reporter.stop().await;
-                return Err(self.create_failure_result(context.request.clone(), format!("Approval wait failed: {}", e)));
+                return Err(self.create_failure_result(
+                    context.request.clone(),
+                    format!("Approval wait failed: {}", e),
+                ));
             }
         };
-        
+
         match approval_result {
             ApprovalResult::Approved => {
                 info!("[UpdateExecutor] Plan approved, proceeding with implementation");
-                self.update_discord_status(&context.request, "✅ Plan approved! Starting implementation...").await;
+                self.update_discord_status(
+                    &context.request,
+                    "✅ Plan approved! Starting implementation...",
+                )
+                .await;
                 Ok(())
             }
             ApprovalResult::Rejected(reason) => {
                 info!("[UpdateExecutor] Plan rejected: {}", reason);
-                context.progress_reporter.set_phase(UpdatePhase::Failed).await;
+                context
+                    .progress_reporter
+                    .set_phase(UpdatePhase::Failed)
+                    .await;
                 context.progress_reporter.stop().await;
                 Err(self.create_failure_result(
                     context.request.clone(),
@@ -327,7 +433,10 @@ impl UpdateExecutor {
             }
             ApprovalResult::ModifyRequested(details) => {
                 info!("[UpdateExecutor] Modifications requested: {}", details);
-                context.progress_reporter.set_phase(UpdatePhase::Failed).await;
+                context
+                    .progress_reporter
+                    .set_phase(UpdatePhase::Failed)
+                    .await;
                 context.progress_reporter.stop().await;
                 Err(self.create_failure_result(
                     context.request.clone(),
@@ -336,7 +445,10 @@ impl UpdateExecutor {
             }
             ApprovalResult::TimedOut => {
                 info!("[UpdateExecutor] Approval timed out");
-                context.progress_reporter.set_phase(UpdatePhase::Failed).await;
+                context
+                    .progress_reporter
+                    .set_phase(UpdatePhase::Failed)
+                    .await;
                 context.progress_reporter.stop().await;
                 Err(self.create_failure_result(
                     context.request.clone(),
@@ -345,13 +457,23 @@ impl UpdateExecutor {
             }
         }
     }
-    
+
     /// Execute snapshot creation phase
-    async fn execute_snapshot_phase(&self, context: &mut UpdateContext) -> std::result::Result<Option<String>, UpdateResult> {
-        context.progress_reporter.set_phase(UpdatePhase::CreatingSnapshot).await;
-        context.progress_reporter.set_status("Creating git snapshot for rollback safety...".to_string()).await;
-        self.update_discord_status(&context.request, "📸 Creating git snapshot...").await;
-        
+    async fn execute_snapshot_phase(
+        &self,
+        context: &mut UpdateContext,
+    ) -> std::result::Result<Option<String>, UpdateResult> {
+        context
+            .progress_reporter
+            .set_phase(UpdatePhase::CreatingSnapshot)
+            .await;
+        context
+            .progress_reporter
+            .set_status("Creating git snapshot for rollback safety...".to_string())
+            .await;
+        self.update_discord_status(&context.request, "📸 Creating git snapshot...")
+            .await;
+
         match self.create_snapshot(&context.request).await {
             Ok(id) => {
                 info!("[UpdateExecutor] Created snapshot: {}", id);
@@ -359,72 +481,124 @@ impl UpdateExecutor {
             }
             Err(e) => {
                 error!("[UpdateExecutor] Failed to create snapshot: {}", e);
-                context.progress_reporter.set_phase(UpdatePhase::Failed).await;
+                context
+                    .progress_reporter
+                    .set_phase(UpdatePhase::Failed)
+                    .await;
                 context.progress_reporter.stop().await;
-                Err(self.create_failure_result(context.request.clone(), format!("Snapshot creation failed: {}", e)))
+                Err(self.create_failure_result(
+                    context.request.clone(),
+                    format!("Snapshot creation failed: {}", e),
+                ))
             }
         }
     }
-    
+
     /// Execute Claude Code implementation phase
-    async fn execute_implementation_phase(&self, context: &mut UpdateContext, plan: &ImplementationPlan, snapshot_id: &Option<String>) -> std::result::Result<(), UpdateResult> {
-        context.progress_reporter.set_phase(UpdatePhase::Implementing).await;
-        context.progress_reporter.set_status(format!("Implementing {} tasks with Claude Code...", plan.tasks.len())).await;
-        self.update_discord_status(&context.request, "🤖 Implementing changes with Claude Code...").await;
-        
+    async fn execute_implementation_phase(
+        &self,
+        context: &mut UpdateContext,
+        plan: &ImplementationPlan,
+        snapshot_id: &Option<String>,
+    ) -> std::result::Result<(), UpdateResult> {
+        context
+            .progress_reporter
+            .set_phase(UpdatePhase::Implementing)
+            .await;
+        context
+            .progress_reporter
+            .set_status(format!(
+                "Implementing {} tasks with Claude Code...",
+                plan.tasks.len()
+            ))
+            .await;
+        self.update_discord_status(
+            &context.request,
+            "🤖 Implementing changes with Claude Code...",
+        )
+        .await;
+
         if let Err(e) = self.execute_claude_update(&context.request, plan).await {
             error!("[UpdateExecutor] Claude execution failed: {}", e);
-            context.progress_reporter.set_phase(UpdatePhase::Failed).await;
+            context
+                .progress_reporter
+                .set_phase(UpdatePhase::Failed)
+                .await;
             context.progress_reporter.stop().await;
-            
+
             // Rollback if we have a snapshot
             if let Some(ref id) = snapshot_id {
                 self.rollback_changes(id).await;
             }
-            
-            return Err(self.create_failure_result(context.request.clone(), format!("Claude Code execution failed: {}", e)));
-        }
-        
-        // Check scope limits after execution
-        context.progress_reporter.set_status("Validating change scope...".to_string()).await;
-        if let Err(e) = self.validate_change_scope(&context.request).await {
-            error!("[UpdateExecutor] Change scope validation failed: {}", e);
-            context.progress_reporter.set_phase(UpdatePhase::Failed).await;
-            context.progress_reporter.stop().await;
-            
-            // Rollback if we have a snapshot
-            if let Some(ref id) = snapshot_id {
-                self.rollback_changes(id).await;
-            }
-            
+
             return Err(self.create_failure_result(
-                context.request.clone(), 
-                format!("Changes exceeded scope limits: {}", e)
+                context.request.clone(),
+                format!("Claude Code execution failed: {}", e),
             ));
         }
-        
+
+        // Check scope limits after execution
+        context
+            .progress_reporter
+            .set_status("Validating change scope...".to_string())
+            .await;
+        if let Err(e) = self.validate_change_scope(&context.request).await {
+            error!("[UpdateExecutor] Change scope validation failed: {}", e);
+            context
+                .progress_reporter
+                .set_phase(UpdatePhase::Failed)
+                .await;
+            context.progress_reporter.stop().await;
+
+            // Rollback if we have a snapshot
+            if let Some(ref id) = snapshot_id {
+                self.rollback_changes(id).await;
+            }
+
+            return Err(self.create_failure_result(
+                context.request.clone(),
+                format!("Changes exceeded scope limits: {}", e),
+            ));
+        }
+
         Ok(())
     }
-    
+
     /// Execute pre-restart validation phase
-    async fn execute_pre_validation_phase(&self, context: &mut UpdateContext, snapshot_id: &Option<String>) -> std::result::Result<(), UpdateResult> {
-        context.progress_reporter.set_phase(UpdatePhase::Validating).await;
-        context.progress_reporter.set_status("Running pre-restart validation on modified files...".to_string()).await;
-        self.update_discord_status(&context.request, "🔍 Validating changes before restart...").await;
-        
+    async fn execute_pre_validation_phase(
+        &self,
+        context: &mut UpdateContext,
+        snapshot_id: &Option<String>,
+    ) -> std::result::Result<(), UpdateResult> {
+        context
+            .progress_reporter
+            .set_phase(UpdatePhase::Validating)
+            .await;
+        context
+            .progress_reporter
+            .set_status("Running pre-restart validation on modified files...".to_string())
+            .await;
+        self.update_discord_status(&context.request, "🔍 Validating changes before restart...")
+            .await;
+
         // Create pre-implementation validator
         let validator = PreImplementationValidator::new(self.claude_client.clone());
-        
+
         // Run validation on current working directory
-        match validator.validate_current_state(&context.request, &mut context.logger).await {
+        match validator
+            .validate_current_state(&context.request, &mut context.logger)
+            .await
+        {
             Ok(result) => {
                 if result.all_passed() {
                     info!("[UpdateExecutor] Pre-restart validation passed");
-                    context.progress_reporter.set_status(format!(
-                        "Pre-restart validation passed ({} checks in {} iterations)",
-                        result.total_checks_run,
-                        result.pipeline_iterations
-                    )).await;
+                    context
+                        .progress_reporter
+                        .set_status(format!(
+                            "Pre-restart validation passed ({} checks in {} iterations)",
+                            result.total_checks_run, result.pipeline_iterations
+                        ))
+                        .await;
                     Ok(())
                 } else {
                     error!("[UpdateExecutor] Pre-restart validation failed");
@@ -434,75 +608,124 @@ impl UpdateExecutor {
                         result.assembly_checklist_passed,
                         result.error_details
                     );
-                    
-                    context.progress_reporter.set_phase(UpdatePhase::Failed).await;
+
+                    context
+                        .progress_reporter
+                        .set_phase(UpdatePhase::Failed)
+                        .await;
                     context.progress_reporter.stop().await;
-                    
+
                     // Rollback changes since validation failed
                     if let Some(ref id) = snapshot_id {
                         self.rollback_changes(id).await;
-                        self.update_discord_status(&context.request, "❌ Validation failed - changes rolled back").await;
+                        self.update_discord_status(
+                            &context.request,
+                            "❌ Validation failed - changes rolled back",
+                        )
+                        .await;
                     }
-                    
+
                     Err(self.create_failure_result(context.request.clone(), error_msg))
                 }
             }
             Err(e) => {
                 error!("[UpdateExecutor] Pre-restart validation error: {}", e);
-                context.progress_reporter.set_phase(UpdatePhase::Failed).await;
+                context
+                    .progress_reporter
+                    .set_phase(UpdatePhase::Failed)
+                    .await;
                 context.progress_reporter.stop().await;
-                
+
                 // Rollback on error
                 if let Some(ref id) = snapshot_id {
                     self.rollback_changes(id).await;
                 }
-                
+
                 Err(self.create_failure_result(
                     context.request.clone(),
-                    format!("Pre-restart validation error: {}", e)
+                    format!("Pre-restart validation error: {}", e),
                 ))
             }
         }
     }
-    
+
     /// Execute post-restart validation phase
-    async fn execute_validation_phase(&self, context: &mut UpdateContext, snapshot_id: Option<String>) -> UpdateResult {
-        context.progress_reporter.set_phase(UpdatePhase::Validating).await;
-        context.progress_reporter.set_status("Running post-restart validation pipeline...".to_string()).await;
-        self.update_discord_status(&context.request, "✅ Validating system after restart...").await;
-        
+    async fn execute_validation_phase(
+        &self,
+        context: &mut UpdateContext,
+        snapshot_id: Option<String>,
+    ) -> UpdateResult {
+        context
+            .progress_reporter
+            .set_phase(UpdatePhase::Validating)
+            .await;
+        context
+            .progress_reporter
+            .set_status("Running post-restart validation pipeline...".to_string())
+            .await;
+        self.update_discord_status(&context.request, "✅ Validating system after restart...")
+            .await;
+
         match self.run_validation_pipeline(&context.request).await {
             Ok(results) => {
                 info!("[UpdateExecutor] Validation passed, committing and pushing changes");
-                
+
                 // Git operations: Commit and push validated changes
                 let git_result = self.commit_and_push_changes(&context.request).await;
-                
-                context.progress_reporter.set_phase(UpdatePhase::Complete).await;
-                context.progress_reporter.set_status("Update completed successfully!".to_string()).await;
-                
+
+                context
+                    .progress_reporter
+                    .set_phase(UpdatePhase::Complete)
+                    .await;
+                context
+                    .progress_reporter
+                    .set_status("Update completed successfully!".to_string())
+                    .await;
+
                 let final_message = match git_result {
                     Ok(commit_hash) => {
-                        self.update_discord_status(&context.request, 
-                            &format!("🎉 Update completed and pushed! Commit: {}", &commit_hash[..8])).await;
-                        format!("Update completed successfully and pushed to remote ({})", &commit_hash[..8])
+                        self.update_discord_status(
+                            &context.request,
+                            &format!(
+                                "🎉 Update completed and pushed! Commit: {}",
+                                &commit_hash[..8]
+                            ),
+                        )
+                        .await;
+                        format!(
+                            "Update completed successfully and pushed to remote ({})",
+                            &commit_hash[..8]
+                        )
                     }
                     Err(e) => {
                         warn!("[UpdateExecutor] Git operations failed: {}", e);
-                        self.update_discord_status(&context.request, 
-                            "⚠️ Update completed but Git push failed - changes are local only").await;
+                        self.update_discord_status(
+                            &context.request,
+                            "⚠️ Update completed but Git push failed - changes are local only",
+                        )
+                        .await;
                         format!("Update completed but Git operations failed: {}", e)
                     }
                 };
-                
+
                 // Stop progress reporting
                 context.progress_reporter.stop().await;
-                
+
                 // Log validation results and create summary
-                let _ = context.logger.log_validation_results("Final", &results).await;
-                let _ = context.logger.create_summary(true, &final_message, context.start_time.elapsed()).await;
-                info!("[UpdateExecutor] {}. Logs at: {}", final_message, context.logger.get_log_dir().display());
-                
+                let _ = context
+                    .logger
+                    .log_validation_results("Final", &results)
+                    .await;
+                let _ = context
+                    .logger
+                    .create_summary(true, &final_message, context.start_time.elapsed())
+                    .await;
+                info!(
+                    "[UpdateExecutor] {}. Logs at: {}",
+                    final_message,
+                    context.logger.get_log_dir().display()
+                );
+
                 UpdateResult {
                     request: context.request.clone(),
                     success: true,
@@ -514,22 +737,31 @@ impl UpdateExecutor {
             }
             Err(e) => {
                 error!("[UpdateExecutor] Validation failed: {}", e);
-                context.progress_reporter.set_phase(UpdatePhase::Failed).await;
-                context.progress_reporter.set_status(format!("Validation failed: {}", e)).await;
-                
+                context
+                    .progress_reporter
+                    .set_phase(UpdatePhase::Failed)
+                    .await;
+                context
+                    .progress_reporter
+                    .set_status(format!("Validation failed: {}", e))
+                    .await;
+
                 // Rollback changes
                 if let Some(ref id) = snapshot_id {
                     self.rollback_changes(id).await;
                 }
-                
+
                 // Stop progress reporting
                 context.progress_reporter.stop().await;
-                
-                self.create_failure_result(context.request.clone(), format!("Validation failed: {}", e))
+
+                self.create_failure_result(
+                    context.request.clone(),
+                    format!("Validation failed: {}", e),
+                )
             }
         }
     }
-    
+
     /// Process all pending requests in the queue
     pub async fn process_queue(&mut self) {
         info!("[UpdateExecutor] Starting queue processing");
@@ -558,14 +790,14 @@ impl UpdateExecutor {
             } else {
                 let error_msg = result.error.clone().unwrap_or_default();
                 let _final_status = UpdateStatus::Failed(error_msg.clone());
-                
+
                 // Determine if this failure is retryable
                 if self.is_retryable_error(&error_msg) && request.retry_count < 3 {
                     info!(
                         "[UpdateExecutor] Request {} failed with retryable error, attempting retry {}/3",
                         request.id, request.retry_count + 1
                     );
-                    
+
                     // Attempt to retry the request
                     if let Err(e) = self.queue.retry_request(request.clone()).await {
                         warn!("[UpdateExecutor] Failed to retry request: {}", e);
@@ -597,7 +829,11 @@ impl UpdateExecutor {
     }
 
     /// Execute Claude Code to implement the requested changes
-    async fn execute_claude_update(&self, request: &SelfUpdateRequest, plan: &ImplementationPlan) -> Result<()> {
+    async fn execute_claude_update(
+        &self,
+        request: &SelfUpdateRequest,
+        plan: &ImplementationPlan,
+    ) -> Result<()> {
         debug!(
             "[UpdateExecutor] Executing Claude update for {}",
             request.id
@@ -616,7 +852,7 @@ impl UpdateExecutor {
 
         // Build the execution prompt from the plan
         let execution_prompt = self.build_execution_prompt(request, plan);
-        
+
         info!(
             "[UpdateExecutor] Executing {} tasks for update {}",
             plan.tasks.len(),
@@ -651,21 +887,29 @@ impl UpdateExecutor {
                     "[UpdateExecutor] Claude Code execution completed: {}",
                     result.explanation
                 );
-                
+
                 // Log files that were generated/modified
                 if !result.files_to_create.is_empty() {
                     info!(
                         "[UpdateExecutor] Files to create: {:?}",
-                        result.files_to_create.iter().map(|f| &f.path).collect::<Vec<_>>()
+                        result
+                            .files_to_create
+                            .iter()
+                            .map(|f| &f.path)
+                            .collect::<Vec<_>>()
                     );
                 }
                 if !result.files_to_modify.is_empty() {
                     info!(
                         "[UpdateExecutor] Files to modify: {:?}",
-                        result.files_to_modify.iter().map(|f| &f.path).collect::<Vec<_>>()
+                        result
+                            .files_to_modify
+                            .iter()
+                            .map(|f| &f.path)
+                            .collect::<Vec<_>>()
                     );
                 }
-                
+
                 Ok(())
             }
             Err(e) => {
@@ -676,9 +920,13 @@ impl UpdateExecutor {
             }
         }
     }
-    
+
     /// Build the execution prompt from the implementation plan
-    fn build_execution_prompt(&self, request: &SelfUpdateRequest, plan: &ImplementationPlan) -> String {
+    fn build_execution_prompt(
+        &self,
+        request: &SelfUpdateRequest,
+        plan: &ImplementationPlan,
+    ) -> String {
         let task_details = plan.tasks
             .iter()
             .map(|task| {
@@ -694,7 +942,7 @@ impl UpdateExecutor {
             })
             .collect::<Vec<_>>()
             .join("\n\n");
-        
+
         format!(
             r#"You are implementing a self-update for the Spiral Core system.
 
@@ -751,7 +999,7 @@ Implement all tasks according to the plan."#,
 
         // Create a new validation pipeline for this run
         let mut pipeline = ValidationPipeline::new();
-        
+
         // Run the validation pipeline
         let result = pipeline.execute().await?;
 
@@ -775,29 +1023,29 @@ Implement all tasks according to the plan."#,
             .output()
             .await
             .map_err(|e| SpiralError::SystemError(format!("Failed to run git diff: {}", e)))?;
-        
+
         if !output.status.success() {
             return Err(SpiralError::SystemError(
-                "Failed to get git diff".to_string()
+                "Failed to get git diff".to_string(),
             ));
         }
-        
+
         let diff = String::from_utf8_lossy(&output.stdout);
-        
+
         // Use scope limiter to analyze and validate changes
         let limiter = ScopeLimiter::new();
         let scope = limiter.analyze_diff(&diff).await?;
-        
+
         info!(
             "[UpdateExecutor] Change scope: {} files modified, {} created, {} deleted",
             scope.modified_files.len(),
-            scope.created_files.len(), 
+            scope.created_files.len(),
             scope.deleted_files.len()
         );
-        
+
         Ok(())
     }
-    
+
     /// Rollback changes to a snapshot
     async fn rollback_changes(&self, snapshot_id: &str) {
         info!("[UpdateExecutor] Rolling back to snapshot: {}", snapshot_id);
@@ -805,17 +1053,16 @@ Implement all tasks according to the plan."#,
             error!("[UpdateExecutor] Rollback failed: {}", e);
         }
     }
-    
+
     /// Commit and push validated changes to remote repository
     async fn commit_and_push_changes(&self, request: &SelfUpdateRequest) -> Result<String> {
         info!("[UpdateExecutor] Committing and pushing validated changes");
-        
+
         // Commit the changes with descriptive message
-        let commit_hash = GitOperations::commit_validated_changes(
-            &request.codename,
-            &request.description
-        ).await?;
-        
+        let commit_hash =
+            GitOperations::commit_validated_changes(&request.codename, &request.description)
+                .await?;
+
         // Push to remote repository
         match GitOperations::push_to_remote(None).await {
             Ok(()) => {
@@ -823,7 +1070,10 @@ Implement all tasks according to the plan."#,
                 Ok(commit_hash)
             }
             Err(e) => {
-                warn!("[UpdateExecutor] Push failed but changes are committed locally: {}", e);
+                warn!(
+                    "[UpdateExecutor] Push failed but changes are committed locally: {}",
+                    e
+                );
                 // Return commit hash even if push fails - changes are still saved locally
                 Ok(commit_hash)
             }
@@ -856,35 +1106,51 @@ Implement all tasks according to the plan."#,
     }
 
     /// Present the implementation plan for user approval
-    async fn present_plan_for_approval(&self, request: &SelfUpdateRequest, plan: &ImplementationPlan) -> u64 {
+    async fn present_plan_for_approval(
+        &self,
+        request: &SelfUpdateRequest,
+        plan: &ImplementationPlan,
+    ) -> u64 {
         if let Some(ref http) = self.discord_http {
             let channel_id = ChannelId::new(request.channel_id);
             let mut plan_message = format_plan_for_discord(plan);
             plan_message.push_str("\n\n");
             plan_message.push_str(format_approval_instructions());
-            
+
             match channel_id.say(http, &plan_message).await {
                 Ok(msg) => {
-                    info!("[UpdateExecutor] Sent plan for approval, message ID: {}", msg.id);
-                    
+                    info!(
+                        "[UpdateExecutor] Sent plan for approval, message ID: {}",
+                        msg.id
+                    );
+
                     // Add emoji reactions for approval
                     let message_id = msg.id;
-                    
+
                     // Add check mark emoji for approval
-                    if let Err(e) = msg.react(http, crate::discord::messages::emojis::CHECK).await {
+                    if let Err(e) = msg
+                        .react(http, crate::discord::messages::emojis::CHECK)
+                        .await
+                    {
                         warn!("[UpdateExecutor] Failed to add approval emoji: {}", e);
                     }
-                    
+
                     // Add cross mark emoji for rejection
-                    if let Err(e) = msg.react(http, crate::discord::messages::emojis::CROSS).await {
+                    if let Err(e) = msg
+                        .react(http, crate::discord::messages::emojis::CROSS)
+                        .await
+                    {
                         warn!("[UpdateExecutor] Failed to add rejection emoji: {}", e);
                     }
-                    
+
                     // Add pencil emoji for modification request
-                    if let Err(e) = msg.react(http, crate::discord::messages::emojis::PENCIL).await {
+                    if let Err(e) = msg
+                        .react(http, crate::discord::messages::emojis::PENCIL)
+                        .await
+                    {
                         warn!("[UpdateExecutor] Failed to add modification emoji: {}", e);
                     }
-                    
+
                     return message_id.get();
                 }
                 Err(e) => {
@@ -899,32 +1165,33 @@ Implement all tasks according to the plan."#,
     /// Determine if an error is retryable
     fn is_retryable_error(&self, error: &str) -> bool {
         // Network/transient errors are retryable
-        if error.contains("network") || 
-           error.contains("timeout") || 
-           error.contains("connection") ||
-           error.contains("temporarily") {
+        if error.contains("network")
+            || error.contains("timeout")
+            || error.contains("connection")
+            || error.contains("temporarily")
+        {
             return true;
         }
-        
+
         // Git conflicts might be resolved on retry
         if error.contains("git") && error.contains("conflict") {
             return true;
         }
-        
+
         // Claude API rate limits are retryable
         if error.contains("rate limit") || error.contains("429") {
             return true;
         }
-        
+
         // System resource issues might be temporary
         if error.contains("memory") || error.contains("disk space") {
             return true;
         }
-        
+
         // Most other errors are not retryable (compilation errors, validation failures, etc.)
         false
     }
-    
+
     /// Notify Discord about a retry attempt
     async fn notify_retry(&self, request: &SelfUpdateRequest, retry_number: u32) {
         if let Some(ref http) = self.discord_http {
@@ -936,13 +1203,13 @@ Implement all tasks according to the plan."#,
                 The update will be re-queued and processed again shortly.",
                 request.codename, retry_number
             );
-            
+
             if let Err(e) = channel_id.say(http, message).await {
                 warn!("[UpdateExecutor] Failed to send retry notification: {}", e);
             }
         }
     }
-    
+
     /// Send final result to Discord
     async fn send_final_result(&self, result: &UpdateResult) {
         if let Some(ref http) = self.discord_http {
@@ -965,7 +1232,7 @@ Implement all tasks according to the plan."#,
                 } else {
                     String::new()
                 };
-                
+
                 format!(
                     "❌ **Update Failed**\n\n\
                     **Request**: {}\n\

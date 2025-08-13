@@ -1,21 +1,13 @@
 //! Flexible reaction handler system for Discord bot
-//! 
+//!
 //! This module provides a callback-based reaction handling system that follows
 //! SOLID principles and promotes code reusability.
 
 use serenity::{
-    model::{
-        channel::Reaction,
-        user::User,
-    },
+    model::{channel::Reaction, user::User},
     prelude::*,
 };
-use std::{
-    collections::HashMap,
-    future::Future,
-    pin::Pin,
-    sync::Arc,
-};
+use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
@@ -56,22 +48,15 @@ impl ReactionHandlerManager {
     }
 
     /// Register a reaction handler
-    pub async fn register_handler(
-        &self,
-        emoji: impl Into<String>,
-        handler: ReactionHandler,
-    ) {
+    pub async fn register_handler(&self, emoji: impl Into<String>, handler: ReactionHandler) {
         let emoji = emoji.into();
         info!(
             "[ReactionHandlerManager] Registering handler for emoji '{}': {}",
             emoji, handler.description
         );
-        
+
         let mut handlers = self.handlers.write().await;
-        handlers
-            .entry(emoji)
-            .or_insert_with(Vec::new)
-            .push(handler);
+        handlers.entry(emoji).or_insert_with(Vec::new).push(handler);
     }
 
     /// Register a simple reaction handler without conditions
@@ -92,7 +77,7 @@ impl ReactionHandlerManager {
             requires_auth,
             description: description.into(),
         };
-        
+
         self.register_handler(handler.emoji.clone(), handler).await;
     }
 
@@ -115,7 +100,7 @@ impl ReactionHandlerManager {
             requires_auth,
             description: description.into(),
         };
-        
+
         self.register_handler(handler.emoji.clone(), handler).await;
     }
 
@@ -165,7 +150,7 @@ impl ReactionHandlerManager {
                     "[ReactionHandlerManager] Executing handler '{}' for emoji '{}'",
                     handler.description, emoji
                 );
-                
+
                 match (handler.callback)(ctx.clone(), reaction.clone(), user.clone()).await {
                     Ok(()) => {
                         info!(
@@ -214,7 +199,8 @@ pub mod callbacks {
     /// Create a callback that sends a reply to the message
     pub fn reply_callback(
         response: String,
-    ) -> impl Fn(Context, Reaction, User) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+    ) -> impl Fn(Context, Reaction, User) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>
+    {
         move |ctx, reaction, _user| {
             let response = response.clone();
             Box::pin(async move {
@@ -222,12 +208,12 @@ pub mod callbacks {
                     .message(&ctx.http)
                     .await
                     .map_err(|e| format!("Failed to get message: {}", e))?;
-                
+
                 message
                     .reply(&ctx.http, &response)
                     .await
                     .map_err(|e| format!("Failed to send reply: {}", e))?;
-                
+
                 Ok(())
             })
         }
@@ -236,7 +222,8 @@ pub mod callbacks {
     /// Create a callback that removes a specific reaction
     pub fn remove_reaction_callback(
         _emoji_to_remove: String,
-    ) -> impl Fn(Context, Reaction, User) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+    ) -> impl Fn(Context, Reaction, User) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>
+    {
         move |ctx, reaction, user| {
             Box::pin(async move {
                 // Get the message first, then remove the reaction
@@ -244,32 +231,33 @@ pub mod callbacks {
                     .message(&ctx.http)
                     .await
                     .map_err(|e| format!("Failed to get message: {}", e))?;
-                    
+
                 message
                     .delete_reaction(&ctx.http, Some(user.id), reaction.emoji.clone())
                     .await
                     .map_err(|e| format!("Failed to remove reaction: {}", e))?;
-                
+
                 Ok(())
             })
         }
     }
 
     /// Create a callback that deletes the message
-    pub fn delete_message_callback() 
-        -> impl Fn(Context, Reaction, User) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+    pub fn delete_message_callback(
+    ) -> impl Fn(Context, Reaction, User) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>
+    {
         |ctx, reaction, _user| {
             Box::pin(async move {
                 let message = reaction
                     .message(&ctx.http)
                     .await
                     .map_err(|e| format!("Failed to get message: {}", e))?;
-                
+
                 message
                     .delete(&ctx.http)
                     .await
                     .map_err(|e| format!("Failed to delete message: {}", e))?;
-                
+
                 Ok(())
             })
         }
@@ -283,7 +271,7 @@ mod tests {
     #[tokio::test]
     async fn test_reaction_registration() {
         let manager = ReactionHandlerManager::new();
-        
+
         manager
             .register_simple(
                 "✅",
@@ -300,24 +288,18 @@ mod tests {
     #[tokio::test]
     async fn test_multiple_handlers_same_emoji() {
         let manager = ReactionHandlerManager::new();
-        
+
         // Register two handlers for the same emoji
         manager
-            .register_simple(
-                "✅",
-                "Handler 1",
-                false,
-                |_ctx, _reaction, _user| Box::pin(async { Ok(()) }),
-            )
+            .register_simple("✅", "Handler 1", false, |_ctx, _reaction, _user| {
+                Box::pin(async { Ok(()) })
+            })
             .await;
 
         manager
-            .register_simple(
-                "✅",
-                "Handler 2",
-                false,
-                |_ctx, _reaction, _user| Box::pin(async { Ok(()) }),
-            )
+            .register_simple("✅", "Handler 2", false, |_ctx, _reaction, _user| {
+                Box::pin(async { Ok(()) })
+            })
             .await;
 
         let handlers = manager.handlers.read().await;

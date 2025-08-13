@@ -4,10 +4,10 @@
 //! a series of health checks to ensure the system is functioning correctly.
 
 use crate::Result;
+use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tracing::{debug, error, info};
-use serde::{Deserialize, Serialize};
 
 /// Health check results
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,16 +79,16 @@ impl HealthMonitor {
             check_timeout: Duration::from_secs(60),
         }
     }
-    
+
     /// Run all health checks
     pub async fn run_health_checks(&self) -> Result<HealthCheckResult> {
         info!("[HealthMonitor] Starting post-update health checks");
         let start = Instant::now();
-        
+
         let mut checks = Vec::new();
         let mut critical_issues = Vec::new();
         let mut warnings = Vec::new();
-        
+
         // Run individual health checks
         checks.push(self.check_compilation().await);
         checks.push(self.check_tests().await);
@@ -96,7 +96,7 @@ impl HealthMonitor {
         checks.push(self.check_dependencies().await);
         checks.push(self.check_documentation().await);
         checks.push(self.check_git_status().await);
-        
+
         // Analyze results
         let mut has_critical = false;
         for check in &checks {
@@ -126,10 +126,10 @@ impl HealthMonitor {
                 }
             }
         }
-        
+
         let healthy = !has_critical && critical_issues.is_empty();
         let duration = start.elapsed();
-        
+
         let result = HealthCheckResult {
             healthy,
             checks,
@@ -137,29 +137,37 @@ impl HealthMonitor {
             critical_issues: critical_issues.clone(),
             warnings,
         };
-        
+
         if healthy {
-            info!("[HealthMonitor] System is healthy (duration: {:?})", duration);
+            info!(
+                "[HealthMonitor] System is healthy (duration: {:?})",
+                duration
+            );
         } else {
-            error!("[HealthMonitor] System has health issues: {:?}", critical_issues);
+            error!(
+                "[HealthMonitor] System has health issues: {:?}",
+                critical_issues
+            );
         }
-        
+
         Ok(result)
     }
-    
+
     /// Check if the code compiles
     async fn check_compilation(&self) -> HealthCheck {
         let start = Instant::now();
         let name = "Compilation Check".to_string();
-        
+
         debug!("[HealthMonitor] Running compilation check");
-        
+
         let output = match tokio::time::timeout(
             self.check_timeout,
             Command::new("cargo")
                 .args(&["check", "--all-targets"])
-                .output()
-        ).await {
+                .output(),
+        )
+        .await
+        {
             Ok(Ok(output)) => output,
             Ok(Err(e)) => {
                 return HealthCheck {
@@ -182,14 +190,14 @@ impl HealthMonitor {
                 };
             }
         };
-        
+
         let passed = output.status.success();
         let error = if !passed {
             Some(String::from_utf8_lossy(&output.stderr).to_string())
         } else {
             None
         };
-        
+
         HealthCheck {
             name,
             category: HealthCategory::Compilation,
@@ -199,20 +207,22 @@ impl HealthMonitor {
             details: Some(format!("Exit code: {}", output.status.code().unwrap_or(-1))),
         }
     }
-    
+
     /// Check if tests pass
     async fn check_tests(&self) -> HealthCheck {
         let start = Instant::now();
         let name = "Test Suite".to_string();
-        
+
         debug!("[HealthMonitor] Running test check");
-        
+
         let output = match tokio::time::timeout(
             Duration::from_secs(120), // Tests get more time
             Command::new("cargo")
                 .args(&["test", "--", "--test-threads=4", "--nocapture"])
-                .output()
-        ).await {
+                .output(),
+        )
+        .await
+        {
             Ok(Ok(output)) => output,
             Ok(Err(e)) => {
                 return HealthCheck {
@@ -235,23 +245,24 @@ impl HealthMonitor {
                 };
             }
         };
-        
+
         let stdout = String::from_utf8_lossy(&output.stdout);
         let passed = output.status.success();
-        
+
         // Extract test statistics if available
-        let details = if let Some(summary_line) = stdout.lines().find(|l| l.contains("test result:")) {
-            Some(summary_line.to_string())
-        } else {
-            None
-        };
-        
+        let details =
+            if let Some(summary_line) = stdout.lines().find(|l| l.contains("test result:")) {
+                Some(summary_line.to_string())
+            } else {
+                None
+            };
+
         let error = if !passed {
             Some("One or more tests failed".to_string())
         } else {
             None
         };
-        
+
         HealthCheck {
             name,
             category: HealthCategory::Tests,
@@ -261,20 +272,22 @@ impl HealthMonitor {
             details,
         }
     }
-    
+
     /// Check if the main binary executes
     async fn check_binary_execution(&self) -> HealthCheck {
         let start = Instant::now();
         let name = "Binary Execution".to_string();
-        
+
         debug!("[HealthMonitor] Checking binary execution");
-        
+
         let output = match tokio::time::timeout(
             Duration::from_secs(10),
             Command::new("cargo")
                 .args(&["run", "--bin", "spiral-core", "--", "--version"])
-                .output()
-        ).await {
+                .output(),
+        )
+        .await
+        {
             Ok(Ok(output)) => output,
             Ok(Err(e)) => {
                 return HealthCheck {
@@ -297,10 +310,10 @@ impl HealthMonitor {
                 };
             }
         };
-        
+
         let passed = output.status.success();
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        
+
         HealthCheck {
             name,
             category: HealthCategory::BinaryExecution,
@@ -318,20 +331,22 @@ impl HealthMonitor {
             },
         }
     }
-    
+
     /// Check dependencies are valid
     async fn check_dependencies(&self) -> HealthCheck {
         let start = Instant::now();
         let name = "Dependency Check".to_string();
-        
+
         debug!("[HealthMonitor] Checking dependencies");
-        
+
         let output = match tokio::time::timeout(
             self.check_timeout,
             Command::new("cargo")
                 .args(&["tree", "--depth", "1"])
-                .output()
-        ).await {
+                .output(),
+        )
+        .await
+        {
             Ok(Ok(output)) => output,
             Ok(Err(e)) => {
                 return HealthCheck {
@@ -354,13 +369,16 @@ impl HealthMonitor {
                 };
             }
         };
-        
+
         let passed = output.status.success();
         let stdout = String::from_utf8_lossy(&output.stdout);
-        
+
         // Count dependencies
-        let dep_count = stdout.lines().filter(|l| l.contains("├──") || l.contains("└──")).count();
-        
+        let dep_count = stdout
+            .lines()
+            .filter(|l| l.contains("├──") || l.contains("└──"))
+            .count();
+
         HealthCheck {
             name,
             category: HealthCategory::Dependencies,
@@ -374,20 +392,22 @@ impl HealthMonitor {
             details: Some(format!("{} direct dependencies", dep_count)),
         }
     }
-    
+
     /// Check documentation builds
     async fn check_documentation(&self) -> HealthCheck {
         let start = Instant::now();
         let name = "Documentation Build".to_string();
-        
+
         debug!("[HealthMonitor] Checking documentation");
-        
+
         let output = match tokio::time::timeout(
             self.check_timeout,
             Command::new("cargo")
                 .args(&["doc", "--no-deps", "--quiet"])
-                .output()
-        ).await {
+                .output(),
+        )
+        .await
+        {
             Ok(Ok(output)) => output,
             Ok(Err(e)) => {
                 return HealthCheck {
@@ -410,9 +430,9 @@ impl HealthMonitor {
                 };
             }
         };
-        
+
         let passed = output.status.success();
-        
+
         HealthCheck {
             name,
             category: HealthCategory::Documentation,
@@ -426,14 +446,14 @@ impl HealthMonitor {
             details: None,
         }
     }
-    
+
     /// Check git repository status
     async fn check_git_status(&self) -> HealthCheck {
         let start = Instant::now();
         let name = "Git Repository".to_string();
-        
+
         debug!("[HealthMonitor] Checking git status");
-        
+
         let output = match Command::new("git")
             .args(&["status", "--porcelain"])
             .output()
@@ -451,11 +471,11 @@ impl HealthMonitor {
                 };
             }
         };
-        
+
         let stdout = String::from_utf8_lossy(&output.stdout);
         let has_changes = !stdout.trim().is_empty();
         let change_count = stdout.lines().count();
-        
+
         HealthCheck {
             name,
             category: HealthCategory::GitStatus,
@@ -469,17 +489,18 @@ impl HealthMonitor {
             },
         }
     }
-    
+
     /// Format health check results for Discord
     pub fn format_for_discord(result: &HealthCheckResult) -> String {
         let status_emoji = if result.healthy { "✅" } else { "⚠️" };
-        let status_text = if result.healthy { "HEALTHY" } else { "ISSUES DETECTED" };
-        
-        let mut message = format!(
-            "{} **System Health: {}**\n",
-            status_emoji, status_text
-        );
-        
+        let status_text = if result.healthy {
+            "HEALTHY"
+        } else {
+            "ISSUES DETECTED"
+        };
+
+        let mut message = format!("{} **System Health: {}**\n", status_emoji, status_text);
+
         message.push_str("```\n");
         for check in &result.checks {
             let check_emoji = if check.passed { "✓" } else { "✗" };
@@ -491,31 +512,35 @@ impl HealthMonitor {
                 if check.passed {
                     check.details.as_ref().unwrap_or(&"OK".to_string()).clone()
                 } else {
-                    check.error.as_ref().unwrap_or(&"Failed".to_string()).clone()
+                    check
+                        .error
+                        .as_ref()
+                        .unwrap_or(&"Failed".to_string())
+                        .clone()
                 }
             ));
         }
         message.push_str("```\n");
-        
+
         if !result.critical_issues.is_empty() {
             message.push_str("**🚨 Critical Issues:**\n");
             for issue in &result.critical_issues {
                 message.push_str(&format!("• {}\n", issue));
             }
         }
-        
+
         if !result.warnings.is_empty() {
             message.push_str("**⚠️ Warnings:**\n");
             for warning in &result.warnings {
                 message.push_str(&format!("• {}\n", warning));
             }
         }
-        
+
         message.push_str(&format!(
             "\n⏱️ Health check completed in {:.2}s",
             result.duration.as_secs_f32()
         ));
-        
+
         message
     }
 }
@@ -529,14 +554,14 @@ impl Default for HealthMonitor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_health_category_emoji() {
         assert_eq!(HealthCategory::Compilation.emoji(), "🔨");
         assert_eq!(HealthCategory::Tests.emoji(), "🧪");
         assert_eq!(HealthCategory::BinaryExecution.emoji(), "🚀");
     }
-    
+
     #[test]
     fn test_format_for_discord() {
         let result = HealthCheckResult {
@@ -563,14 +588,14 @@ mod tests {
             critical_issues: vec![],
             warnings: vec!["Tests are failing: 2 tests failed".to_string()],
         };
-        
+
         let formatted = HealthMonitor::format_for_discord(&result);
         assert!(formatted.contains("System Health"));
         assert!(formatted.contains("Compilation Check"));
         assert!(formatted.contains("Test Suite"));
         assert!(formatted.contains("Warnings"));
     }
-    
+
     #[tokio::test]
     async fn test_health_monitor_creation() {
         let monitor = HealthMonitor::new();

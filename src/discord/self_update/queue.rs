@@ -159,11 +159,11 @@ impl UpdateQueue {
             inner.requests.clear();
         }
     }
-    
+
     /// Retry a failed request by re-queuing it with incremented retry count
     pub async fn retry_request(&self, mut request: SelfUpdateRequest) -> Result<()> {
         const MAX_RETRIES: u32 = 3;
-        
+
         // Check if we've exceeded max retries
         if request.retry_count >= MAX_RETRIES {
             return Err(SpiralError::Validation(format!(
@@ -171,13 +171,13 @@ impl UpdateQueue {
                 request.id, MAX_RETRIES
             )));
         }
-        
+
         // Increment retry count
         request.retry_count += 1;
-        
+
         // Reset status to queued
         request.status = UpdateStatus::Queued;
-        
+
         // Generate new ID with retry suffix
         if !request.id.contains("-retry-") {
             request.id = format!("{}-retry-{}", request.id, request.retry_count);
@@ -186,7 +186,7 @@ impl UpdateQueue {
             let base_id = request.id.split("-retry-").next().unwrap_or(&request.id);
             request.id = format!("{}-retry-{}", base_id, request.retry_count);
         }
-        
+
         // Add back to queue
         self.try_add_request(request).await
     }

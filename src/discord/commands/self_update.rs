@@ -88,7 +88,7 @@ impl SelfUpdateCommand {
         help_text.push_str("3. Generate and test potential updates\n");
         help_text.push_str("4. Apply safe, beneficial changes\n");
         help_text.push_str("5. Report results and any changes made\n\n");
-        
+
         // Retry functionality
         help_text.push_str("**🔁 Retry Failed Updates**\n");
         help_text.push_str("Use `!spiral update retry <codename>` to retry a failed update.\n");
@@ -187,7 +187,8 @@ impl CommandHandler for SelfUpdateCommand {
             } else {
                 return Some(
                     "❌ Please specify the codename of the update to retry.\n\
-                    Usage: `!spiral update retry <codename>`".to_string()
+                    Usage: `!spiral update retry <codename>`"
+                        .to_string(),
                 );
             }
         }

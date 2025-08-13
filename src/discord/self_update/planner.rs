@@ -127,7 +127,7 @@ impl UpdatePlanner {
             self.create_plan_with_keywords(request).await
         }
     }
-    
+
     /// Create a comprehensive plan using Claude Code
     async fn create_plan_with_claude(
         &self,
@@ -135,10 +135,10 @@ impl UpdatePlanner {
         claude_client: &crate::claude_code::ClaudeCodeClient,
     ) -> Result<ImplementationPlan> {
         info!("[UpdatePlanner] Using Claude Code for comprehensive planning");
-        
+
         // Build a comprehensive prompt that encapsulates all planning aspects
         let planning_prompt = self.build_comprehensive_planning_prompt(request);
-        
+
         // Create a code generation request for the planning task
         let code_request = crate::claude_code::CodeGenerationRequest {
             language: "json".to_string(), // We want JSON output for structured data
@@ -157,7 +157,7 @@ impl UpdatePlanner {
             ],
             session_id: Some(format!("planning-{}", request.id)),
         };
-        
+
         // Execute the planning request
         match claude_client.generate_code(code_request).await {
             Ok(result) => {
@@ -165,24 +165,31 @@ impl UpdatePlanner {
                 match serde_json::from_str::<ImplementationPlan>(&result.code) {
                     Ok(mut plan) => {
                         // Ensure some fields are set correctly
-                        plan.plan_id = format!("plan-{}-{}", request.codename, chrono::Utc::now().timestamp());
+                        plan.plan_id = format!(
+                            "plan-{}-{}",
+                            request.codename,
+                            chrono::Utc::now().timestamp()
+                        );
                         plan.request_id = request.id.clone();
                         plan.approval_status = ApprovalStatus::Pending;
-                        
+
                         // Check if human approval is required based on risk and content
                         self.check_human_approval_requirements(&mut plan);
-                        
+
                         info!(
                             "[UpdatePlanner] Claude created plan {} with {} tasks, risk level: {:?}",
                             plan.plan_id,
                             plan.tasks.len(),
                             plan.risk_level
                         );
-                        
+
                         Ok(plan)
                     }
                     Err(e) => {
-                        warn!("[UpdatePlanner] Failed to parse Claude's JSON response: {}", e);
+                        warn!(
+                            "[UpdatePlanner] Failed to parse Claude's JSON response: {}",
+                            e
+                        );
                         // Fallback to keyword analysis
                         self.create_plan_with_keywords(request).await
                     }
@@ -195,11 +202,11 @@ impl UpdatePlanner {
             }
         }
     }
-    
+
     /// Build a comprehensive prompt for Claude Code planning
     fn build_comprehensive_planning_prompt(&self, request: &SelfUpdateRequest) -> String {
         let combined_messages = request.combined_messages.join("\n");
-        
+
         format!(
             r#"You are a Project Manager AI agent specialized in planning self-update operations for the Spiral Core system.
             
@@ -279,41 +286,47 @@ Return a JSON object matching this structure:
 - Ensure the plan is specific to the Spiral Core Rust project
 
 Analyze the request carefully and provide a comprehensive plan that a developer can follow step-by-step."#,
-            request.id,
-            request.codename,
-            request.description,
-            combined_messages
+            request.id, request.codename, request.description, combined_messages
         )
     }
-    
+
     /// Fallback method using keyword analysis
-    async fn create_plan_with_keywords(&self, request: &SelfUpdateRequest) -> Result<ImplementationPlan> {
+    async fn create_plan_with_keywords(
+        &self,
+        request: &SelfUpdateRequest,
+    ) -> Result<ImplementationPlan> {
         info!("[UpdatePlanner] Using keyword-based planning (fallback)");
-        
+
         // Analyze the request to understand what's being asked
         let analysis = Self::analyze_request(request)?;
-        
+
         // Decompose into specific tasks
         let tasks = Self::decompose_into_tasks(&analysis, request)?;
-        
+
         // Assess overall risk
         let risk_level = Self::assess_risk(&tasks, &analysis);
-        
+
         // Identify specific risks
         let identified_risks = Self::identify_risks(&tasks, &analysis, request);
-        
+
         // Define success criteria
         let success_criteria = Self::define_success_criteria(&tasks, request);
-        
+
         // Create the plan
         let mut plan = ImplementationPlan {
-            plan_id: format!("plan-{}-{}", request.codename, chrono::Utc::now().timestamp()),
+            plan_id: format!(
+                "plan-{}-{}",
+                request.codename,
+                chrono::Utc::now().timestamp()
+            ),
             request_id: request.id.clone(),
             summary: Self::generate_summary(&tasks, request),
             risk_level,
             tasks,
             identified_risks,
-            rollback_strategy: "Git snapshot created before changes. Can rollback to previous commit if needed.".to_string(),
+            rollback_strategy:
+                "Git snapshot created before changes. Can rollback to previous commit if needed."
+                    .to_string(),
             success_criteria,
             resource_requirements: ResourceRequirements {
                 required_agents: vec!["Claude Code".to_string()],
@@ -323,42 +336,42 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
             requires_human_approval: false, // Will be checked next
             approval_reason: None,
         };
-        
+
         // Check if human approval is required
         self.check_human_approval_requirements(&mut plan);
-        
+
         info!(
             "[UpdatePlanner] Created keyword-based plan {} with {} tasks, risk level: {:?}",
             plan.plan_id,
             plan.tasks.len(),
             plan.risk_level
         );
-        
+
         Ok(plan)
     }
-    
+
     /// Analyze the request to understand scope and intent
     fn analyze_request(request: &SelfUpdateRequest) -> Result<RequestAnalysis> {
         debug!("[UpdatePlanner] Analyzing request: {}", request.description);
-        
+
         let combined_text = format!(
             "{}\n{}",
             request.description,
             request.combined_messages.join("\n")
         );
-        
+
         // Simple keyword-based analysis for now
         // In a real implementation, this would use NLP or Claude to understand intent
         let analysis = RequestAnalysis {
             primary_intent: Self::detect_primary_intent(&combined_text),
             scope: Self::detect_scope(&combined_text),
             affected_areas: Self::detect_affected_areas(&combined_text),
-            complexity_factors: Self::detect_complexity_factors(&combined_text),
+            _complexity_factors: Self::detect_complexity_factors(&combined_text),
         };
-        
+
         Ok(analysis)
     }
-    
+
     /// Decompose the request into specific tasks
     fn decompose_into_tasks(
         analysis: &RequestAnalysis,
@@ -366,7 +379,7 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
     ) -> Result<Vec<PlannedTask>> {
         let mut tasks = Vec::new();
         let mut task_counter = 1;
-        
+
         // Based on the analysis, create appropriate tasks
         match analysis.primary_intent {
             Intent::BugFix => {
@@ -383,7 +396,7 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
                     ],
                 });
                 task_counter += 1;
-                
+
                 tasks.push(PlannedTask {
                     id: format!("task-{}", task_counter),
                     description: "Add tests to prevent regression".to_string(),
@@ -408,7 +421,7 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
                     ],
                 });
                 task_counter += 1;
-                
+
                 tasks.push(PlannedTask {
                     id: format!("task-{}", task_counter),
                     description: "Add tests for new feature".to_string(),
@@ -419,7 +432,7 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
                     validation_steps: vec!["All tests pass".to_string()],
                 });
                 task_counter += 1;
-                
+
                 tasks.push(PlannedTask {
                     id: format!("task-{}", task_counter),
                     description: "Update documentation".to_string(),
@@ -460,35 +473,35 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
                 });
             }
         }
-        
+
         Ok(tasks)
     }
-    
+
     /// Assess the overall risk level using Fibonacci scale
     fn assess_risk(tasks: &[PlannedTask], analysis: &RequestAnalysis) -> RiskLevel {
         let max_complexity = tasks.iter().map(|t| t.complexity).max().unwrap_or(1);
         let total_components = analysis.affected_areas.len();
-        
+
         // Check for unknown factors first
         if analysis.affected_areas.contains(&"unknown".to_string()) {
             return RiskLevel::Unknown;
         }
-        
+
         // Critical scope always has high risk
         if analysis.scope == Scope::Critical {
             if max_complexity >= 8 {
-                RiskLevel::Nuclear  // Critical + very complex = nuclear risk
+                RiskLevel::Nuclear // Critical + very complex = nuclear risk
             } else if max_complexity >= 5 {
                 RiskLevel::High
             } else {
-                RiskLevel::Certain  // Critical changes always have certain risk
+                RiskLevel::Certain // Critical changes always have certain risk
             }
         } else if max_complexity >= 13 {
-            RiskLevel::Nuclear  // Extremely complex tasks are nuclear risk
+            RiskLevel::Nuclear // Extremely complex tasks are nuclear risk
         } else if max_complexity >= 8 || total_components > 8 {
-            RiskLevel::High  // Very complex or many components
+            RiskLevel::High // Very complex or many components
         } else if max_complexity >= 5 || total_components > 5 {
-            RiskLevel::Certain  // Complex tasks have certain risk of issues
+            RiskLevel::Certain // Complex tasks have certain risk of issues
         } else if max_complexity >= 3 || total_components > 3 {
             RiskLevel::Medium
         } else if max_complexity == 2 || total_components == 2 {
@@ -497,7 +510,7 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
             RiskLevel::Low
         }
     }
-    
+
     /// Identify specific risks
     fn identify_risks(
         tasks: &[PlannedTask],
@@ -505,52 +518,55 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
         _request: &SelfUpdateRequest,
     ) -> Vec<String> {
         let mut risks = Vec::new();
-        
+
         // Check for high complexity
         if tasks.iter().any(|t| t.complexity >= 4) {
             risks.push("High complexity changes may introduce bugs".to_string());
         }
-        
+
         // Check for critical areas
         if analysis.scope == Scope::Critical {
             risks.push("Changes affect critical system components".to_string());
         }
-        
+
         // Check for test coverage
-        if !tasks.iter().any(|t| t.category == TaskCategory::TestAddition) {
+        if !tasks
+            .iter()
+            .any(|t| t.category == TaskCategory::TestAddition)
+        {
             risks.push("No tests planned - may miss regressions".to_string());
         }
-        
+
         // Check for broad impact
         if analysis.affected_areas.len() > 3 {
             risks.push("Changes affect multiple components".to_string());
         }
-        
+
         if risks.is_empty() {
             risks.push("Low risk - straightforward changes".to_string());
         }
-        
+
         risks
     }
-    
+
     /// Define success criteria
     fn define_success_criteria(tasks: &[PlannedTask], _request: &SelfUpdateRequest) -> Vec<String> {
         let mut criteria = vec![
             "All compilation checks pass".to_string(),
             "All existing tests continue to pass".to_string(),
         ];
-        
+
         // Add task-specific criteria
         for task in tasks {
             criteria.extend(task.validation_steps.clone());
         }
-        
+
         criteria.push("No performance regressions".to_string());
         criteria.push("Code follows project standards".to_string());
-        
+
         criteria
     }
-    
+
     /// Generate a summary of the plan
     fn generate_summary(tasks: &[PlannedTask], request: &SelfUpdateRequest) -> String {
         let task_summary = tasks
@@ -558,22 +574,29 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
             .map(|t| format!("- {}", t.description))
             .collect::<Vec<_>>()
             .join("\n");
-        
+
         format!(
             "Plan to address: {}\n\nTasks:\n{}",
             request.description, task_summary
         )
     }
-    
+
     /// Detect the primary intent of the request
     fn detect_primary_intent(text: &str) -> Intent {
         let text_lower = text.to_lowercase();
-        
-        if text_lower.contains("fix") || text_lower.contains("bug") || text_lower.contains("error") {
+
+        if text_lower.contains("fix") || text_lower.contains("bug") || text_lower.contains("error")
+        {
             Intent::BugFix
-        } else if text_lower.contains("add") || text_lower.contains("implement") || text_lower.contains("create") {
+        } else if text_lower.contains("add")
+            || text_lower.contains("implement")
+            || text_lower.contains("create")
+        {
             Intent::FeatureAddition
-        } else if text_lower.contains("improve") || text_lower.contains("enhance") || text_lower.contains("optimize") {
+        } else if text_lower.contains("improve")
+            || text_lower.contains("enhance")
+            || text_lower.contains("optimize")
+        {
             Intent::Improvement
         } else if text_lower.contains("update") || text_lower.contains("change") {
             Intent::Update
@@ -581,14 +604,20 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
             Intent::Unknown
         }
     }
-    
+
     /// Detect the scope of changes
     fn detect_scope(text: &str) -> Scope {
         let text_lower = text.to_lowercase();
-        
-        if text_lower.contains("security") || text_lower.contains("auth") || text_lower.contains("critical") {
+
+        if text_lower.contains("security")
+            || text_lower.contains("auth")
+            || text_lower.contains("critical")
+        {
             Scope::Critical
-        } else if text_lower.contains("api") || text_lower.contains("interface") || text_lower.contains("public") {
+        } else if text_lower.contains("api")
+            || text_lower.contains("interface")
+            || text_lower.contains("public")
+        {
             Scope::Public
         } else if text_lower.contains("internal") || text_lower.contains("private") {
             Scope::Internal
@@ -596,12 +625,12 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
             Scope::Unknown
         }
     }
-    
+
     /// Detect affected areas
     fn detect_affected_areas(text: &str) -> Vec<String> {
         let mut areas = Vec::new();
         let text_lower = text.to_lowercase();
-        
+
         // Check for common component mentions
         if text_lower.contains("discord") {
             areas.push("discord".to_string());
@@ -621,19 +650,19 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
         if text_lower.contains("config") {
             areas.push("configuration".to_string());
         }
-        
+
         if areas.is_empty() {
             areas.push("unknown".to_string());
         }
-        
+
         areas
     }
-    
+
     /// Detect complexity factors
     fn detect_complexity_factors(text: &str) -> Vec<String> {
         let mut factors = Vec::new();
         let text_lower = text.to_lowercase();
-        
+
         if text_lower.contains("refactor") {
             factors.push("refactoring required".to_string());
         }
@@ -646,14 +675,17 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
         if text_lower.contains("breaking") {
             factors.push("breaking changes".to_string());
         }
-        
+
         factors
     }
-    
+
     /// Check if the plan requires human approval based on risk and content
     fn check_human_approval_requirements(&self, plan: &mut ImplementationPlan) {
         // Always require human approval for high-risk changes
-        if matches!(plan.risk_level, RiskLevel::High | RiskLevel::Nuclear | RiskLevel::DoNotImplement) {
+        if matches!(
+            plan.risk_level,
+            RiskLevel::High | RiskLevel::Nuclear | RiskLevel::DoNotImplement
+        ) {
             plan.requires_human_approval = true;
             plan.approval_reason = Some(format!(
                 "High risk level ({:?}) requires human review",
@@ -661,39 +693,52 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
             ));
             return;
         }
-        
+
         // Check for critical task categories
         let has_critical_tasks = plan.tasks.iter().any(|task| {
-            matches!(task.category, TaskCategory::Security | TaskCategory::Configuration)
+            matches!(
+                task.category,
+                TaskCategory::Security | TaskCategory::Configuration
+            )
         });
-        
+
         if has_critical_tasks {
             plan.requires_human_approval = true;
-            plan.approval_reason = Some("Security or configuration changes require human review".to_string());
+            plan.approval_reason =
+                Some("Security or configuration changes require human review".to_string());
             return;
         }
-        
+
         // Check for changes to critical files
         let critical_paths = vec![
-            ".env", "Cargo.toml", "package.json", ".github", 
-            "src/main.rs", "src/lib.rs", "src/discord/self_update/"
+            ".env",
+            "Cargo.toml",
+            "package.json",
+            ".github",
+            "src/main.rs",
+            "src/lib.rs",
+            "src/discord/self_update/",
         ];
-        
+
         let touches_critical = plan.tasks.iter().any(|task| {
             task.affected_components.iter().any(|component| {
-                critical_paths.iter().any(|critical| component.contains(critical))
+                critical_paths
+                    .iter()
+                    .any(|critical| component.contains(critical))
             })
         });
-        
+
         if touches_critical {
             plan.requires_human_approval = true;
-            plan.approval_reason = Some("Changes to critical system files require human review".to_string());
+            plan.approval_reason =
+                Some("Changes to critical system files require human review".to_string());
             return;
         }
-        
+
         // Check total complexity
         let total_complexity: u32 = plan.tasks.iter().map(|t| t.complexity as u32).sum();
-        if total_complexity > 21 { // Fibonacci: 13 + 8
+        if total_complexity > 21 {
+            // Fibonacci: 13 + 8
             plan.requires_human_approval = true;
             plan.approval_reason = Some(format!(
                 "High total complexity ({}) requires human review",
@@ -701,7 +746,7 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
             ));
             return;
         }
-        
+
         // Check for many files being changed
         if plan.tasks.len() > 10 {
             plan.requires_human_approval = true;
@@ -711,7 +756,7 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
             ));
             return;
         }
-        
+
         // Default: no special human approval required beyond normal flow
         plan.requires_human_approval = false;
         plan.approval_reason = None;
@@ -724,7 +769,7 @@ struct RequestAnalysis {
     primary_intent: Intent,
     scope: Scope,
     affected_areas: Vec<String>,
-    complexity_factors: Vec<String>,
+    _complexity_factors: Vec<String>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -761,9 +806,9 @@ fn format_risk_level(risk: &RiskLevel) -> String {
 /// Format a plan for Discord display
 pub fn format_plan_for_discord(plan: &ImplementationPlan) -> String {
     let mut output = String::new();
-    
+
     output.push_str(&format!("## 📋 Implementation Plan: {}\n\n", plan.plan_id));
-    
+
     // Show human approval requirement prominently
     if plan.requires_human_approval {
         output.push_str("⚠️ **HUMAN APPROVAL REQUIRED** ⚠️\n");
@@ -772,10 +817,13 @@ pub fn format_plan_for_discord(plan: &ImplementationPlan) -> String {
         }
         output.push_str("\n");
     }
-    
+
     output.push_str(&format!("**Summary**: {}\n\n", plan.summary));
-    output.push_str(&format!("**Risk Level**: {}\n\n", format_risk_level(&plan.risk_level)));
-    
+    output.push_str(&format!(
+        "**Risk Level**: {}\n\n",
+        format_risk_level(&plan.risk_level)
+    ));
+
     output.push_str("### 📝 Tasks\n");
     for (i, task) in plan.tasks.iter().enumerate() {
         output.push_str(&format!(
@@ -786,22 +834,25 @@ pub fn format_plan_for_discord(plan: &ImplementationPlan) -> String {
             task.validation_steps.join(", ")
         ));
     }
-    
+
     output.push_str("\n### ⚠️ Identified Risks\n");
     for risk in &plan.identified_risks {
         output.push_str(&format!("- {}\n", risk));
     }
-    
+
     output.push_str("\n### ✅ Success Criteria\n");
     for criterion in &plan.success_criteria {
         output.push_str(&format!("- {}\n", criterion));
     }
-    
-    output.push_str(&format!("\n**Rollback Strategy**: {}\n", plan.rollback_strategy));
-    
+
+    output.push_str(&format!(
+        "\n**Rollback Strategy**: {}\n",
+        plan.rollback_strategy
+    ));
+
     output.push_str("\n---\n");
     output.push_str("Reply with **approve** to proceed or **modify** to request changes.");
-    
+
     output
 }
 
@@ -823,15 +874,18 @@ mod tests {
             retry_count: 0,
             status: crate::discord::self_update::UpdateStatus::Queued,
         };
-        
+
         let planner = UpdatePlanner::new(None);
         let plan = planner.create_plan(&request).await.unwrap();
-        
+
         assert!(!plan.tasks.is_empty());
         assert_eq!(plan.request_id, "test-123");
-        assert!(plan.tasks.iter().any(|t| t.category == TaskCategory::BugFix));
+        assert!(plan
+            .tasks
+            .iter()
+            .any(|t| t.category == TaskCategory::BugFix));
     }
-    
+
     #[test]
     fn test_intent_detection() {
         assert_eq!(

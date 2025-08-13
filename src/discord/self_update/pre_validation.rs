@@ -5,8 +5,8 @@
 //! - Phase 1: Engineering Review (engineers reviewing all the work)
 //! - Phase 2: Final Assembly Checklist (ticking boxes before rolling off the line)
 
-use super::{SelfUpdateRequest, StructuredLogger, validation_agents};
-use crate::{claude_code::ClaudeCodeClient, Result, error::SpiralError};
+use super::{validation_agents, SelfUpdateRequest, StructuredLogger};
+use crate::{claude_code::ClaudeCodeClient, error::SpiralError, Result};
 use serde::{Deserialize, Serialize};
 use std::process::Stdio;
 use tokio::process::Command;
@@ -22,8 +22,8 @@ pub struct PreImplementationValidator {
 /// Result of pre-implementation validation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreValidationResult {
-    pub engineering_review_passed: bool,  // Phase 1: Engineering Review
-    pub assembly_checklist_passed: bool,  // Phase 2: Final Assembly Checklist
+    pub engineering_review_passed: bool, // Phase 1: Engineering Review
+    pub assembly_checklist_passed: bool, // Phase 2: Final Assembly Checklist
     pub pipeline_iterations: u32,
     pub total_checks_run: u32,
     pub checks_failed: Vec<String>,
@@ -43,7 +43,7 @@ impl PreValidationResult {
 struct CheckResult {
     pub name: String,
     pub passed: bool,
-    pub output: String,
+    pub _output: String,
     pub retries_used: u32,
 }
 
@@ -63,8 +63,11 @@ impl PreImplementationValidator {
         request: &SelfUpdateRequest,
         logger: &mut StructuredLogger,
     ) -> Result<PreValidationResult> {
-        info!("[PreValidator] Starting pre-restart validation for {}", request.id);
-        
+        info!(
+            "[PreValidator] Starting pre-restart validation for {}",
+            request.id
+        );
+
         let mut result = PreValidationResult {
             engineering_review_passed: false,
             assembly_checklist_passed: false,
@@ -77,39 +80,62 @@ impl PreImplementationValidator {
 
         // Run pipeline with loop-back logic
         for iteration in 1..=self.max_pipeline_iterations {
-            info!("[PreValidator] Pipeline iteration {}/{}", iteration, self.max_pipeline_iterations);
+            info!(
+                "[PreValidator] Pipeline iteration {}/{}",
+                iteration, self.max_pipeline_iterations
+            );
             result.pipeline_iterations = iteration;
-            
+
             // Phase 1: Engineering Review (4 parts)
             let phase1_result = self.run_engineering_review(request, logger).await;
             result.total_checks_run += 4; // Engineering Review has 4 parts
-            
+
             if !phase1_result {
-                warn!("[PreValidator] Engineering Review failed on iteration {}", iteration);
+                warn!(
+                    "[PreValidator] Engineering Review failed on iteration {}",
+                    iteration
+                );
                 result.engineering_review_passed = false;
-                result.error_details = Some(format!("Phase 1: Engineering Review failed on iteration {}", iteration));
+                result.error_details = Some(format!(
+                    "Phase 1: Engineering Review failed on iteration {}",
+                    iteration
+                ));
                 break;
             }
-            
+
             result.engineering_review_passed = true;
-            let _ = logger.log_to_phase("PreValidation", &format!("Phase 1: Engineering Review passed (iteration {})", iteration)).await;
-            
+            let _ = logger
+                .log_to_phase(
+                    "PreValidation",
+                    &format!(
+                        "Phase 1: Engineering Review passed (iteration {})",
+                        iteration
+                    ),
+                )
+                .await;
+
             // Phase 2: Final Assembly Checklist (5 parts)
-            let (phase2_result, required_retry) = self.run_assembly_checklist(request, logger).await;
+            let (phase2_result, required_retry) =
+                self.run_assembly_checklist(request, logger).await;
             result.total_checks_run += 5; // Assembly Checklist has 5 parts
-            
+
             if phase2_result {
-                info!("[PreValidator] Final Assembly Checklist passed on iteration {}", iteration);
+                info!(
+                    "[PreValidator] Final Assembly Checklist passed on iteration {}",
+                    iteration
+                );
                 result.assembly_checklist_passed = true;
-                let _ = logger.log_to_phase("PreValidation", "All validation checks passed!").await;
+                let _ = logger
+                    .log_to_phase("PreValidation", "All validation checks passed!")
+                    .await;
                 break;
             }
-            
+
             if required_retry && iteration < self.max_pipeline_iterations {
                 warn!("[PreValidator] Assembly Checklist required retry, looping back to Engineering Review");
                 continue;
             }
-            
+
             // Failed after max iterations
             result.assembly_checklist_passed = false;
             result.error_details = Some(format!(
@@ -118,7 +144,7 @@ impl PreImplementationValidator {
             ));
             break;
         }
-        
+
         Ok(result)
     }
 
@@ -129,7 +155,7 @@ impl PreImplementationValidator {
         logger: &mut StructuredLogger,
     ) -> bool {
         info!("[PreValidator] Running Phase 1: Engineering Review");
-        
+
         // Run the 4 parts of Engineering Review - deep quality inspection
         let checks = vec![
             self.check_code_standards(request, logger).await,
@@ -137,17 +163,21 @@ impl PreImplementationValidator {
             self.check_security(request, logger).await,
             self.check_integration(request, logger).await,
         ];
-        
+
         let all_passed = checks.iter().all(|check| check.passed);
-        
+
         if !all_passed {
-            let failed: Vec<_> = checks.iter()
+            let failed: Vec<_> = checks
+                .iter()
                 .filter(|c| !c.passed)
                 .map(|c| c.name.clone())
                 .collect();
-            warn!("[PreValidator] Engineering Review failed parts: {:?}", failed);
+            warn!(
+                "[PreValidator] Engineering Review failed parts: {:?}",
+                failed
+            );
         }
-        
+
         all_passed
     }
 
@@ -158,10 +188,10 @@ impl PreImplementationValidator {
         logger: &mut StructuredLogger,
     ) -> (bool, bool) {
         info!("[PreValidator] Running Phase 2: Final Assembly Checklist");
-        
+
         let mut required_retry = false;
         let mut all_passed = true;
-        
+
         // Part 1: ✓ Compilation check
         let compile_result = self.run_cargo_check(request, logger).await;
         if !compile_result.passed {
@@ -170,7 +200,7 @@ impl PreImplementationValidator {
                 required_retry = true;
             }
         }
-        
+
         // Part 2: ✓ Test suite execution
         let test_result = self.run_cargo_test(request, logger).await;
         if !test_result.passed {
@@ -179,7 +209,7 @@ impl PreImplementationValidator {
                 required_retry = true;
             }
         }
-        
+
         // Part 3: ✓ Formatting check
         let fmt_result = self.run_cargo_fmt(request, logger).await;
         if !fmt_result.passed {
@@ -188,7 +218,7 @@ impl PreImplementationValidator {
                 required_retry = true;
             }
         }
-        
+
         // Part 4: ✓ Linting check
         let clippy_result = self.run_cargo_clippy(request, logger).await;
         if !clippy_result.passed {
@@ -197,7 +227,7 @@ impl PreImplementationValidator {
                 required_retry = true;
             }
         }
-        
+
         // Part 5: ✓ Documentation build
         let doc_result = self.run_cargo_doc(request, logger).await;
         if !doc_result.passed {
@@ -206,7 +236,7 @@ impl PreImplementationValidator {
                 required_retry = true;
             }
         }
-        
+
         (all_passed, required_retry)
     }
 
@@ -217,20 +247,25 @@ impl PreImplementationValidator {
         logger: &mut StructuredLogger,
     ) -> CheckResult {
         debug!("[PreValidator] Checking code standards with Claude agent");
-        
+
         // Use Claude agent if available
         if let Some(ref claude_client) = self.claude_client {
             // Read the agent prompt
             let agent_prompt = match validation_agents::read_agent_prompt(
-                validation_agents::engineering_review::CODE_STANDARDS
-            ).await {
+                validation_agents::engineering_review::CODE_STANDARDS,
+            )
+            .await
+            {
                 Ok(prompt) => prompt,
                 Err(e) => {
-                    warn!("[PreValidator] Failed to read code review agent prompt: {}", e);
+                    warn!(
+                        "[PreValidator] Failed to read code review agent prompt: {}",
+                        e
+                    );
                     return self.fallback_code_standards_check(logger).await;
                 }
             };
-            
+
             // Get list of changed files from git
             let changed_files = match self.get_changed_files().await {
                 Ok(files) => files,
@@ -239,14 +274,14 @@ impl PreImplementationValidator {
                     return self.fallback_code_standards_check(logger).await;
                 }
             };
-            
+
             // Build Claude request with agent prompt and changed files context
             let full_prompt = format!(
                 "{}\n\n## Changed Files\n\nThe following files have been modified:\n{}\n\n## Task\n\nReview these changes for compliance with project standards.",
                 agent_prompt,
                 changed_files.join("\n")
             );
-            
+
             let code_request = crate::claude_code::CodeGenerationRequest {
                 language: "markdown".to_string(),
                 description: full_prompt,
@@ -263,20 +298,25 @@ impl PreImplementationValidator {
                 ],
                 session_id: Some(format!("validation-{}-code-standards", request.id)),
             };
-            
+
             match claude_client.generate_code(code_request).await {
                 Ok(result) => {
                     // Parse Claude's response to determine if standards pass
                     let passed = result.explanation.contains("COMPLIANCE STATUS: PASS");
-                    let _ = logger.log_to_phase(
-                        "PreValidation",
-                        &format!("Code standards (Claude): {}", if passed { "PASSED" } else { "FAILED" })
-                    ).await;
-                    
+                    let _ = logger
+                        .log_to_phase(
+                            "PreValidation",
+                            &format!(
+                                "Code standards (Claude): {}",
+                                if passed { "PASSED" } else { "FAILED" }
+                            ),
+                        )
+                        .await;
+
                     CheckResult {
                         name: "Code Standards Review".to_string(),
                         passed,
-                        output: result.explanation,
+                        _output: result.explanation,
                         retries_used: 0,
                     }
                 }
@@ -290,14 +330,11 @@ impl PreImplementationValidator {
             self.fallback_code_standards_check(logger).await
         }
     }
-    
+
     /// Fallback code standards check when Claude is unavailable
-    async fn fallback_code_standards_check(
-        &self,
-        logger: &mut StructuredLogger,
-    ) -> CheckResult {
+    async fn fallback_code_standards_check(&self, logger: &mut StructuredLogger) -> CheckResult {
         debug!("[PreValidator] Using fallback code standards check");
-        
+
         // Basic compilation check as fallback
         let result = Command::new("cargo")
             .args(&["check", "--workspace"])
@@ -305,34 +342,42 @@ impl PreImplementationValidator {
             .stderr(Stdio::piped())
             .output()
             .await;
-        
+
         match result {
             Ok(output) => {
                 let passed = output.status.success();
-                let _ = logger.log_to_phase(
-                    "PreValidation",
-                    &format!("Code standards (fallback): {}", if passed { "PASSED" } else { "FAILED" })
-                ).await;
-                
+                let _ = logger
+                    .log_to_phase(
+                        "PreValidation",
+                        &format!(
+                            "Code standards (fallback): {}",
+                            if passed { "PASSED" } else { "FAILED" }
+                        ),
+                    )
+                    .await;
+
                 CheckResult {
                     name: "Code Standards (Basic)".to_string(),
                     passed,
-                    output: String::from_utf8_lossy(&output.stderr).to_string(),
+                    _output: String::from_utf8_lossy(&output.stderr).to_string(),
                     retries_used: 0,
                 }
             }
             Err(e) => {
-                error!("[PreValidator] Failed to run fallback code standards check: {}", e);
+                error!(
+                    "[PreValidator] Failed to run fallback code standards check: {}",
+                    e
+                );
                 CheckResult {
                     name: "Code Standards (Basic)".to_string(),
                     passed: false,
-                    output: e.to_string(),
+                    _output: e.to_string(),
                     retries_used: 0,
                 }
             }
         }
     }
-    
+
     /// Get list of changed files from git
     async fn get_changed_files(&self) -> Result<Vec<String>> {
         let output = Command::new("git")
@@ -342,16 +387,18 @@ impl PreImplementationValidator {
             .output()
             .await
             .map_err(|e| SpiralError::SystemError(format!("Failed to get changed files: {}", e)))?;
-        
+
         if !output.status.success() {
-            return Err(SpiralError::SystemError("Failed to get git diff".to_string()));
+            return Err(SpiralError::SystemError(
+                "Failed to get git diff".to_string(),
+            ));
         }
-        
+
         let files = String::from_utf8_lossy(&output.stdout)
             .lines()
             .map(|s| s.to_string())
             .collect();
-        
+
         Ok(files)
     }
 
@@ -362,36 +409,41 @@ impl PreImplementationValidator {
         logger: &mut StructuredLogger,
     ) -> CheckResult {
         debug!("[PreValidator] Checking testing coverage with Claude agent");
-        
+
         if let Some(ref claude_client) = self.claude_client {
             // Read the testing analysis agent prompt
             let agent_prompt = match validation_agents::read_agent_prompt(
-                validation_agents::engineering_review::TEST_COVERAGE
-            ).await {
+                validation_agents::engineering_review::TEST_COVERAGE,
+            )
+            .await
+            {
                 Ok(prompt) => prompt,
                 Err(e) => {
                     warn!("[PreValidator] Failed to read testing agent prompt: {}", e);
                     return self.fallback_testing_check(logger).await;
                 }
             };
-            
+
             // Get changed files to focus testing analysis
             let changed_files = match self.get_changed_files().await {
                 Ok(files) => files,
                 Err(_) => vec![],
             };
-            
+
             let full_prompt = format!(
                 "{}\n\n## Changed Files\n\n{}\n\n## Task\n\nAnalyze testing coverage for critical pressure points and implement high-value tests only.",
                 agent_prompt,
                 changed_files.join("\n")
             );
-            
+
             let code_request = crate::claude_code::CodeGenerationRequest {
                 language: "rust".to_string(),
                 description: full_prompt,
                 context: std::collections::HashMap::from([
-                    ("validation_type".to_string(), "testing_analysis".to_string()),
+                    (
+                        "validation_type".to_string(),
+                        "testing_analysis".to_string(),
+                    ),
                     ("request_id".to_string(), request.id.clone()),
                 ]),
                 existing_code: None,
@@ -402,19 +454,26 @@ impl PreImplementationValidator {
                 ],
                 session_id: Some(format!("validation-{}-testing", request.id)),
             };
-            
+
             match claude_client.generate_code(code_request).await {
                 Ok(result) => {
-                    let passed = result.explanation.contains("TEST COVERAGE STATUS: ADEQUATE");
-                    let _ = logger.log_to_phase(
-                        "PreValidation",
-                        &format!("Testing analysis (Claude): {}", if passed { "PASSED" } else { "FAILED" })
-                    ).await;
-                    
+                    let passed = result
+                        .explanation
+                        .contains("TEST COVERAGE STATUS: ADEQUATE");
+                    let _ = logger
+                        .log_to_phase(
+                            "PreValidation",
+                            &format!(
+                                "Testing analysis (Claude): {}",
+                                if passed { "PASSED" } else { "FAILED" }
+                            ),
+                        )
+                        .await;
+
                     CheckResult {
                         name: "Testing Coverage Analysis".to_string(),
                         passed,
-                        output: result.explanation,
+                        _output: result.explanation,
                         retries_used: 0,
                     }
                 }
@@ -427,40 +486,42 @@ impl PreImplementationValidator {
             self.fallback_testing_check(logger).await
         }
     }
-    
+
     /// Fallback testing check when Claude is unavailable
-    async fn fallback_testing_check(
-        &self,
-        logger: &mut StructuredLogger,
-    ) -> CheckResult {
+    async fn fallback_testing_check(&self, logger: &mut StructuredLogger) -> CheckResult {
         debug!("[PreValidator] Using fallback testing check");
-        
+
         let result = Command::new("cargo")
             .args(&["test", "--no-run"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .await;
-        
+
         match result {
             Ok(output) => {
                 let passed = output.status.success();
-                let _ = logger.log_to_phase(
-                    "PreValidation",
-                    &format!("Testing (fallback): {}", if passed { "COMPILED" } else { "FAILED" })
-                ).await;
-                
+                let _ = logger
+                    .log_to_phase(
+                        "PreValidation",
+                        &format!(
+                            "Testing (fallback): {}",
+                            if passed { "COMPILED" } else { "FAILED" }
+                        ),
+                    )
+                    .await;
+
                 CheckResult {
                     name: "Testing (Basic)".to_string(),
                     passed,
-                    output: String::from_utf8_lossy(&output.stderr).to_string(),
+                    _output: String::from_utf8_lossy(&output.stderr).to_string(),
                     retries_used: 0,
                 }
             }
             Err(e) => CheckResult {
                 name: "Testing (Basic)".to_string(),
                 passed: false,
-                output: e.to_string(),
+                _output: e.to_string(),
                 retries_used: 0,
             },
         }
@@ -473,31 +534,33 @@ impl PreImplementationValidator {
         logger: &mut StructuredLogger,
     ) -> CheckResult {
         debug!("[PreValidator] Checking security with Claude agent");
-        
+
         if let Some(ref claude_client) = self.claude_client {
             // Read the security audit agent prompt
             let agent_prompt = match validation_agents::read_agent_prompt(
-                validation_agents::engineering_review::SECURITY
-            ).await {
+                validation_agents::engineering_review::SECURITY,
+            )
+            .await
+            {
                 Ok(prompt) => prompt,
                 Err(e) => {
                     warn!("[PreValidator] Failed to read security agent prompt: {}", e);
                     return self.fallback_security_check(logger).await;
                 }
             };
-            
+
             // Get changed files and their contents for security analysis
             let changed_files = match self.get_changed_files().await {
                 Ok(files) => files,
                 Err(_) => vec![],
             };
-            
+
             let full_prompt = format!(
                 "{}\n\n## Changed Files\n\n{}\n\n## Task\n\nConduct security audit on these changes. Look for vulnerabilities, unsafe patterns, and security issues.",
                 agent_prompt,
                 changed_files.join("\n")
             );
-            
+
             let code_request = crate::claude_code::CodeGenerationRequest {
                 language: "markdown".to_string(),
                 description: full_prompt,
@@ -514,19 +577,24 @@ impl PreImplementationValidator {
                 ],
                 session_id: Some(format!("validation-{}-security", request.id)),
             };
-            
+
             match claude_client.generate_code(code_request).await {
                 Ok(result) => {
                     let passed = result.explanation.contains("SECURITY STATUS: PASS");
-                    let _ = logger.log_to_phase(
-                        "PreValidation",
-                        &format!("Security audit (Claude): {}", if passed { "PASSED" } else { "FAILED" })
-                    ).await;
-                    
+                    let _ = logger
+                        .log_to_phase(
+                            "PreValidation",
+                            &format!(
+                                "Security audit (Claude): {}",
+                                if passed { "PASSED" } else { "FAILED" }
+                            ),
+                        )
+                        .await;
+
                     CheckResult {
                         name: "Security Audit".to_string(),
                         passed,
-                        output: result.explanation,
+                        _output: result.explanation,
                         retries_used: 0,
                     }
                 }
@@ -539,14 +607,11 @@ impl PreImplementationValidator {
             self.fallback_security_check(logger).await
         }
     }
-    
+
     /// Fallback security check when Claude is unavailable
-    async fn fallback_security_check(
-        &self,
-        logger: &mut StructuredLogger,
-    ) -> CheckResult {
+    async fn fallback_security_check(&self, logger: &mut StructuredLogger) -> CheckResult {
         debug!("[PreValidator] Using fallback security check");
-        
+
         // Basic check: ensure no .env files are being tracked
         let result = Command::new("git")
             .args(&["ls-files", ".env"])
@@ -554,21 +619,26 @@ impl PreImplementationValidator {
             .stderr(Stdio::piped())
             .output()
             .await;
-        
+
         match result {
             Ok(output) => {
                 let output_str = String::from_utf8_lossy(&output.stdout);
                 let passed = output_str.trim().is_empty();
-                
-                let _ = logger.log_to_phase(
-                    "PreValidation",
-                    &format!("Security (fallback): {}", if passed { "PASSED" } else { "FAILED" })
-                ).await;
-                
+
+                let _ = logger
+                    .log_to_phase(
+                        "PreValidation",
+                        &format!(
+                            "Security (fallback): {}",
+                            if passed { "PASSED" } else { "FAILED" }
+                        ),
+                    )
+                    .await;
+
                 CheckResult {
                     name: "Security (Basic)".to_string(),
                     passed,
-                    output: if passed {
+                    _output: if passed {
                         "No .env files tracked".to_string()
                     } else {
                         "WARNING: .env file is being tracked!".to_string()
@@ -579,7 +649,7 @@ impl PreImplementationValidator {
             Err(e) => CheckResult {
                 name: "Security (Basic)".to_string(),
                 passed: false,
-                output: e.to_string(),
+                _output: e.to_string(),
                 retries_used: 0,
             },
         }
@@ -592,35 +662,43 @@ impl PreImplementationValidator {
         logger: &mut StructuredLogger,
     ) -> CheckResult {
         debug!("[PreValidator] Checking system integration with Claude agent");
-        
+
         if let Some(ref claude_client) = self.claude_client {
             // Read the integration verification agent prompt
             let agent_prompt = match validation_agents::read_agent_prompt(
-                validation_agents::engineering_review::INTEGRATION
-            ).await {
+                validation_agents::engineering_review::INTEGRATION,
+            )
+            .await
+            {
                 Ok(prompt) => prompt,
                 Err(e) => {
-                    warn!("[PreValidator] Failed to read integration agent prompt: {}", e);
+                    warn!(
+                        "[PreValidator] Failed to read integration agent prompt: {}",
+                        e
+                    );
                     return self.fallback_integration_check(logger).await;
                 }
             };
-            
+
             let changed_files = match self.get_changed_files().await {
                 Ok(files) => files,
                 Err(_) => vec![],
             };
-            
+
             let full_prompt = format!(
                 "{}\n\n## Changed Files\n\n{}\n\n## Task\n\nVerify system integration integrity. Check that changes don't break existing functionality or APIs.",
                 agent_prompt,
                 changed_files.join("\n")
             );
-            
+
             let code_request = crate::claude_code::CodeGenerationRequest {
                 language: "markdown".to_string(),
                 description: full_prompt,
                 context: std::collections::HashMap::from([
-                    ("validation_type".to_string(), "integration_verification".to_string()),
+                    (
+                        "validation_type".to_string(),
+                        "integration_verification".to_string(),
+                    ),
                     ("request_id".to_string(), request.id.clone()),
                 ]),
                 existing_code: None,
@@ -632,19 +710,24 @@ impl PreImplementationValidator {
                 ],
                 session_id: Some(format!("validation-{}-integration", request.id)),
             };
-            
+
             match claude_client.generate_code(code_request).await {
                 Ok(result) => {
                     let passed = result.explanation.contains("INTEGRATION STATUS: PASS");
-                    let _ = logger.log_to_phase(
-                        "PreValidation",
-                        &format!("Integration verification (Claude): {}", if passed { "PASSED" } else { "FAILED" })
-                    ).await;
-                    
+                    let _ = logger
+                        .log_to_phase(
+                            "PreValidation",
+                            &format!(
+                                "Integration verification (Claude): {}",
+                                if passed { "PASSED" } else { "FAILED" }
+                            ),
+                        )
+                        .await;
+
                     CheckResult {
                         name: "System Integration".to_string(),
                         passed,
-                        output: result.explanation,
+                        _output: result.explanation,
                         retries_used: 0,
                     }
                 }
@@ -657,14 +740,11 @@ impl PreImplementationValidator {
             self.fallback_integration_check(logger).await
         }
     }
-    
+
     /// Fallback integration check when Claude is unavailable
-    async fn fallback_integration_check(
-        &self,
-        logger: &mut StructuredLogger,
-    ) -> CheckResult {
+    async fn fallback_integration_check(&self, logger: &mut StructuredLogger) -> CheckResult {
         debug!("[PreValidator] Using fallback integration check");
-        
+
         // Verify key integration points still compile
         let result = Command::new("cargo")
             .args(&["check", "--lib"])
@@ -672,26 +752,31 @@ impl PreImplementationValidator {
             .stderr(Stdio::piped())
             .output()
             .await;
-        
+
         match result {
             Ok(output) => {
                 let passed = output.status.success();
-                let _ = logger.log_to_phase(
-                    "PreValidation",
-                    &format!("Integration (fallback): {}", if passed { "PASSED" } else { "FAILED" })
-                ).await;
-                
+                let _ = logger
+                    .log_to_phase(
+                        "PreValidation",
+                        &format!(
+                            "Integration (fallback): {}",
+                            if passed { "PASSED" } else { "FAILED" }
+                        ),
+                    )
+                    .await;
+
                 CheckResult {
                     name: "Integration (Basic)".to_string(),
                     passed,
-                    output: String::from_utf8_lossy(&output.stderr).to_string(),
+                    _output: String::from_utf8_lossy(&output.stderr).to_string(),
                     retries_used: 0,
                 }
             }
             Err(e) => CheckResult {
                 name: "Integration (Basic)".to_string(),
                 passed: false,
-                output: e.to_string(),
+                _output: e.to_string(),
                 retries_used: 0,
             },
         }
@@ -704,10 +789,10 @@ impl PreImplementationValidator {
         logger: &mut StructuredLogger,
     ) -> CheckResult {
         debug!("[PreValidator] Running cargo check");
-        
+
         let mut retries_used = 0;
         let mut last_output = String::new();
-        
+
         for attempt in 1..=self.max_retries_per_check {
             let result = Command::new("cargo")
                 .args(&["check", "--all-targets"])
@@ -715,25 +800,30 @@ impl PreImplementationValidator {
                 .stderr(Stdio::piped())
                 .output()
                 .await;
-            
+
             match result {
                 Ok(output) => {
                     last_output = String::from_utf8_lossy(&output.stderr).to_string();
-                    
+
                     if output.status.success() {
-                        let _ = logger.log_to_phase("PreValidation", "Cargo check: PASSED").await;
+                        let _ = logger
+                            .log_to_phase("PreValidation", "Cargo check: PASSED")
+                            .await;
                         return CheckResult {
                             name: "Cargo Check".to_string(),
                             passed: true,
-                            output: last_output,
+                            _output: last_output,
                             retries_used,
                         };
                     }
-                    
+
                     if attempt < self.max_retries_per_check {
-                        warn!("[PreValidator] Cargo check failed, attempt {}/{}", attempt, self.max_retries_per_check);
+                        warn!(
+                            "[PreValidator] Cargo check failed, attempt {}/{}",
+                            attempt, self.max_retries_per_check
+                        );
                         retries_used += 1;
-                        
+
                         // If Claude client is available, try to fix
                         if let Some(ref _client) = self.claude_client {
                             // TODO: Spawn Claude agent to fix compilation errors
@@ -747,12 +837,17 @@ impl PreImplementationValidator {
                 }
             }
         }
-        
-        let _ = logger.log_to_phase("PreValidation", &format!("Cargo check: FAILED after {} retries", retries_used)).await;
+
+        let _ = logger
+            .log_to_phase(
+                "PreValidation",
+                &format!("Cargo check: FAILED after {} retries", retries_used),
+            )
+            .await;
         CheckResult {
             name: "Cargo Check".to_string(),
             passed: false,
-            output: last_output,
+            _output: last_output,
             retries_used,
         }
     }
@@ -764,33 +859,35 @@ impl PreImplementationValidator {
         logger: &mut StructuredLogger,
     ) -> CheckResult {
         debug!("[PreValidator] Running cargo test");
-        
+
         let result = Command::new("cargo")
             .args(&["test", "--workspace"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .await;
-        
+
         match result {
             Ok(output) => {
                 let passed = output.status.success();
-                let _ = logger.log_to_phase(
-                    "PreValidation",
-                    &format!("Cargo test: {}", if passed { "PASSED" } else { "FAILED" })
-                ).await;
-                
+                let _ = logger
+                    .log_to_phase(
+                        "PreValidation",
+                        &format!("Cargo test: {}", if passed { "PASSED" } else { "FAILED" }),
+                    )
+                    .await;
+
                 CheckResult {
                     name: "Cargo Test".to_string(),
                     passed,
-                    output: String::from_utf8_lossy(&output.stdout).to_string(),
+                    _output: String::from_utf8_lossy(&output.stdout).to_string(),
                     retries_used: 0,
                 }
             }
             Err(e) => CheckResult {
                 name: "Cargo Test".to_string(),
                 passed: false,
-                output: e.to_string(),
+                _output: e.to_string(),
                 retries_used: 0,
             },
         }
@@ -803,47 +900,48 @@ impl PreImplementationValidator {
         logger: &mut StructuredLogger,
     ) -> CheckResult {
         debug!("[PreValidator] Running cargo fmt");
-        
+
         let result = Command::new("cargo")
             .args(&["fmt", "--", "--check"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .await;
-        
+
         match result {
             Ok(output) => {
                 let passed = output.status.success();
-                
+
                 if !passed {
                     // Auto-fix by running cargo fmt
-                    let _ = Command::new("cargo")
-                        .args(&["fmt"])
-                        .output()
+                    let _ = Command::new("cargo").args(&["fmt"]).output().await;
+
+                    let _ = logger
+                        .log_to_phase("PreValidation", "Cargo fmt: AUTO-FIXED")
                         .await;
-                    
-                    let _ = logger.log_to_phase("PreValidation", "Cargo fmt: AUTO-FIXED").await;
-                    
+
                     return CheckResult {
                         name: "Cargo Format".to_string(),
                         passed: true,
-                        output: "Formatting issues auto-fixed".to_string(),
+                        _output: "Formatting issues auto-fixed".to_string(),
                         retries_used: 1,
                     };
                 }
-                
-                let _ = logger.log_to_phase("PreValidation", "Cargo fmt: PASSED").await;
+
+                let _ = logger
+                    .log_to_phase("PreValidation", "Cargo fmt: PASSED")
+                    .await;
                 CheckResult {
                     name: "Cargo Format".to_string(),
                     passed: true,
-                    output: String::new(),
+                    _output: String::new(),
                     retries_used: 0,
                 }
             }
             Err(e) => CheckResult {
                 name: "Cargo Format".to_string(),
                 passed: false,
-                output: e.to_string(),
+                _output: e.to_string(),
                 retries_used: 0,
             },
         }
@@ -856,33 +954,35 @@ impl PreImplementationValidator {
         logger: &mut StructuredLogger,
     ) -> CheckResult {
         debug!("[PreValidator] Running cargo clippy");
-        
+
         let result = Command::new("cargo")
             .args(&["clippy", "--all-targets", "--", "-D", "warnings"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .await;
-        
+
         match result {
             Ok(output) => {
                 let passed = output.status.success();
-                let _ = logger.log_to_phase(
-                    "PreValidation",
-                    &format!("Cargo clippy: {}", if passed { "PASSED" } else { "FAILED" })
-                ).await;
-                
+                let _ = logger
+                    .log_to_phase(
+                        "PreValidation",
+                        &format!("Cargo clippy: {}", if passed { "PASSED" } else { "FAILED" }),
+                    )
+                    .await;
+
                 CheckResult {
                     name: "Cargo Clippy".to_string(),
                     passed,
-                    output: String::from_utf8_lossy(&output.stderr).to_string(),
+                    _output: String::from_utf8_lossy(&output.stderr).to_string(),
                     retries_used: 0,
                 }
             }
             Err(e) => CheckResult {
                 name: "Cargo Clippy".to_string(),
                 passed: false,
-                output: e.to_string(),
+                _output: e.to_string(),
                 retries_used: 0,
             },
         }
@@ -895,33 +995,35 @@ impl PreImplementationValidator {
         logger: &mut StructuredLogger,
     ) -> CheckResult {
         debug!("[PreValidator] Running cargo doc");
-        
+
         let result = Command::new("cargo")
             .args(&["doc", "--no-deps", "--workspace"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .await;
-        
+
         match result {
             Ok(output) => {
                 let passed = output.status.success();
-                let _ = logger.log_to_phase(
-                    "PreValidation",
-                    &format!("Cargo doc: {}", if passed { "PASSED" } else { "FAILED" })
-                ).await;
-                
+                let _ = logger
+                    .log_to_phase(
+                        "PreValidation",
+                        &format!("Cargo doc: {}", if passed { "PASSED" } else { "FAILED" }),
+                    )
+                    .await;
+
                 CheckResult {
                     name: "Cargo Doc".to_string(),
                     passed,
-                    output: String::from_utf8_lossy(&output.stderr).to_string(),
+                    _output: String::from_utf8_lossy(&output.stderr).to_string(),
                     retries_used: 0,
                 }
             }
             Err(e) => CheckResult {
                 name: "Cargo Doc".to_string(),
                 passed: false,
-                output: e.to_string(),
+                _output: e.to_string(),
                 retries_used: 0,
             },
         }

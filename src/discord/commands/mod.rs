@@ -169,16 +169,25 @@ impl CommandRouter {
         // 3. Handler parses action and executes
 
         debug!("[CommandRouter] Routing command: {}", content);
-        debug!("[CommandRouter] From user: {} ({})", msg.author.name, msg.author.id);
-        
+        debug!(
+            "[CommandRouter] From user: {} ({})",
+            msg.author.name, msg.author.id
+        );
+
         let content_lower = content.to_lowercase();
 
         // Find matching command from static definitions
         for command_info in AVAILABLE_COMMANDS {
             if content_lower.starts_with(&command_info.prefix.to_lowercase()) {
-                debug!("[CommandRouter] Matched command: {} (prefix: {})", command_info.name, command_info.prefix);
-                debug!("[CommandRouter] Command requires auth: {}", command_info.requires_auth);
-                
+                debug!(
+                    "[CommandRouter] Matched command: {} (prefix: {})",
+                    command_info.name, command_info.prefix
+                );
+                debug!(
+                    "[CommandRouter] Command requires auth: {}",
+                    command_info.requires_auth
+                );
+
                 // Route to appropriate handler based on command name
                 let result = match command_info.name {
                     "admin" => self.admin.handle(content, msg, ctx, bot).await,
@@ -190,12 +199,22 @@ impl CommandRouter {
                     "security" => self.security.handle(content, msg, ctx, bot).await,
                     "update" => self.self_update.handle(content, msg, ctx, bot).await,
                     _ => {
-                        debug!("[CommandRouter] No handler for command: {}", command_info.name);
+                        debug!(
+                            "[CommandRouter] No handler for command: {}",
+                            command_info.name
+                        );
                         None
-                    },
+                    }
                 };
-                
-                debug!("[CommandRouter] Command result: {}", if result.is_some() { "response generated" } else { "no response" });
+
+                debug!(
+                    "[CommandRouter] Command result: {}",
+                    if result.is_some() {
+                        "response generated"
+                    } else {
+                        "no response"
+                    }
+                );
                 return result;
             }
         }
