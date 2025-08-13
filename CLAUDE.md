@@ -24,6 +24,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Key Simplification**: Agents serve as intelligent orchestrators of Claude Code capabilities rather than managing local LLM inference, dramatically reducing complexity while maintaining sophisticated functionality.
 
+## 🚨 CRITICAL: Architecture Awareness Before Implementation
+
+**ALWAYS understand the actual system architecture before implementing any functionality.**
+
+**Before writing ANY code or scripts:**
+
+1. **Verify Process Architecture**: Understand what runs as separate processes vs integrated components
+2. **Check Existing Integration**: Search for how components are actually connected
+3. **Avoid Pattern Assumptions**: Don't assume common patterns apply without verification
+
+**Example Architecture Verification**:
+
+```bash
+# ❌ WRONG: Assuming separate services based on common patterns
+# "Most systems have separate API and bot processes, so I'll create both"
+
+# ✅ RIGHT: Check the actual architecture first
+grep -r "Discord" src/ --include="*.rs"  # Find how Discord is integrated
+cargo tree | grep discord  # Check if Discord is a dependency
+# Discovery: Discord bot is in src/discord/, integrated into main binary
+```
+
+**Key Principle**: Pattern matching from other projects is dangerous. This codebase's specific architecture always overrides common patterns.
+
 ## 🚨 CRITICAL: Time Estimates vs Risk/Complexity Metrics
 
 **NEVER provide time estimates** for any task, feature, or implementation. Time is irrelevant to quality.
@@ -219,6 +243,7 @@ For complete patterns and examples, see [Decoupling Patterns](docs/DECOUPLING_PA
 **Definition**: The main implementation struct in any file must share the same name as the file itself for consistency and discoverability.
 
 **Examples**:
+
 - File: `structured_logger.rs` → Struct: `StructuredLogger`
 - File: `update_executor.rs` → Struct: `UpdateExecutor`
 - File: `approval_manager.rs` → Struct: `ApprovalManager`
@@ -237,15 +262,26 @@ For complete patterns and examples, see [Decoupling Patterns](docs/DECOUPLING_PA
 - **Mock Data**: Creating fake Phase1Results or any mock data just to satisfy structure requirements
 - **Pretend Features**: UI elements that suggest functionality that doesn't exist
 - **Unnecessary Dependencies**: Requiring data that isn't actually needed (e.g., Phase 2 requiring Phase 1)
+- **Placeholder Functions**: Functions that pretend to do something but don't (e.g., `start_discord_bot()` when Discord is integrated elsewhere)
+- **Misleading Names**: Function names that imply actions that don't occur (e.g., "start" when nothing is started)
+- **Fake Success Messages**: Logging "Service started successfully" without actually starting anything
 
-**Rule**: NEVER use mock data. If you can't implement it properly, refactor to allow independent execution using SOLID principles. Users prefer "Not yet implemented" over fake functionality.
+**Rule**: NEVER use mock data or placeholder functions. If you can't implement it properly, refactor to allow independent execution using SOLID principles. Users prefer "Not yet implemented" over fake functionality.
+
+**Critical**: Before creating any function, ask yourself:
+
+1. Does this function actually DO what its name suggests?
+2. Am I creating this just to "fill a gap" in expected patterns?
+3. Would omitting this function entirely be more honest?
 
 **Examples**:
 
-- Replace "🟢 Active" with "❓ Status check not implemented" when there's no actual status checking
-- Replace "Memory: Efficient" with "❓ Monitoring not implemented" when there's no memory monitoring
-- Create independent methods like `run_phase2_independent()` instead of mocking Phase 1 data
-- Apply Interface Segregation: Don't force clients to provide unnecessary data
+- ❌ BAD: `start_discord_bot()` that just sleeps and logs "Discord bot active"
+- ✅ GOOD: Omit the function entirely if Discord is integrated into main process
+- ❌ BAD: `check_database()` that always returns true without checking
+- ✅ GOOD: `# Database check not implemented` comment instead of fake function
+- ❌ BAD: Creating functions for every "expected" service in a startup script
+- ✅ GOOD: Only create functions for services that actually exist
 
 ### No Deadline Compromise Standard
 
@@ -547,26 +583,37 @@ if response.success {
 **Before marking ANY todo item as complete, verify:**
 
 1. **Correctness Analysis**
+
    - Are the changes exactly what was requested?
    - Do they solve the right problem?
    - Is the implementation approach appropriate?
 
 2. **Specificity Check**
+
    - Are all variable/function names specific and descriptive?
    - No ambiguous names like `data`, `temp`, `thing`
    - Clear intent from naming alone
 
 3. **Documentation Quality**
-   - All code blocks have language highlighting (```rust, ```typescript, etc.)
+
+   - All code blocks have language highlighting (`rust,`typescript, etc.)
    - No ambiguous instructions or explanations
    - Clear examples where needed
    - File paths are absolute and correct
 
 4. **Code Quality**
+
    - Follows SOLID principles
    - No code duplication (DRY)
    - Error handling is explicit
    - No mock data or fake implementations
+
+5. **No Bullshit Code Verification** ⚠️ CRITICAL
+   - **No placeholder functions**: Every function actually does what its name suggests
+   - **No fake status messages**: All status/success messages reflect real operations
+   - **No pattern-matching assumptions**: Verified actual architecture, not assumed
+   - **No filling gaps**: Only created what's actually needed, not what's "expected"
+   - Ask yourself: "If I removed this code, would anything actually break?"
 
 ### Technical Validation
 
