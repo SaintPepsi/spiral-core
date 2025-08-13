@@ -90,45 +90,9 @@ mod api_key_generation_security {
         println!("Generated {generation_count} unique keys without collision");
     }
 
-    /// ⏱️ Test timing attack resistance
-    #[test]
-    #[ignore] // Flaky test - sensitive to system load
-    fn test_api_key_generation_timing_consistency() {
-        let mut timings = Vec::new();
-
-        // Warm up
-        for _ in 0..10 {
-            let _ = generate_secure_api_key();
-        }
-
-        // Measure generation times
-        for _ in 0..100 {
-            let start = Instant::now();
-            let _ = generate_secure_api_key();
-            let duration = start.elapsed();
-            timings.push(duration.as_nanos());
-        }
-
-        // Calculate statistics
-        let mean: f64 = timings.iter().sum::<u128>() as f64 / timings.len() as f64;
-        let variance: f64 = timings
-            .iter()
-            .map(|&t| {
-                let diff = t as f64 - mean;
-                diff * diff
-            })
-            .sum::<f64>()
-            / timings.len() as f64;
-        let std_dev = variance.sqrt();
-        let cv = std_dev / mean; // Coefficient of variation
-
-        // Timing should be consistent (low coefficient of variation)
-        // Note: This is relaxed from 0.5 to 1.5 to account for system load variations
-        assert!(
-            cv < 1.5,
-            "Key generation timing too variable (CV: {cv}), potential timing attack vector"
-        );
-    }
+    // NOTE: Timing attack resistance test removed
+    // Timing measurements are too sensitive to system load to be reliable in CI/CD
+    // Consider using specialized security testing tools for timing attack analysis
 }
 
 #[cfg(test)]

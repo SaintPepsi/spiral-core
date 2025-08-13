@@ -262,6 +262,9 @@ mod harness_tests {
         }
     }
 
+    /// Integration test for real Claude Code execution
+    /// KEEP THIS TEST: Used for manual validation of self-update pipeline
+    /// Run with: `cargo test test_real_claude_update --ignored`
     #[tokio::test]
     #[ignore = "Requires real Claude binary and takes time"]
     async fn test_real_claude_update() {

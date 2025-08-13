@@ -1,6 +1,19 @@
 //! 🛡️ SECURITY TESTING: Critical test cases for Claude Code integration
 //! AUDIT CHECKPOINT: These tests verify security boundaries and isolation
 //! Purpose: Prevent regression in security features during development
+//!
+//! NOTE: These 6 tests are intentionally ignored in regular test runs because:
+//! 1. They require actual Claude Code CLI binary installation
+//! 2. They need valid API credentials for Claude
+//! 3. They perform real file system operations and API calls
+//! 
+//! TO RUN THESE TESTS:
+//! - Install Claude Code CLI: `npm install -g @anthropic/claude-code`
+//! - Set up API credentials
+//! - Run: `cargo test --ignored -- --test-threads=1`
+//!
+//! These tests SHOULD be run in CI/CD with proper credentials to ensure
+//! security boundaries are maintained. DO NOT DELETE.
 
 use crate::claude_code::{ClaudeCodeClient, CodeGenerationRequest};
 use crate::config::ClaudeCodeConfig;
