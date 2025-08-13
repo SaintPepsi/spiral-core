@@ -47,6 +47,8 @@ pub struct UpdateExecutor {
     approval_manager: Arc<ApprovalManager>,
     /// System lock to prevent concurrent updates
     system_lock: Arc<SystemLock>,
+    /// Test mode flag for shorter timeouts
+    test_mode: bool,
 }
 
 /// Holds the context for an update execution
@@ -74,6 +76,25 @@ impl UpdateExecutor {
             discord_http,
             approval_manager,
             system_lock,
+            test_mode: false,
+        }
+    }
+
+    /// Create a new update executor in test mode (with shorter timeouts)
+    pub fn new_test_mode(
+        queue: Arc<UpdateQueue>,
+        claude_client: Option<ClaudeCodeClient>,
+        approval_manager: Arc<ApprovalManager>,
+        system_lock: Arc<SystemLock>,
+    ) -> Self {
+        Self {
+            queue,
+            claude_client,
+            _status_tracker: Arc::new(RwLock::new(StatusTracker)),
+            discord_http: None,
+            approval_manager,
+            system_lock,
+            test_mode: true,
         }
     }
 
@@ -96,7 +117,7 @@ impl UpdateExecutor {
                         duration.as_secs()
                     );
                     warn!("[UpdateExecutor] {}", message);
-                    self.update_discord_status(&request, &format!("🔒 {}", message))
+                    self.update_discord_status(&request, &format!("🔒 {message}"))
                         .await;
                     return self.create_failure_result(request, message);
                 } else {
@@ -108,10 +129,8 @@ impl UpdateExecutor {
             }
             Err(e) => {
                 error!("[UpdateExecutor] Failed to acquire system lock: {}", e);
-                return self.create_failure_result(
-                    request,
-                    format!("Failed to acquire system lock: {}", e),
-                );
+                return self
+                    .create_failure_result(request, format!("Failed to acquire system lock: {e}"));
             }
         };
 
@@ -198,7 +217,7 @@ impl UpdateExecutor {
             Err(e) => {
                 error!("[UpdateExecutor] Failed to create logger: {}", e);
                 return Err(
-                    self.create_failure_result(request, format!("Failed to create logger: {}", e))
+                    self.create_failure_result(request, format!("Failed to create logger: {e}"))
                 );
             }
         };
@@ -271,13 +290,13 @@ impl UpdateExecutor {
                 .logger
                 .create_summary(
                     false,
-                    &format!("Preflight checks failed: {}", e),
+                    &format!("Preflight checks failed: {e}"),
                     context.start_time.elapsed(),
                 )
                 .await;
             return Err(self.create_failure_result(
                 context.request.clone(),
-                format!("Preflight checks failed: {}", e),
+                format!("Preflight checks failed: {e}"),
             ));
         }
 
@@ -322,13 +341,13 @@ impl UpdateExecutor {
                     .logger
                     .create_summary(
                         false,
-                        &format!("Planning failed: {}", e),
+                        &format!("Planning failed: {e}"),
                         context.start_time.elapsed(),
                     )
                     .await;
                 Err(self.create_failure_result(
                     context.request.clone(),
-                    format!("Planning failed: {}", e),
+                    format!("Planning failed: {e}"),
                 ))
             }
         }
@@ -387,8 +406,12 @@ impl UpdateExecutor {
             )
             .await;
 
-        // Wait for approval (10 minute timeout)
-        let approval_timeout = tokio::time::Duration::from_secs(600);
+        // Wait for approval (10 minute timeout in prod, 100ms in test)
+        let approval_timeout = if self.test_mode {
+            tokio::time::Duration::from_millis(100)
+        } else {
+            tokio::time::Duration::from_secs(600)
+        };
         let (approval_result, _) = match self
             .approval_manager
             .wait_for_approval(plan_message_id, approval_timeout)
@@ -404,7 +427,7 @@ impl UpdateExecutor {
                 context.progress_reporter.stop().await;
                 return Err(self.create_failure_result(
                     context.request.clone(),
-                    format!("Approval wait failed: {}", e),
+                    format!("Approval wait failed: {e}"),
                 ));
             }
         };
@@ -428,7 +451,7 @@ impl UpdateExecutor {
                 context.progress_reporter.stop().await;
                 Err(self.create_failure_result(
                     context.request.clone(),
-                    format!("Update cancelled: Plan rejected - {}", reason),
+                    format!("Update cancelled: Plan rejected - {reason}"),
                 ))
             }
             ApprovalResult::ModifyRequested(details) => {
@@ -440,7 +463,7 @@ impl UpdateExecutor {
                 context.progress_reporter.stop().await;
                 Err(self.create_failure_result(
                     context.request.clone(),
-                    format!("Update paused: Modifications requested - {}", details),
+                    format!("Update paused: Modifications requested - {details}"),
                 ))
             }
             ApprovalResult::TimedOut => {
@@ -488,7 +511,7 @@ impl UpdateExecutor {
                 context.progress_reporter.stop().await;
                 Err(self.create_failure_result(
                     context.request.clone(),
-                    format!("Snapshot creation failed: {}", e),
+                    format!("Snapshot creation failed: {e}"),
                 ))
             }
         }
@@ -533,7 +556,7 @@ impl UpdateExecutor {
 
             return Err(self.create_failure_result(
                 context.request.clone(),
-                format!("Claude Code execution failed: {}", e),
+                format!("Claude Code execution failed: {e}"),
             ));
         }
 
@@ -557,7 +580,7 @@ impl UpdateExecutor {
 
             return Err(self.create_failure_result(
                 context.request.clone(),
-                format!("Changes exceeded scope limits: {}", e),
+                format!("Changes exceeded scope limits: {e}"),
             ));
         }
 
@@ -643,7 +666,7 @@ impl UpdateExecutor {
 
                 Err(self.create_failure_result(
                     context.request.clone(),
-                    format!("Pre-restart validation error: {}", e),
+                    format!("Pre-restart validation error: {e}"),
                 ))
             }
         }
@@ -704,7 +727,7 @@ impl UpdateExecutor {
                             "⚠️ Update completed but Git push failed - changes are local only",
                         )
                         .await;
-                        format!("Update completed but Git operations failed: {}", e)
+                        format!("Update completed but Git operations failed: {e}")
                     }
                 };
 
@@ -743,7 +766,7 @@ impl UpdateExecutor {
                     .await;
                 context
                     .progress_reporter
-                    .set_status(format!("Validation failed: {}", e))
+                    .set_status(format!("Validation failed: {e}"))
                     .await;
 
                 // Rollback changes
@@ -756,7 +779,7 @@ impl UpdateExecutor {
 
                 self.create_failure_result(
                     context.request.clone(),
-                    format!("Validation failed: {}", e),
+                    format!("Validation failed: {e}"),
                 )
             }
         }
@@ -915,7 +938,7 @@ impl UpdateExecutor {
             Err(e) => {
                 error!("[UpdateExecutor] Claude Code execution failed: {}", e);
                 Err(SpiralError::Agent {
-                    message: format!("UpdateExecutor: Claude execution failed: {}", e),
+                    message: format!("UpdateExecutor: Claude execution failed: {e}"),
                 })
             }
         }
@@ -1019,10 +1042,10 @@ Implement all tasks according to the plan."#,
     async fn validate_change_scope(&self, _request: &SelfUpdateRequest) -> Result<()> {
         // Get git diff to analyze changes
         let output = tokio::process::Command::new("git")
-            .args(&["diff", "HEAD"])
+            .args(["diff", "HEAD"])
             .output()
             .await
-            .map_err(|e| SpiralError::SystemError(format!("Failed to run git diff: {}", e)))?;
+            .map_err(|e| SpiralError::SystemError(format!("Failed to run git diff: {e}")))?;
 
         if !output.status.success() {
             return Err(SpiralError::SystemError(

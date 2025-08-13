@@ -163,7 +163,7 @@ impl HealthMonitor {
         let output = match tokio::time::timeout(
             self.check_timeout,
             Command::new("cargo")
-                .args(&["check", "--all-targets"])
+                .args(["check", "--all-targets"])
                 .output(),
         )
         .await
@@ -175,7 +175,7 @@ impl HealthMonitor {
                     category: HealthCategory::Compilation,
                     passed: false,
                     duration: start.elapsed(),
-                    error: Some(format!("Failed to run cargo check: {}", e)),
+                    error: Some(format!("Failed to run cargo check: {e}")),
                     details: None,
                 };
             }
@@ -218,7 +218,7 @@ impl HealthMonitor {
         let output = match tokio::time::timeout(
             Duration::from_secs(120), // Tests get more time
             Command::new("cargo")
-                .args(&["test", "--", "--test-threads=4", "--nocapture"])
+                .args(["test", "--", "--test-threads=4", "--nocapture"])
                 .output(),
         )
         .await
@@ -230,7 +230,7 @@ impl HealthMonitor {
                     category: HealthCategory::Tests,
                     passed: false,
                     duration: start.elapsed(),
-                    error: Some(format!("Failed to run cargo test: {}", e)),
+                    error: Some(format!("Failed to run cargo test: {e}")),
                     details: None,
                 };
             }
@@ -250,12 +250,10 @@ impl HealthMonitor {
         let passed = output.status.success();
 
         // Extract test statistics if available
-        let details =
-            if let Some(summary_line) = stdout.lines().find(|l| l.contains("test result:")) {
-                Some(summary_line.to_string())
-            } else {
-                None
-            };
+        let details = stdout
+            .lines()
+            .find(|l| l.contains("test result:"))
+            .map(|summary_line| summary_line.to_string());
 
         let error = if !passed {
             Some("One or more tests failed".to_string())
@@ -283,7 +281,7 @@ impl HealthMonitor {
         let output = match tokio::time::timeout(
             Duration::from_secs(10),
             Command::new("cargo")
-                .args(&["run", "--bin", "spiral-core", "--", "--version"])
+                .args(["run", "--bin", "spiral-core", "--", "--version"])
                 .output(),
         )
         .await
@@ -295,7 +293,7 @@ impl HealthMonitor {
                     category: HealthCategory::BinaryExecution,
                     passed: false,
                     duration: start.elapsed(),
-                    error: Some(format!("Failed to execute binary: {}", e)),
+                    error: Some(format!("Failed to execute binary: {e}")),
                     details: None,
                 };
             }
@@ -325,7 +323,7 @@ impl HealthMonitor {
                 None
             },
             details: if passed {
-                Some(format!("Version: {}", version))
+                Some(format!("Version: {version}"))
             } else {
                 None
             },
@@ -342,7 +340,7 @@ impl HealthMonitor {
         let output = match tokio::time::timeout(
             self.check_timeout,
             Command::new("cargo")
-                .args(&["tree", "--depth", "1"])
+                .args(["tree", "--depth", "1"])
                 .output(),
         )
         .await
@@ -354,7 +352,7 @@ impl HealthMonitor {
                     category: HealthCategory::Dependencies,
                     passed: false,
                     duration: start.elapsed(),
-                    error: Some(format!("Failed to check dependencies: {}", e)),
+                    error: Some(format!("Failed to check dependencies: {e}")),
                     details: None,
                 };
             }
@@ -389,7 +387,7 @@ impl HealthMonitor {
             } else {
                 None
             },
-            details: Some(format!("{} direct dependencies", dep_count)),
+            details: Some(format!("{dep_count} direct dependencies")),
         }
     }
 
@@ -403,7 +401,7 @@ impl HealthMonitor {
         let output = match tokio::time::timeout(
             self.check_timeout,
             Command::new("cargo")
-                .args(&["doc", "--no-deps", "--quiet"])
+                .args(["doc", "--no-deps", "--quiet"])
                 .output(),
         )
         .await
@@ -415,7 +413,7 @@ impl HealthMonitor {
                     category: HealthCategory::Documentation,
                     passed: false,
                     duration: start.elapsed(),
-                    error: Some(format!("Failed to build docs: {}", e)),
+                    error: Some(format!("Failed to build docs: {e}")),
                     details: None,
                 };
             }
@@ -455,7 +453,7 @@ impl HealthMonitor {
         debug!("[HealthMonitor] Checking git status");
 
         let output = match Command::new("git")
-            .args(&["status", "--porcelain"])
+            .args(["status", "--porcelain"])
             .output()
             .await
         {
@@ -466,7 +464,7 @@ impl HealthMonitor {
                     category: HealthCategory::GitStatus,
                     passed: false,
                     duration: start.elapsed(),
-                    error: Some(format!("Failed to check git status: {}", e)),
+                    error: Some(format!("Failed to check git status: {e}")),
                     details: None,
                 };
             }
@@ -483,7 +481,7 @@ impl HealthMonitor {
             duration: start.elapsed(),
             error: None,
             details: if has_changes {
-                Some(format!("{} uncommitted changes", change_count))
+                Some(format!("{change_count} uncommitted changes"))
             } else {
                 Some("Working directory clean".to_string())
             },
@@ -499,7 +497,7 @@ impl HealthMonitor {
             "ISSUES DETECTED"
         };
 
-        let mut message = format!("{} **System Health: {}**\n", status_emoji, status_text);
+        let mut message = format!("{status_emoji} **System Health: {status_text}**\n");
 
         message.push_str("```\n");
         for check in &result.checks {
@@ -525,14 +523,14 @@ impl HealthMonitor {
         if !result.critical_issues.is_empty() {
             message.push_str("**🚨 Critical Issues:**\n");
             for issue in &result.critical_issues {
-                message.push_str(&format!("• {}\n", issue));
+                message.push_str(&format!("• {issue}\n"));
             }
         }
 
         if !result.warnings.is_empty() {
             message.push_str("**⚠️ Warnings:**\n");
             for warning in &result.warnings {
-                message.push_str(&format!("• {}\n", warning));
+                message.push_str(&format!("• {warning}\n"));
             }
         }
 

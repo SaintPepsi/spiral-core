@@ -384,7 +384,7 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
         match analysis.primary_intent {
             Intent::BugFix => {
                 tasks.push(PlannedTask {
-                    id: format!("task-{}", task_counter),
+                    id: format!("task-{task_counter}"),
                     description: format!("Identify and fix the bug: {}", request.description),
                     category: TaskCategory::BugFix,
                     complexity: 3,
@@ -398,7 +398,7 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
                 task_counter += 1;
 
                 tasks.push(PlannedTask {
-                    id: format!("task-{}", task_counter),
+                    id: format!("task-{task_counter}"),
                     description: "Add tests to prevent regression".to_string(),
                     category: TaskCategory::TestAddition,
                     complexity: 2,
@@ -409,7 +409,7 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
             }
             Intent::FeatureAddition => {
                 tasks.push(PlannedTask {
-                    id: format!("task-{}", task_counter),
+                    id: format!("task-{task_counter}"),
                     description: format!("Implement new feature: {}", request.description),
                     category: TaskCategory::FeatureAddition,
                     complexity: 4,
@@ -423,7 +423,7 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
                 task_counter += 1;
 
                 tasks.push(PlannedTask {
-                    id: format!("task-{}", task_counter),
+                    id: format!("task-{task_counter}"),
                     description: "Add tests for new feature".to_string(),
                     category: TaskCategory::TestAddition,
                     complexity: 3,
@@ -434,7 +434,7 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
                 task_counter += 1;
 
                 tasks.push(PlannedTask {
-                    id: format!("task-{}", task_counter),
+                    id: format!("task-{task_counter}"),
                     description: "Update documentation".to_string(),
                     category: TaskCategory::Documentation,
                     complexity: 1,
@@ -445,7 +445,7 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
             }
             Intent::Improvement => {
                 tasks.push(PlannedTask {
-                    id: format!("task-{}", task_counter),
+                    id: format!("task-{task_counter}"),
                     description: format!("Improve: {}", request.description),
                     category: TaskCategory::Refactoring,
                     complexity: 3,
@@ -460,7 +460,7 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
             _ => {
                 // Generic task for unclear intents
                 tasks.push(PlannedTask {
-                    id: format!("task-{}", task_counter),
+                    id: format!("task-{task_counter}"),
                     description: request.description.clone(),
                     category: TaskCategory::CodeChange,
                     complexity: 3,
@@ -710,7 +710,7 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
         }
 
         // Check for changes to critical files
-        let critical_paths = vec![
+        let critical_paths = &[
             ".env",
             "Cargo.toml",
             "package.json",
@@ -741,8 +741,7 @@ Analyze the request carefully and provide a comprehensive plan that a developer 
             // Fibonacci: 13 + 8
             plan.requires_human_approval = true;
             plan.approval_reason = Some(format!(
-                "High total complexity ({}) requires human review",
-                total_complexity
+                "High total complexity ({total_complexity}) requires human review"
             ));
             return;
         }
@@ -813,9 +812,9 @@ pub fn format_plan_for_discord(plan: &ImplementationPlan) -> String {
     if plan.requires_human_approval {
         output.push_str("⚠️ **HUMAN APPROVAL REQUIRED** ⚠️\n");
         if let Some(ref reason) = plan.approval_reason {
-            output.push_str(&format!("**Reason**: {}\n", reason));
+            output.push_str(&format!("**Reason**: {reason}\n"));
         }
-        output.push_str("\n");
+        output.push('\n');
     }
 
     output.push_str(&format!("**Summary**: {}\n\n", plan.summary));
@@ -837,12 +836,12 @@ pub fn format_plan_for_discord(plan: &ImplementationPlan) -> String {
 
     output.push_str("\n### ⚠️ Identified Risks\n");
     for risk in &plan.identified_risks {
-        output.push_str(&format!("- {}\n", risk));
+        output.push_str(&format!("- {risk}\n"));
     }
 
     output.push_str("\n### ✅ Success Criteria\n");
     for criterion in &plan.success_criteria {
-        output.push_str(&format!("- {}\n", criterion));
+        output.push_str(&format!("- {criterion}\n"));
     }
 
     output.push_str(&format!(

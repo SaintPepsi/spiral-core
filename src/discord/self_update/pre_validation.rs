@@ -97,8 +97,7 @@ impl PreImplementationValidator {
                 );
                 result.engineering_review_passed = false;
                 result.error_details = Some(format!(
-                    "Phase 1: Engineering Review failed on iteration {}",
-                    iteration
+                    "Phase 1: Engineering Review failed on iteration {iteration}"
                 ));
                 break;
             }
@@ -107,10 +106,7 @@ impl PreImplementationValidator {
             let _ = logger
                 .log_to_phase(
                     "PreValidation",
-                    &format!(
-                        "Phase 1: Engineering Review passed (iteration {})",
-                        iteration
-                    ),
+                    &format!("Phase 1: Engineering Review passed (iteration {iteration})"),
                 )
                 .await;
 
@@ -139,8 +135,7 @@ impl PreImplementationValidator {
             // Failed after max iterations
             result.assembly_checklist_passed = false;
             result.error_details = Some(format!(
-                "Validation failed after {} pipeline iterations",
-                iteration
+                "Validation failed after {iteration} pipeline iterations"
             ));
             break;
         }
@@ -337,7 +332,7 @@ impl PreImplementationValidator {
 
         // Basic compilation check as fallback
         let result = Command::new("cargo")
-            .args(&["check", "--workspace"])
+            .args(["check", "--workspace"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -381,12 +376,12 @@ impl PreImplementationValidator {
     /// Get list of changed files from git
     async fn get_changed_files(&self) -> Result<Vec<String>> {
         let output = Command::new("git")
-            .args(&["diff", "--name-only", "HEAD"])
+            .args(["diff", "--name-only", "HEAD"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|e| SpiralError::SystemError(format!("Failed to get changed files: {}", e)))?;
+            .map_err(|e| SpiralError::SystemError(format!("Failed to get changed files: {e}")))?;
 
         if !output.status.success() {
             return Err(SpiralError::SystemError(
@@ -425,10 +420,7 @@ impl PreImplementationValidator {
             };
 
             // Get changed files to focus testing analysis
-            let changed_files = match self.get_changed_files().await {
-                Ok(files) => files,
-                Err(_) => vec![],
-            };
+            let changed_files = self.get_changed_files().await.unwrap_or_default();
 
             let full_prompt = format!(
                 "{}\n\n## Changed Files\n\n{}\n\n## Task\n\nAnalyze testing coverage for critical pressure points and implement high-value tests only.",
@@ -492,7 +484,7 @@ impl PreImplementationValidator {
         debug!("[PreValidator] Using fallback testing check");
 
         let result = Command::new("cargo")
-            .args(&["test", "--no-run"])
+            .args(["test", "--no-run"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -550,10 +542,7 @@ impl PreImplementationValidator {
             };
 
             // Get changed files and their contents for security analysis
-            let changed_files = match self.get_changed_files().await {
-                Ok(files) => files,
-                Err(_) => vec![],
-            };
+            let changed_files = self.get_changed_files().await.unwrap_or_default();
 
             let full_prompt = format!(
                 "{}\n\n## Changed Files\n\n{}\n\n## Task\n\nConduct security audit on these changes. Look for vulnerabilities, unsafe patterns, and security issues.",
@@ -614,7 +603,7 @@ impl PreImplementationValidator {
 
         // Basic check: ensure no .env files are being tracked
         let result = Command::new("git")
-            .args(&["ls-files", ".env"])
+            .args(["ls-files", ".env"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -680,10 +669,7 @@ impl PreImplementationValidator {
                 }
             };
 
-            let changed_files = match self.get_changed_files().await {
-                Ok(files) => files,
-                Err(_) => vec![],
-            };
+            let changed_files = self.get_changed_files().await.unwrap_or_default();
 
             let full_prompt = format!(
                 "{}\n\n## Changed Files\n\n{}\n\n## Task\n\nVerify system integration integrity. Check that changes don't break existing functionality or APIs.",
@@ -747,7 +733,7 @@ impl PreImplementationValidator {
 
         // Verify key integration points still compile
         let result = Command::new("cargo")
-            .args(&["check", "--lib"])
+            .args(["check", "--lib"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -795,7 +781,7 @@ impl PreImplementationValidator {
 
         for attempt in 1..=self.max_retries_per_check {
             let result = Command::new("cargo")
-                .args(&["check", "--all-targets"])
+                .args(["check", "--all-targets"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
@@ -841,7 +827,7 @@ impl PreImplementationValidator {
         let _ = logger
             .log_to_phase(
                 "PreValidation",
-                &format!("Cargo check: FAILED after {} retries", retries_used),
+                &format!("Cargo check: FAILED after {retries_used} retries"),
             )
             .await;
         CheckResult {
@@ -861,7 +847,7 @@ impl PreImplementationValidator {
         debug!("[PreValidator] Running cargo test");
 
         let result = Command::new("cargo")
-            .args(&["test", "--workspace"])
+            .args(["test", "--workspace"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -902,7 +888,7 @@ impl PreImplementationValidator {
         debug!("[PreValidator] Running cargo fmt");
 
         let result = Command::new("cargo")
-            .args(&["fmt", "--", "--check"])
+            .args(["fmt", "--", "--check"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -914,7 +900,7 @@ impl PreImplementationValidator {
 
                 if !passed {
                     // Auto-fix by running cargo fmt
-                    let _ = Command::new("cargo").args(&["fmt"]).output().await;
+                    let _ = Command::new("cargo").args(["fmt"]).output().await;
 
                     let _ = logger
                         .log_to_phase("PreValidation", "Cargo fmt: AUTO-FIXED")
@@ -956,7 +942,7 @@ impl PreImplementationValidator {
         debug!("[PreValidator] Running cargo clippy");
 
         let result = Command::new("cargo")
-            .args(&["clippy", "--all-targets", "--", "-D", "warnings"])
+            .args(["clippy", "--all-targets", "--", "-D", "warnings"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -997,7 +983,7 @@ impl PreImplementationValidator {
         debug!("[PreValidator] Running cargo doc");
 
         let result = Command::new("cargo")
-            .args(&["doc", "--no-deps", "--workspace"])
+            .args(["doc", "--no-deps", "--workspace"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()

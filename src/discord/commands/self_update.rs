@@ -124,15 +124,14 @@ impl SelfUpdateCommand {
         // and re-queue it using the UpdateQueue
         format!(
             "⚠️ **Retry Queued**\n\n\
-            The update `{}` will be retried.\n\
+            The update `{codename}` will be retried.\n\
             \n\
             **Note**: Retry functionality requires:\n\
             • Failed request to be stored persistently\n\
             • Original request data to be retrievable\n\
             • Retry count to be tracked (max 3 attempts)\n\
             \n\
-            The system will attempt to re-process the update shortly.",
-            codename
+            The system will attempt to re-process the update shortly."
         )
     }
 

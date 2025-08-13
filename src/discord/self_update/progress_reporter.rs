@@ -345,7 +345,7 @@ impl ProgressReporter {
     pub fn format_duration(duration: Duration) -> String {
         let secs = duration.as_secs();
         if secs < 60 {
-            format!("{}s", secs)
+            format!("{secs}s")
         } else if secs < 3600 {
             format!("{}m {}s", secs / 60, secs % 60)
         } else {

@@ -193,60 +193,58 @@ Provide a thorough analysis that ensures project success."#,
 
     /// Generate phases based on task type
     fn generate_phases(&self, _task: &Task) -> Vec<ProjectPhase> {
-        let mut phases = Vec::new();
-
-        // Analysis phase - always first
-        phases.push(ProjectPhase {
-            id: "phase-1".to_string(),
-            name: "Requirements Analysis".to_string(),
-            description: "Analyze requirements and create technical specifications".to_string(),
-            dependencies: vec![],
-            required_agents: vec!["ProjectManager".to_string()],
-            deliverables: vec![
-                "Technical specification document".to_string(),
-                "Risk assessment".to_string(),
-            ],
-            risks: vec!["Incomplete requirements".to_string()],
-            success_criteria: vec!["Clear understanding of all requirements".to_string()],
-        });
-
-        // Implementation phase
-        phases.push(ProjectPhase {
-            id: "phase-2".to_string(),
-            name: "Implementation".to_string(),
-            description: "Develop the solution according to specifications".to_string(),
-            dependencies: vec!["phase-1".to_string()],
-            required_agents: vec!["Developer".to_string()],
-            deliverables: vec![
-                "Working implementation".to_string(),
-                "Unit tests".to_string(),
-            ],
-            risks: vec!["Technical complexity".to_string()],
-            success_criteria: vec![
-                "Code compiles without errors".to_string(),
-                "Unit tests pass".to_string(),
-            ],
-        });
-
-        // Testing phase
-        phases.push(ProjectPhase {
-            id: "phase-3".to_string(),
-            name: "Testing & Validation".to_string(),
-            description: "Comprehensive testing and validation of the implementation".to_string(),
-            dependencies: vec!["phase-2".to_string()],
-            required_agents: vec!["QA".to_string()],
-            deliverables: vec![
-                "Test results".to_string(),
-                "Performance metrics".to_string(),
-            ],
-            risks: vec!["Edge cases not covered".to_string()],
-            success_criteria: vec![
-                "All tests pass".to_string(),
-                "No critical issues found".to_string(),
-            ],
-        });
-
-        phases
+        // Create all phases at once with vec! macro
+        vec![
+            // Analysis phase - always first
+            ProjectPhase {
+                id: "phase-1".to_string(),
+                name: "Requirements Analysis".to_string(),
+                description: "Analyze requirements and create technical specifications".to_string(),
+                dependencies: vec![],
+                required_agents: vec!["ProjectManager".to_string()],
+                deliverables: vec![
+                    "Technical specification document".to_string(),
+                    "Risk assessment".to_string(),
+                ],
+                risks: vec!["Incomplete requirements".to_string()],
+                success_criteria: vec!["Clear understanding of all requirements".to_string()],
+            },
+            // Implementation phase
+            ProjectPhase {
+                id: "phase-2".to_string(),
+                name: "Implementation".to_string(),
+                description: "Develop the solution according to specifications".to_string(),
+                dependencies: vec!["phase-1".to_string()],
+                required_agents: vec!["Developer".to_string()],
+                deliverables: vec![
+                    "Working implementation".to_string(),
+                    "Unit tests".to_string(),
+                ],
+                risks: vec!["Technical complexity".to_string()],
+                success_criteria: vec![
+                    "Code compiles without errors".to_string(),
+                    "Unit tests pass".to_string(),
+                ],
+            },
+            // Testing phase
+            ProjectPhase {
+                id: "phase-3".to_string(),
+                name: "Testing & Validation".to_string(),
+                description: "Comprehensive testing and validation of the implementation"
+                    .to_string(),
+                dependencies: vec!["phase-2".to_string()],
+                required_agents: vec!["QA".to_string()],
+                deliverables: vec![
+                    "Test results".to_string(),
+                    "Performance metrics".to_string(),
+                ],
+                risks: vec!["Edge cases not covered".to_string()],
+                success_criteria: vec![
+                    "All tests pass".to_string(),
+                    "No critical issues found".to_string(),
+                ],
+            },
+        ]
     }
 }
 
@@ -294,7 +292,7 @@ impl Agent for ProjectManagerAgent {
                     task_id: task.id,
                     agent_type: self.agent_type(),
                     result: TaskExecutionResult::Failure {
-                        error: format!("Failed to create project plan: {}", e),
+                        error: format!("Failed to create project plan: {e}"),
                         partial_output: None,
                     },
                     metadata: std::collections::HashMap::from([(
@@ -308,7 +306,7 @@ impl Agent for ProjectManagerAgent {
 
         // Convert plan to JSON output
         let output = serde_json::to_string_pretty(&plan)
-            .unwrap_or_else(|e| format!("Failed to serialize plan: {}", e));
+            .unwrap_or_else(|e| format!("Failed to serialize plan: {e}"));
 
         // Update status
         {

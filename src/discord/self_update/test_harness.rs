@@ -77,11 +77,10 @@ impl SelfUpdateTestHarness {
         // Add to queue
         self.update_queue.try_add_request(request.clone()).await?;
 
-        // Create executor
-        let mut executor = UpdateExecutor::new(
+        // Create executor in test mode for fast timeouts
+        let mut executor = UpdateExecutor::new_test_mode(
             self.update_queue.clone(),
             self.claude_client.clone(),
-            None, // No Discord
             self.approval_manager.clone(),
             self.system_lock.clone(),
         );
@@ -154,67 +153,6 @@ impl SelfUpdateTestHarness {
     }
 }
 
-#[cfg(test)]
-mod harness_tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_simple_update_simulation() {
-        let mut harness = SelfUpdateTestHarness::new(false).await.unwrap();
-
-        let result = harness
-            .simulate_update("Fix a typo in README")
-            .await
-            .unwrap();
-
-        // With mock Claude, should complete but may not actually fix anything
-        assert_eq!(result.request.description, "Fix a typo in README");
-        // Success depends on whether pre-flight checks pass
-    }
-
-    #[tokio::test]
-    async fn test_concurrent_updates() {
-        let mut harness = SelfUpdateTestHarness::new(false).await.unwrap();
-
-        let updates = vec![
-            "Update documentation",
-            "Fix formatting issues",
-            "Add new feature",
-        ];
-
-        let results = harness.simulate_concurrent_updates(updates).await;
-
-        // Should handle all updates (though may queue them)
-        assert!(results.len() > 0);
-
-        // Check queue handled them properly
-        for result in results {
-            println!(
-                "Update {}: success={}, message={}",
-                result.request.codename, result.success, result.message
-            );
-        }
-    }
-
-    #[tokio::test]
-    #[ignore = "Requires real Claude binary and takes time"]
-    async fn test_real_claude_update() {
-        let mut harness = SelfUpdateTestHarness::new(true).await.unwrap();
-
-        let result = harness
-            .simulate_update("Add a comment to the main function explaining what it does")
-            .await
-            .unwrap();
-
-        println!("Real Claude update result: {:?}", result);
-
-        // With real Claude, should see actual validation results
-        if let Some(validation) = result.validation_results {
-            println!("Validation results: {}", validation);
-        }
-    }
-}
-
 /// Example standalone test runner
 #[allow(dead_code)]
 pub async fn run_validation_test_suite() -> Result<()> {
@@ -251,7 +189,7 @@ pub async fn run_validation_test_suite() -> Result<()> {
 
         match UpdateValidator::validate_request(&request).await {
             Ok(_) => println!("  ✅ Pre-flight checks passed"),
-            Err(e) => println!("  ❌ Pre-flight checks failed: {}", e),
+            Err(e) => println!("  ❌ Pre-flight checks failed: {e}"),
         }
     }
 
@@ -280,4 +218,65 @@ pub async fn run_validation_test_suite() -> Result<()> {
 
     println!("\n✨ Test suite completed!");
     Ok(())
+}
+
+#[cfg(test)]
+mod harness_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_simple_update_simulation() {
+        let mut harness = SelfUpdateTestHarness::new(false).await.unwrap();
+
+        let result = harness
+            .simulate_update("Fix a typo in README")
+            .await
+            .unwrap();
+
+        // With mock Claude, should complete but may not actually fix anything
+        assert_eq!(result.request.description, "Fix a typo in README");
+        // Success depends on whether pre-flight checks pass
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_updates() {
+        let mut harness = SelfUpdateTestHarness::new(false).await.unwrap();
+
+        let updates = vec![
+            "Update documentation",
+            "Fix formatting issues",
+            "Add new feature",
+        ];
+
+        let results = harness.simulate_concurrent_updates(updates).await;
+
+        // Should handle all updates (though may queue them)
+        assert!(!results.is_empty());
+
+        // Check queue handled them properly
+        for result in results {
+            println!(
+                "Update {}: success={}, message={}",
+                result.request.codename, result.success, result.message
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires real Claude binary and takes time"]
+    async fn test_real_claude_update() {
+        let mut harness = SelfUpdateTestHarness::new(true).await.unwrap();
+
+        let result = harness
+            .simulate_update("Add a comment to the main function explaining what it does")
+            .await
+            .unwrap();
+
+        println!("Real Claude update result: {result:?}");
+
+        // With real Claude, should see actual validation results
+        if let Some(validation) = result.validation_results {
+            println!("Validation results: {validation}");
+        }
+    }
 }

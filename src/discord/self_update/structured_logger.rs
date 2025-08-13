@@ -48,13 +48,13 @@ impl StructuredLogger {
 
         // Create the directory
         fs::create_dir_all(&log_dir).map_err(|e| {
-            SpiralError::SystemError(format!("Failed to create log directory: {}", e))
+            SpiralError::SystemError(format!("Failed to create log directory: {e}"))
         })?;
 
         // Create main log file
         let main_log_path = log_dir.join("main.log");
         let main_log_file = fs::File::create(&main_log_path).map_err(|e| {
-            SpiralError::SystemError(format!("Failed to create main log file: {}", e))
+            SpiralError::SystemError(format!("Failed to create main log file: {e}"))
         })?;
 
         // Write header to main log
@@ -107,16 +107,16 @@ impl StructuredLogger {
     /// Log a message to the main log file
     pub fn log_to_main(&mut self, message: &str) -> Result<()> {
         let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S%.3f");
-        let formatted = format!("[{}] {}\n", timestamp, message);
+        let formatted = format!("[{timestamp}] {message}\n");
 
         // Write to file
         if let Ok(mut guard) = self.main_log.try_write() {
             if let Some(ref mut file) = *guard {
                 file.write_all(formatted.as_bytes()).map_err(|e| {
-                    SpiralError::SystemError(format!("Failed to write to main log: {}", e))
+                    SpiralError::SystemError(format!("Failed to write to main log: {e}"))
                 })?;
                 file.flush().map_err(|e| {
-                    SpiralError::SystemError(format!("Failed to flush main log: {}", e))
+                    SpiralError::SystemError(format!("Failed to flush main log: {e}"))
                 })?;
             }
         }
@@ -127,7 +127,7 @@ impl StructuredLogger {
     /// Log a message to a phase-specific log file
     pub async fn log_to_phase(&mut self, phase: &str, message: &str) -> Result<()> {
         let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S%.3f");
-        let formatted = format!("[{}] {}\n", timestamp, message);
+        let formatted = format!("[{timestamp}] {message}\n");
 
         let mut phase_logs = self.phase_logs.write().await;
 
@@ -136,7 +136,7 @@ impl StructuredLogger {
             let phase_filename = format!("phase_{}.log", Self::sanitize_filename(phase));
             let phase_path = self.log_dir.join(phase_filename);
             let phase_file = fs::File::create(phase_path).map_err(|e| {
-                SpiralError::SystemError(format!("Failed to create phase log: {}", e))
+                SpiralError::SystemError(format!("Failed to create phase log: {e}"))
             })?;
             phase_logs.insert(phase.to_string(), phase_file);
 
@@ -152,7 +152,7 @@ impl StructuredLogger {
                     Utc::now().to_rfc3339()
                 );
                 file.write_all(header.as_bytes()).map_err(|e| {
-                    SpiralError::SystemError(format!("Failed to write phase header: {}", e))
+                    SpiralError::SystemError(format!("Failed to write phase header: {e}"))
                 })?;
             }
         }
@@ -160,11 +160,10 @@ impl StructuredLogger {
         // Write to phase log
         if let Some(file) = phase_logs.get_mut(phase) {
             file.write_all(formatted.as_bytes()).map_err(|e| {
-                SpiralError::SystemError(format!("Failed to write to phase log: {}", e))
+                SpiralError::SystemError(format!("Failed to write to phase log: {e}"))
             })?;
-            file.flush().map_err(|e| {
-                SpiralError::SystemError(format!("Failed to flush phase log: {}", e))
-            })?;
+            file.flush()
+                .map_err(|e| SpiralError::SystemError(format!("Failed to flush phase log: {e}")))?;
         }
 
         Ok(())
@@ -178,9 +177,9 @@ impl StructuredLogger {
         context: Option<&str>,
     ) -> Result<()> {
         let error_msg = if let Some(ctx) = context {
-            format!("ERROR in {}: {} (Context: {})", phase, error, ctx)
+            format!("ERROR in {phase}: {error} (Context: {ctx})")
         } else {
-            format!("ERROR in {}: {}", phase, error)
+            format!("ERROR in {phase}: {error}")
         };
 
         // Log to main log
@@ -195,19 +194,18 @@ impl StructuredLogger {
             .create(true)
             .append(true)
             .open(errors_path)
-            .map_err(|e| SpiralError::SystemError(format!("Failed to open errors log: {}", e)))?;
+            .map_err(|e| SpiralError::SystemError(format!("Failed to open errors log: {e}")))?;
 
         let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S%.3f");
-        writeln!(errors_file, "[{}] {}", timestamp, error_msg).map_err(|e| {
-            SpiralError::SystemError(format!("Failed to write to errors log: {}", e))
-        })?;
+        writeln!(errors_file, "[{timestamp}] {error_msg}")
+            .map_err(|e| SpiralError::SystemError(format!("Failed to write to errors log: {e}")))?;
 
         Ok(())
     }
 
     /// Log a warning
     pub async fn log_warning(&mut self, phase: &str, warning: &str) -> Result<()> {
-        let warning_msg = format!("WARNING in {}: {}", phase, warning);
+        let warning_msg = format!("WARNING in {phase}: {warning}");
 
         // Log to main log
         self.log_to_main(&warning_msg)?;
@@ -223,7 +221,7 @@ impl StructuredLogger {
         // Create validation results file
         let validation_path = self.log_dir.join("validation_results.log");
         let mut validation_file = fs::File::create(validation_path).map_err(|e| {
-            SpiralError::SystemError(format!("Failed to create validation log: {}", e))
+            SpiralError::SystemError(format!("Failed to create validation log: {e}"))
         })?;
 
         let header = format!(
@@ -236,17 +234,17 @@ impl StructuredLogger {
         );
 
         validation_file.write_all(header.as_bytes()).map_err(|e| {
-            SpiralError::SystemError(format!("Failed to write validation header: {}", e))
+            SpiralError::SystemError(format!("Failed to write validation header: {e}"))
         })?;
         validation_file.write_all(results.as_bytes()).map_err(|e| {
-            SpiralError::SystemError(format!("Failed to write validation results: {}", e))
+            SpiralError::SystemError(format!("Failed to write validation results: {e}"))
         })?;
         validation_file.flush().map_err(|e| {
-            SpiralError::SystemError(format!("Failed to flush validation log: {}", e))
+            SpiralError::SystemError(format!("Failed to flush validation log: {e}"))
         })?;
 
         // Also log summary to main
-        self.log_to_main(&format!("Validation completed for phase: {}", phase))?;
+        self.log_to_main(&format!("Validation completed for phase: {phase}"))?;
 
         Ok(())
     }
@@ -271,9 +269,9 @@ impl StructuredLogger {
         });
 
         let summary_str = serde_json::to_string_pretty(&summary)
-            .map_err(|e| SpiralError::SystemError(format!("Failed to serialize summary: {}", e)))?;
+            .map_err(|e| SpiralError::SystemError(format!("Failed to serialize summary: {e}")))?;
         fs::write(summary_path, summary_str)
-            .map_err(|e| SpiralError::SystemError(format!("Failed to write summary: {}", e)))?;
+            .map_err(|e| SpiralError::SystemError(format!("Failed to write summary: {e}")))?;
 
         // Log completion to main log
         self.log_to_main(&format!(
@@ -312,24 +310,23 @@ impl StructuredLogger {
 
         // Create archives directory if it doesn't exist
         fs::create_dir_all(archive_path.parent().unwrap()).map_err(|e| {
-            SpiralError::SystemError(format!("Failed to create archives directory: {}", e))
+            SpiralError::SystemError(format!("Failed to create archives directory: {e}"))
         })?;
 
         // Create tar.gz archive
-        let tar_gz = File::create(&archive_path).map_err(|e| {
-            SpiralError::SystemError(format!("Failed to create archive file: {}", e))
-        })?;
+        let tar_gz = File::create(&archive_path)
+            .map_err(|e| SpiralError::SystemError(format!("Failed to create archive file: {e}")))?;
         let enc = GzEncoder::new(tar_gz, Compression::default());
         let mut tar = Builder::new(enc);
 
         // Add all files from log directory to archive
         tar.append_dir_all(self.log_dir.file_name().unwrap(), &self.log_dir)
             .map_err(|e| {
-                SpiralError::SystemError(format!("Failed to add files to archive: {}", e))
+                SpiralError::SystemError(format!("Failed to add files to archive: {e}"))
             })?;
 
         tar.finish()
-            .map_err(|e| SpiralError::SystemError(format!("Failed to finish archive: {}", e)))?;
+            .map_err(|e| SpiralError::SystemError(format!("Failed to finish archive: {e}")))?;
 
         info!(
             "[StructuredLogger] Archived logs to: {}",

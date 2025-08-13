@@ -105,7 +105,7 @@ impl UpdateMessageTemplates {
             plan.summary,
             plan.success_criteria
                 .iter()
-                .map(|c| format!("• {}", c))
+                .map(|c| format!("• {c}"))
                 .collect::<Vec<_>>()
                 .join("\n")
         )
@@ -117,37 +117,33 @@ impl UpdateMessageTemplates {
             ApprovalResult::Approved => {
                 format!(
                     "✅ **Plan Approved**\n\n\
-                    **Update**: `{}`\n\
+                    **Update**: `{codename}`\n\
                     **Status**: Implementation authorized\n\n\
-                    Starting implementation phase...",
-                    codename
+                    Starting implementation phase..."
                 )
             }
             ApprovalResult::Rejected(reason) => {
                 format!(
                     "❌ **Plan Rejected**\n\n\
-                    **Update**: `{}`\n\
-                    **Reason**: {}\n\n\
-                    The update has been cancelled.",
-                    codename, reason
+                    **Update**: `{codename}`\n\
+                    **Reason**: {reason}\n\n\
+                    The update has been cancelled."
                 )
             }
             ApprovalResult::ModifyRequested(details) => {
                 format!(
                     "✏️ **Modifications Requested**\n\n\
-                    **Update**: `{}`\n\
-                    **Details**: {}\n\n\
-                    The plan will be revised based on your feedback.",
-                    codename, details
+                    **Update**: `{codename}`\n\
+                    **Details**: {details}\n\n\
+                    The plan will be revised based on your feedback."
                 )
             }
             ApprovalResult::TimedOut => {
                 format!(
                     "⏱️ **Approval Timeout**\n\n\
-                    **Update**: `{}`\n\
+                    **Update**: `{codename}`\n\
                     **Status**: No response received within 10 minutes\n\n\
-                    The update has been cancelled due to timeout.",
-                    codename
+                    The update has been cancelled due to timeout."
                 )
             }
         }
@@ -157,11 +153,10 @@ impl UpdateMessageTemplates {
     pub fn snapshot_created(codename: &str, snapshot_id: &str) -> String {
         format!(
             "📸 **Safety Snapshot Created**\n\n\
-            **Update**: `{}`\n\
-            **Snapshot ID**: `{}`\n\n\
+            **Update**: `{codename}`\n\
+            **Snapshot ID**: `{snapshot_id}`\n\n\
             A git snapshot has been created for rollback safety.\n\
-            If anything goes wrong, we can restore to this point.",
-            codename, snapshot_id
+            If anything goes wrong, we can restore to this point."
         )
     }
 
@@ -174,11 +169,10 @@ impl UpdateMessageTemplates {
     ) -> String {
         format!(
             "🔧 **Implementation Progress**\n\n\
-            **Update**: `{}`\n\
-            **Task**: {}/{}\n\
-            **Current**: {}\n\n\
-            Claude Code is implementing the approved changes...",
-            codename, task_num, total_tasks, task_desc
+            **Update**: `{codename}`\n\
+            **Task**: {task_num}/{total_tasks}\n\
+            **Current**: {task_desc}\n\n\
+            Claude Code is implementing the approved changes..."
         )
     }
 
@@ -216,12 +210,11 @@ impl UpdateMessageTemplates {
     pub fn rollback_notification(codename: &str, snapshot_id: &str, reason: &str) -> String {
         format!(
             "🔄 **Rolling Back Changes**\n\n\
-            **Update**: `{}`\n\
-            **Snapshot**: `{}`\n\
-            **Reason**: {}\n\n\
+            **Update**: `{codename}`\n\
+            **Snapshot**: `{snapshot_id}`\n\
+            **Reason**: {reason}\n\n\
             The system is being restored to the previous state.\n\
-            All changes from this update are being reverted.",
-            codename, snapshot_id, reason
+            All changes from this update are being reverted."
         )
     }
 
@@ -250,7 +243,7 @@ impl UpdateMessageTemplates {
                 result
                     .critical_issues
                     .iter()
-                    .map(|i| format!("• ❗ {}", i))
+                    .map(|i| format!("• ❗ {i}"))
                     .collect::<Vec<_>>()
                     .join("\n")
             )
@@ -264,7 +257,7 @@ impl UpdateMessageTemplates {
                 result
                     .warnings
                     .iter()
-                    .map(|w| format!("• ⚠️ {}", w))
+                    .map(|w| format!("• ⚠️ {w}"))
                     .collect::<Vec<_>>()
                     .join("\n")
             )
@@ -350,10 +343,9 @@ impl UpdateMessageTemplates {
 
         format!(
             "⏳ **Update Queued**\n\n\
-            **Queue position**: {} of {}\n\
-            **Status**: Waiting for processing{}\n\n\
-            Your update will begin processing when it reaches the front of the queue.",
-            position, total, wait_str
+            **Queue position**: {position} of {total}\n\
+            **Status**: Waiting for processing{wait_str}\n\n\
+            Your update will begin processing when it reaches the front of the queue."
         )
     }
 
@@ -364,7 +356,7 @@ impl UpdateMessageTemplates {
         error: &str,
         suggestion: Option<&str>,
     ) -> String {
-        let phase_str = format!("{:?}", phase);
+        let phase_str = format!("{phase:?}");
 
         format!(
             "❌ **Error During {}**\n\n\
@@ -397,10 +389,9 @@ impl UpdateMessageTemplates {
         let bar = format!("{}{}", "▰".repeat(filled), "▱".repeat(empty));
 
         format!(
-            "**Progress**: {} {}%\n\
-            **Phase**: {:?}\n\
-            **Tasks**: {}/{}",
-            bar, percentage, phase, current, total
+            "**Progress**: {bar} {percentage}%\n\
+            **Phase**: {phase:?}\n\
+            **Tasks**: {current}/{total}"
         )
     }
 }

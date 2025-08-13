@@ -191,8 +191,7 @@ impl ScopeLimiter {
         for file in &scope.modified_files {
             if self.is_protected_path(file) {
                 return Err(SpiralError::Validation(format!(
-                    "Attempted to modify protected path: {}",
-                    file
+                    "Attempted to modify protected path: {file}"
                 )));
             }
         }
@@ -200,8 +199,7 @@ impl ScopeLimiter {
         for file in &scope.deleted_files {
             if self.is_protected_path(file) {
                 return Err(SpiralError::Validation(format!(
-                    "Attempted to delete protected path: {}",
-                    file
+                    "Attempted to delete protected path: {file}"
                 )));
             }
         }
@@ -316,7 +314,7 @@ mod tests {
 
         // Exceed file modification limit
         for i in 0..25 {
-            scope.record_modification(&format!("src/file_{}.rs", i), 10);
+            scope.record_modification(&format!("src/file_{i}.rs"), 10);
         }
         assert!(limiter.validate_scope(&scope).is_err());
     }

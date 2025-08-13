@@ -3,6 +3,8 @@
 //! This module provides a callback-based reaction handling system that follows
 //! SOLID principles and promotes code reusability.
 
+#![allow(clippy::type_complexity)]
+
 use serenity::{
     model::{channel::Reaction, user::User},
     prelude::*,
@@ -207,12 +209,12 @@ pub mod callbacks {
                 let message = reaction
                     .message(&ctx.http)
                     .await
-                    .map_err(|e| format!("Failed to get message: {}", e))?;
+                    .map_err(|e| format!("Failed to get message: {e}"))?;
 
                 message
                     .reply(&ctx.http, &response)
                     .await
-                    .map_err(|e| format!("Failed to send reply: {}", e))?;
+                    .map_err(|e| format!("Failed to send reply: {e}"))?;
 
                 Ok(())
             })
@@ -230,12 +232,12 @@ pub mod callbacks {
                 let message = reaction
                     .message(&ctx.http)
                     .await
-                    .map_err(|e| format!("Failed to get message: {}", e))?;
+                    .map_err(|e| format!("Failed to get message: {e}"))?;
 
                 message
                     .delete_reaction(&ctx.http, Some(user.id), reaction.emoji.clone())
                     .await
-                    .map_err(|e| format!("Failed to remove reaction: {}", e))?;
+                    .map_err(|e| format!("Failed to remove reaction: {e}"))?;
 
                 Ok(())
             })
@@ -251,12 +253,12 @@ pub mod callbacks {
                 let message = reaction
                     .message(&ctx.http)
                     .await
-                    .map_err(|e| format!("Failed to get message: {}", e))?;
+                    .map_err(|e| format!("Failed to get message: {e}"))?;
 
                 message
                     .delete(&ctx.http)
                     .await
-                    .map_err(|e| format!("Failed to delete message: {}", e))?;
+                    .map_err(|e| format!("Failed to delete message: {e}"))?;
 
                 Ok(())
             })

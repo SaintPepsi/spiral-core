@@ -1150,12 +1150,12 @@ impl SpiralConstellationBot {
                         let message = reaction
                             .message(&ctx.http)
                             .await
-                            .map_err(|e| format!("Failed to get message: {}", e))?;
+                            .map_err(|e| format!("Failed to get message: {e}"))?;
 
                         message
                             .delete(&ctx.http)
                             .await
-                            .map_err(|e| format!("Failed to delete message: {}", e))?;
+                            .map_err(|e| format!("Failed to delete message: {e}"))?;
 
                         Ok(())
                     })
@@ -1180,13 +1180,13 @@ impl SpiralConstellationBot {
                         let message = reaction
                             .message(&ctx.http)
                             .await
-                            .map_err(|e| format!("Failed to get message: {}", e))?;
+                            .map_err(|e| format!("Failed to get message: {e}"))?;
 
                         // For now, just acknowledge the retry request
                         message
                             .reply(&ctx.http, "🔄 Retrying the operation...")
                             .await
-                            .map_err(|e| format!("Failed to send reply: {}", e))?;
+                            .map_err(|e| format!("Failed to send reply: {e}"))?;
 
                         Ok(())
                     })
@@ -1262,7 +1262,7 @@ impl SpiralConstellationBot {
                         message
                             .reply(&ctx.http, confirmation)
                             .await
-                            .map_err(|e| format!("Failed to send confirmation: {}", e))?;
+                            .map_err(|e| format!("Failed to send confirmation: {e}"))?;
                     }
                 }
             }
@@ -1280,7 +1280,7 @@ impl SpiralConstellationBot {
         let message = reaction
             .message(&ctx.http)
             .await
-            .map_err(|e| format!("Failed to get message: {}", e))?;
+            .map_err(|e| format!("Failed to get message: {e}"))?;
 
         // Extract the original command from the blocked message
         let original_command = message
@@ -1305,7 +1305,7 @@ impl SpiralConstellationBot {
         message
             .reply(&ctx.http, debug_info)
             .await
-            .map_err(|e| format!("Failed to send debug info: {}", e))?;
+            .map_err(|e| format!("Failed to send debug info: {e}"))?;
 
         Ok(())
     }
