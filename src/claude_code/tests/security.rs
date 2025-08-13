@@ -6,7 +6,7 @@
 //! 1. They require actual Claude Code CLI binary installation
 //! 2. They need valid API credentials for Claude
 //! 3. They perform real file system operations and API calls
-//! 
+//!
 //! TO RUN THESE TESTS:
 //! - Install Claude Code CLI: `npm install -g @anthropic/claude-code`
 //! - Set up API credentials

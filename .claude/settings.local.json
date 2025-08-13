@@ -75,7 +75,8 @@
       "Bash(claude --version)",
       "Bash(git config:*)",
       "Bash(./scripts/test-phase2-validation.sh:*)",
-      "Bash(env)"
+      "Bash(env)",
+      "Bash(tree:*)"
     ],
     "deny": [
       "Bash(npm install -g:*)",

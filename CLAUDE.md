@@ -65,8 +65,8 @@ The system can update itself through Discord mentions. See [Self-Update Guide](d
 - `docs/ARCHITECTURE.md` - Comprehensive system architecture
 - `docs/SETUP.md` - Complete setup and configuration guide
 - `docs/CODING_STANDARDS.md` - Development standards and practices
-- `src/agents/docs/` - Agent-specific implementation guides
-- `src/integrations/docs/` - Integration patterns and examples
+- `docs/agents/` - Agent-specific implementation guides
+- `docs/integrations/` - Integration patterns and examples
 
 ## Agent System Design
 
@@ -364,18 +364,18 @@ This CLAUDE.md file serves as the orchestrator for specialized documentation mod
 
 ### Agent System Modules
 
-- **[Developer Agent](src/agents/docs/AGENTS_DEVELOPER.md)** - Code generation, language detection, and Claude Code integration
-- **[Project Manager Agent](src/agents/docs/AGENTS_PM.md)** - Strategic analysis and coordination patterns
+- **[Developer Agent](docs/agents/DEVELOPER.md)** - Code generation, language detection, and Claude Code integration
+- **[Project Manager Agent](docs/agents/PROJECT_MANAGER.md)** - Strategic analysis and coordination patterns
 
 ### Integration Modules
 
-- **[Discord Integration](src/integrations/docs/INTEGRATIONS_DISCORD.md)** - Conversational agent mentions and Discord bot patterns
-- **[GitHub Integration](src/integrations/docs/INTEGRATIONS_GITHUB.md)** - Automated repository management and PR creation
-- **[Claude Code Integration](src/integrations/docs/INTEGRATIONS_CLAUDE_CODE.md)** - Primary intelligence engine patterns
+- **[Discord Integration](docs/integrations/DISCORD.md)** - Conversational agent mentions and Discord bot patterns
+- **[GitHub Integration](docs/integrations/GITHUB.md)** - Automated repository management and PR creation
+- **[Claude Code Integration](docs/integrations/CLAUDE_CODE.md)** - Primary intelligence engine patterns
 
 ### Implementation Modules
 
-- **[Phase 1 Implementation](src/implementation/docs/IMPLEMENTATION_PHASE1.md)** - Foundation setup and core systems
+- **[Phase 1 Implementation](docs/implementation/PHASE1.md)** - Foundation setup and core systems
 
 ## Implementation Roadmap Summary
 
