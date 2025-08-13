@@ -240,6 +240,27 @@ fn process_task(task: &Task) -> Result<()> {
 
 ### Rust-Specific Patterns
 
+#### String Formatting
+
+**ALWAYS use inline variables in format strings** - This is the modern Rust idiom and prevents Clippy warnings.
+
+```rust
+// ✅ GOOD - Inline variables (Rust 2021+ style)
+format!("User {user_id} has {count} items")
+println!("Processing {file_path} at {timestamp}")
+log::error!("Failed to process task {task_id}: {error}")
+
+// ❌ BAD - Positional arguments (causes clippy::uninlined_format_args)
+format!("User {} has {} items", user_id, count)
+println!("Processing {} at {}", file_path, timestamp)
+log::error!("Failed to process task {}: {}", task_id, error)
+
+// ✅ EXCEPTION - Use positional for special formatting
+format!("{value:.2}")  // 2 decimal places
+format!("{data:?}")    // Debug format
+format!("{num:04}")    // Zero-padded to 4 digits
+```
+
 #### Error Handling
 
 ```rust

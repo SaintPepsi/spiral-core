@@ -78,6 +78,29 @@ Key components:
 
 For standard Rust development commands and practices, see [Coding Standards](docs/CODING_STANDARDS.md#standard-development-commands).
 
+## Rust String Formatting
+
+**ALWAYS use inline variables in format strings** - This is the modern Rust idiom and prevents Clippy warnings.
+
+```rust
+// ✅ GOOD - Inline variables (modern Rust style)
+format!("User {user_id} has {count} items")
+println!("Error: {error}")
+log::info!("Processing file: {file_path}")
+
+// ❌ BAD - Positional arguments (causes Clippy warnings)
+format!("User {} has {} items", user_id, count)
+println!("Error: {}", error)
+log::info!("Processing file: {}", file_path)
+```
+
+**Exception**: Use positional when you need special formatting:
+
+```rust
+format!("{:.2}", value)  // Format with 2 decimal places
+format!("{:?}", debug_struct)  // Debug formatting
+```
+
 ### Self-Update System
 
 The system can update itself through Discord mentions. See [Self-Update Guide](docs/SELF_UPDATE_GUIDE.md) for details.

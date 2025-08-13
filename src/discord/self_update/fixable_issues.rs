@@ -212,7 +212,7 @@ impl FixableIssue {
             suggested_fix: suggested_fix.into(),
             context: None,
             timestamp: Utc::now(),
-            severity: severity.min(5).max(1),
+            severity: severity.clamp(1, 5),
             fix_attempted: false,
         }
     }
@@ -245,7 +245,7 @@ impl FixableIssueTracker {
     pub async fn log_message_too_large(&self, context: &str, actual_size: usize) {
         let issue = FixableIssue::new(
             IssueCategory::MessageTooLarge,
-            format!("Discord message exceeded 2000 char limit (was {} chars)", actual_size),
+            format!("Discord message exceeded 2000 char limit (was {actual_size} chars)"),
             "Reduce message size by making content more concise or splitting into multiple messages",
             4, // High severity as it prevents user from seeing response
         )
@@ -276,7 +276,7 @@ impl FixableIssueTracker {
     pub async fn log_test_failure(&self, test_name: &str, error: &str) {
         let issue = FixableIssue::new(
             IssueCategory::TestFailure,
-            format!("Test '{}' failed", test_name),
+            format!("Test '{test_name}' failed"),
             "Fix the failing test or update test expectations",
             3,
         )
