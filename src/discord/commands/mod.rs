@@ -129,6 +129,13 @@ pub const AVAILABLE_COMMANDS: &[CommandInfo] = &[
         category: CommandCategory::Updates,
         requires_auth: true,
     },
+    CommandInfo {
+        name: "self-update",
+        prefix: "!spiral self-update",
+        description: "Self-update system information (alias)",
+        category: CommandCategory::Updates,
+        requires_auth: true,
+    },
     // 🏗️ ARCHITECTURE DECISION: Dual command aliases for discoverability
     // Why: Users might look for "agents" or "claude-agents"
     // Alternative: Single command (rejected: reduces discoverability)
@@ -236,6 +243,7 @@ impl CommandRouter {
                     "roles" => self.roles.handle(content, msg, ctx, bot).await,
                     "security" => self.security.handle(content, msg, ctx, bot).await,
                     "update" => self.self_update.handle(content, msg, ctx, bot).await,
+                    "self-update" => self.self_update.handle(content, msg, ctx, bot).await,
                     _ => {
                         debug!(
                             "[CommandRouter] No handler for command: {}",

@@ -81,7 +81,8 @@
       "Bash(./scripts/setup-git-hooks.sh:*)",
       "Bash(git checkout:*)",
       "Bash(pgrep:*)",
-      "Bash(./stop-spiral-core.sh:*)"
+      "Bash(./stop-spiral-core.sh:*)",
+      "Bash(ps:*)"
     ],
     "deny": [
       "Bash(npm install -g:*)",

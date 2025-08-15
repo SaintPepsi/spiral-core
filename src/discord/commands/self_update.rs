@@ -24,6 +24,12 @@ impl SelfUpdateCommand {
 
         help_text.push_str("🔄 **Spiral Core Self-Update System**\n\n");
 
+        // Available commands
+        help_text.push_str("**📋 Available Commands**\n");
+        help_text.push_str("• `!spiral update` - Trigger manual system update\n");
+        help_text.push_str("• `!spiral update help` - Show this help message\n");
+        help_text.push_str("• `!spiral update retry <codename>` - Retry a failed update\n\n");
+
         // Overview
         help_text.push_str("**🌟 Overview**\n");
         help_text.push_str("The Spiral Core system can update itself through Discord mentions. ");
@@ -166,6 +172,9 @@ impl CommandHandler for SelfUpdateCommand {
         _ctx: &Context,
         bot: &SpiralConstellationBot,
     ) -> Option<String> {
+        // 🏗️ ARCHITECTURE DECISION: Command pattern matching order
+        // Why: Check most specific patterns first, then fallback to general
+        // Alternative: Regex matching (rejected: overkill for simple commands)
         const UPDATE_HELP: &str = "!spiral update help";
         const UPDATE_RETRY_PREFIX: &str = "!spiral update retry ";
         const UPDATE_MANUAL: &str = "!spiral update";
@@ -193,8 +202,9 @@ impl CommandHandler for SelfUpdateCommand {
         }
 
         // Match other update command types
+        // Check help BEFORE manual to avoid matching "!spiral update help" as manual
         match content_lower.as_str() {
-            UPDATE_HELP => {
+            cmd if cmd == UPDATE_HELP || cmd == "!spiral self-update help" => {
                 info!(
                     "[SelfUpdateCommand] Update help for user {} ({})",
                     msg.author.name,
@@ -202,7 +212,7 @@ impl CommandHandler for SelfUpdateCommand {
                 );
                 Some(self.generate_update_help())
             }
-            UPDATE_MANUAL => {
+            cmd if cmd == UPDATE_MANUAL || cmd == "!spiral self-update" => {
                 info!(
                     "[SelfUpdateCommand] Manual update for user {} ({})",
                     msg.author.name,

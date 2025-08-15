@@ -26,15 +26,15 @@ impl HelpCommand {
 
         // Quick start
         help_text.push_str("**Quick Start**\n");
-        help_text.push_str("• Mention agents: `@SpiralDev write code`\n");
-        help_text.push_str("• Join roles: `!spiral join SpiralDev`\n\n");
+        help_text.push_str("• Mention agents: `@<AgentName> <your request>`\n");
+        help_text.push_str("• Join roles: `!spiral roles join <AgentName>`\n\n");
 
         // Core commands
         help_text.push_str("**Commands**\n");
         help_text.push_str("• `!spiral help` - This help\n");
         help_text.push_str("• `!spiral commands` - Command list\n");
-        help_text.push_str("• `!spiral join <role>` - Join agent role\n");
-        help_text.push_str("• `!spiral setup roles` - Create roles\n");
+        help_text.push_str("• `!spiral roles join <name>` - Join agent role\n");
+        help_text.push_str("• `!spiral roles setup` - Create roles\n");
         help_text.push_str("• `!spiral ratelimit` - Check limits\n\n");
 
         // Admin commands (only if authorized)
@@ -45,11 +45,13 @@ impl HelpCommand {
             help_text.push_str("• `!spiral debug` - Debug (reply to msg)\n\n");
         }
 
-        // Agent list (compact)
-        help_text.push_str("**Agents**\n");
-        help_text.push_str("💻 SpiralDev | 📋 SpiralPM | 🔍 SpiralQA\n");
-        help_text.push_str("👑 SpiralKing | ⚖️ SpiralDecide\n");
-        help_text.push_str("🎨 SpiralCreate | 🏃 SpiralCoach\n\n");
+        // Agent list - dynamically loaded from registry
+        // 🏗️ ARCHITECTURE DECISION: Dynamic agent list from registry
+        // Why: Single source of truth for available agents
+        // Alternative: Hardcoded list (rejected: violates DRY)
+        help_text.push_str("**Agent Information**\n");
+        help_text.push_str("Agents register dynamically as they become available.\n");
+        help_text.push_str("Use `!spiral roles list` to see current agents.\n\n");
 
         help_text.push_str("Use `!spiral commands` for full list");
 

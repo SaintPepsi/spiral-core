@@ -1,3 +1,5 @@
+pub mod agent_initializer;
+pub mod agent_registry;
 pub mod commands;
 pub mod intent_classifier;
 pub mod lordgenome_quotes;

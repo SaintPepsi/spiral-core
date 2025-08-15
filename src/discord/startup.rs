@@ -1,4 +1,7 @@
-use super::spiral_constellation_bot::{SpiralConstellationBot, SpiralConstellationBotRunner};
+use super::{
+    agent_initializer::initialize_available_agents,
+    spiral_constellation_bot::{SpiralConstellationBot, SpiralConstellationBotRunner},
+};
 use crate::{
     agents::{AgentOrchestrator, SoftwareDeveloperAgent},
     claude_code::ClaudeCodeClient,
@@ -54,6 +57,17 @@ impl SpiralDiscordStartup {
     /// 🌌 CONSTELLATION BOT: Launch unified bot with persona switching
     async fn start_constellation_bot(&self) -> Result<()> {
         info!("[Discord Startup] Initializing SpiralConstellation bot...");
+
+        // Initialize agent registry
+        debug!("[Discord Startup] Initializing agent registry...");
+        if let Err(e) = initialize_available_agents().await {
+            error!(
+                "[Discord Startup] Failed to initialize agent registry: {}",
+                e
+            );
+            // Continue anyway - roles just won't be available
+        }
+
         debug!("[Discord Startup] Creating developer agent...");
 
         // Create developer agent (currently the only implemented agent)
@@ -82,13 +96,11 @@ impl SpiralDiscordStartup {
             }
         };
 
-        info!("SpiralConstellation bot initialized with personas:");
-        info!("  🚀 SpiralDev - Software Developer");
-        info!("  📋 SpiralPM - Project Manager (coming soon)");
-        info!("  🔍 SpiralQA - Quality Assurance (coming soon)");
-        info!("  🎯 SpiralDecide - Decision Maker (coming soon)");
-        info!("  ✨ SpiralCreate - Creative Innovator (coming soon)");
-        info!("  🧘 SpiralCoach - Process Coach (coming soon)");
+        // 🏗️ ARCHITECTURE DECISION: Dynamic agent listing from registry
+        // Why: Single source of truth for available agents
+        // Alternative: Hardcoded list (rejected: violates DRY, maintenance burden)
+        info!("[Discord Startup] SpiralConstellation bot initialized");
+        info!("[Discord Startup] Agents will register themselves dynamically");
 
         // Create and run bot
         debug!("[Discord Startup] Creating bot runner...");
@@ -199,13 +211,11 @@ pub async fn start_discord_with_orchestrator(
             }
         };
 
-    info!("[Discord Startup] SpiralConstellation bot initialized with orchestrator:");
-    info!("  🚀 SpiralDev - Software development & coding");
-    info!("  📋 SpiralPM - Project management & coordination");
-    info!("  🔍 SpiralQA - Quality assurance & testing");
-    info!("  🎯 SpiralDecide - Decision making & analysis");
-    info!("  ✨ SpiralCreate - Creative solutions & innovation");
-    info!("  🧘 SpiralCoach - Process optimization & guidance");
+    // 🏗️ ARCHITECTURE DECISION: Dynamic agent listing from registry
+    // Why: Single source of truth for available agents
+    // Alternative: Hardcoded list (rejected: violates DRY, maintenance burden)
+    info!("[Discord Startup] SpiralConstellation bot initialized with orchestrator");
+    info!("[Discord Startup] Active agents will register themselves dynamically");
 
     // Create and run bot
     debug!("[Discord Startup] Creating bot runner...");
