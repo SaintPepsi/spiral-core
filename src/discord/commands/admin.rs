@@ -92,8 +92,15 @@ impl AdminCommand {
 
         let all_agents = get_agent_registry().get_all_agents().await;
 
+        // Debug: Also show active agents from bot
+        let active_from_bot = bot.get_active_agents().await;
+
         if all_agents.is_empty() {
-            panel.push_str("• No agents registered\n\n");
+            panel.push_str("• No agents in registry\n");
+            if !active_from_bot.is_empty() {
+                panel.push_str(&format!("• Active in bot: {:?}\n", active_from_bot));
+            }
+            panel.push_str("\n");
         } else {
             for agent in all_agents {
                 // 🏗️ ARCHITECTURE DECISION: Generic active check

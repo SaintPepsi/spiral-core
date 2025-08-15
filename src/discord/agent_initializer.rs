@@ -41,6 +41,16 @@ pub async fn initialize_available_agents() -> Result<(), String> {
     // when they are implemented. For now, we don't register them at all
     // to avoid confusion.
 
-    info!("[AgentInitializer] Agent registration complete");
+    // Verify registration succeeded
+    let registered_count = registry.get_all_agents().await.len();
+    info!(
+        "[AgentInitializer] Agent registration complete. Total registered: {}",
+        registered_count
+    );
+
+    if registered_count == 0 {
+        return Err("Failed to register agents - registry is empty".to_string());
+    }
+
     Ok(())
 }

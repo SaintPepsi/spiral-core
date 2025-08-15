@@ -192,6 +192,16 @@ pub async fn start_discord_with_orchestrator(
     );
     info!("[Discord Startup] 🌌 Starting SpiralConstellation bot with orchestrator integration");
 
+    // Initialize agent registry FIRST
+    debug!("[Discord Startup] Initializing agent registry...");
+    if let Err(e) = initialize_available_agents().await {
+        error!(
+            "[Discord Startup] Failed to initialize agent registry: {}",
+            e
+        );
+        // Continue anyway - roles just won't be available
+    }
+
     // Create constellation bot with orchestrator
     debug!("[Discord Startup] Creating constellation bot with orchestrator...");
     let constellation_bot =
