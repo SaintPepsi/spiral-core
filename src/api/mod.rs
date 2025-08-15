@@ -23,6 +23,53 @@ use tower::ServiceBuilder;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::{error, info, warn};
 
+// 🏗️ ARCHITECTURE DECISION: Service metadata constants
+// Why: Centralized version and service info for consistency
+// Alternative: Build-time env vars (rejected: harder to update)
+// Trade-off: Manual version updates vs automated versioning
+const SERVICE_NAME: &str = "spiral-core";
+const SERVICE_VERSION: &str = "0.1.0";
+
+// 🏗️ ARCHITECTURE DECISION: API route constants for maintainability
+// Why: Single source of truth for route definitions
+// Alternative: Inline strings (rejected: error-prone, hard to refactor)
+// Audit: All routes must be defined here
+const ROUTE_HEALTH: &str = "/health";
+const ROUTE_TASKS: &str = "/tasks";
+const ROUTE_TASK_BY_ID: &str = "/tasks/{task_id}";
+const ROUTE_TASK_ANALYZE: &str = "/tasks/{task_id}/analyze";
+const ROUTE_AGENTS: &str = "/agents";
+const ROUTE_AGENT_BY_TYPE: &str = "/agents/{agent_type}";
+const ROUTE_SYSTEM_STATUS: &str = "/system/status";
+const ROUTE_SYSTEM_METRICS: &str = "/system/metrics";
+const ROUTE_SYSTEM_METRICS_HISTORY: &str = "/system/metrics/history";
+const ROUTE_SYSTEM_HEALTH: &str = "/system/health";
+const ROUTE_CIRCUIT_BREAKERS: &str = "/circuit-breakers";
+const ROUTE_WORKSPACES: &str = "/workspaces";
+
+// 🏗️ ARCHITECTURE DECISION: Error message constants
+// Why: Consistent error messages across API responses
+// Alternative: Inline strings (rejected: inconsistent user experience)
+const ERROR_INTERNAL_SERVER: &str = "Internal server error";
+const ERROR_AGENT_NOT_FOUND: &str = "Agent not found";
+const ERROR_INVALID_CONTENT: &str = "Invalid task content";
+const ERROR_INVALID_CONTEXT_KEY: &str = "Invalid context key";
+const ERROR_INVALID_CONTEXT_VALUE: &str = "Invalid context value";
+
+// ⚡ PERFORMANCE DECISION: Workspace status thresholds
+// Why: Time-based categorization for workspace activity
+// Alternative: Event-based tracking (rejected: more complex)
+// Trade-off: Simple but less precise than actual activity tracking
+const WORKSPACE_ACTIVE_THRESHOLD_SECS: u64 = 300; // 5 minutes
+const WORKSPACE_RECENT_THRESHOLD_SECS: u64 = 3600; // 1 hour
+const WORKSPACE_IDLE_THRESHOLD_SECS: u64 = 86400; // 24 hours
+
+// 🏗️ ARCHITECTURE DECISION: Workspace defaults
+// Why: Consistent fallback values for missing data
+const UNKNOWN_VALUE: &str = "unknown";
+const WORKSPACES_DIR: &str = "claude-workspaces";
+const SESSION_PREFIX: &str = "session-";
+
 #[derive(Clone)]
 pub struct ApiServer {
     config: ApiConfig,
@@ -174,10 +221,20 @@ impl ApiServer {
         Ok(())
     }
 
+    /// 🏗️ ARCHITECTURE DECISION: Layered middleware approach
+    /// Why: Clear separation of concerns for security and observability
+    /// Alternative: Monolithic handler (rejected: poor separation)
+    /// Order matters: Rate limit -> Auth -> Trace -> CORS -> Routes
     pub fn build_router(&self) -> Router {
+        // 🛡️ SECURITY CHECKPOINT: Auth state initialization
+        // Critical: API keys and auth config loaded here
+        // Audit: Verify auth_state contains valid configuration
         let auth_state = create_auth_state(self.config.clone());
 
-        // SECURITY: Configure restrictive CORS policy
+        // 🛡️ SECURITY DECISION: Restrictive CORS policy
+        // Why: Prevent unauthorized cross-origin requests
+        // Alternative: Permissive CORS (rejected: security risk)
+        // Trade-off: May block legitimate clients if not configured
         let cors_layer = CorsLayer::new()
             .allow_origin(
                 self.config
@@ -195,18 +252,18 @@ impl ApiServer {
             .max_age(std::time::Duration::from_secs(3600)); // 1 hour cache
 
         Router::new()
-            .route("/health", get(health_check))
-            .route("/tasks", post(create_task))
-            .route("/tasks/{task_id}", get(get_task_status))
-            .route("/tasks/{task_id}/analyze", post(analyze_task))
-            .route("/agents", get(get_all_agent_statuses))
-            .route("/agents/{agent_type}", get(get_agent_status))
-            .route("/system/status", get(get_system_status))
-            .route("/system/metrics", get(get_system_metrics))
-            .route("/system/metrics/history", get(get_metrics_history))
-            .route("/system/health", get(get_system_health))
-            .route("/circuit-breakers", get(get_circuit_breaker_status))
-            .route("/workspaces", get(get_all_workspaces_status))
+            .route(ROUTE_HEALTH, get(health_check))
+            .route(ROUTE_TASKS, post(create_task))
+            .route(ROUTE_TASK_BY_ID, get(get_task_status))
+            .route(ROUTE_TASK_ANALYZE, post(analyze_task))
+            .route(ROUTE_AGENTS, get(get_all_agent_statuses))
+            .route(ROUTE_AGENT_BY_TYPE, get(get_agent_status))
+            .route(ROUTE_SYSTEM_STATUS, get(get_system_status))
+            .route(ROUTE_SYSTEM_METRICS, get(get_system_metrics))
+            .route(ROUTE_SYSTEM_METRICS_HISTORY, get(get_metrics_history))
+            .route(ROUTE_SYSTEM_HEALTH, get(get_system_health))
+            .route(ROUTE_CIRCUIT_BREAKERS, get(get_circuit_breaker_status))
+            .route(ROUTE_WORKSPACES, get(get_all_workspaces_status))
             .layer(
                 ServiceBuilder::new()
                     .layer(middleware::from_fn(rate_limit_middleware)) // SECURITY: Rate limiting
@@ -218,11 +275,15 @@ impl ApiServer {
     }
 }
 
+/// 🏗️ ARCHITECTURE DECISION: Static health response
+/// Why: Simple health check for load balancers and monitoring
+/// Alternative: Include system metrics (rejected: separate /metrics endpoint)
+/// Trade-off: Less info but faster response and lower overhead
 async fn health_check() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "status": "healthy",
-        "service": "spiral-core",
-        "version": "0.1.0"
+        "service": SERVICE_NAME,
+        "version": SERVICE_VERSION
     }))
 }
 
@@ -252,7 +313,7 @@ async fn create_task(
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: "Invalid task content".to_string(),
+                    error: ERROR_INVALID_CONTENT.to_string(),
                     details: None, // SECURITY: Don't expose validation details
                 }),
             ));
@@ -275,7 +336,7 @@ async fn create_task(
                 return Err((
                     StatusCode::BAD_REQUEST,
                     Json(ErrorResponse {
-                        error: "Invalid context key".to_string(),
+                        error: ERROR_INVALID_CONTEXT_KEY.to_string(),
                         details: None, // SECURITY: Don't expose key validation rules
                     }),
                 ));
@@ -296,7 +357,7 @@ async fn create_task(
                     return Err((
                         StatusCode::BAD_REQUEST,
                         Json(ErrorResponse {
-                            error: "Invalid context value".to_string(),
+                            error: ERROR_INVALID_CONTEXT_VALUE.to_string(),
                             details: None, // SECURITY: Don't expose value validation details
                         }),
                     ));
@@ -330,7 +391,7 @@ async fn create_task(
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: "Internal server error".to_string(),
+                    error: ERROR_INTERNAL_SERVER.to_string(),
                     details: None, // SECURITY: Never expose internal orchestrator errors
                 }),
             ))
@@ -388,7 +449,7 @@ async fn analyze_task(
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: "Internal server error".to_string(),
+                    error: ERROR_INTERNAL_SERVER.to_string(),
                     details: None, // SECURITY: Never expose internal errors
                 }),
             ))
@@ -407,7 +468,7 @@ async fn get_agent_status(
             return Err((
                 StatusCode::NOT_FOUND,
                 Json(ErrorResponse {
-                    error: "Agent not found".to_string(),
+                    error: ERROR_AGENT_NOT_FOUND.to_string(),
                     details: Some(format!("Agent type: {agent_type_str}")),
                 }),
             ));
@@ -418,7 +479,7 @@ async fn get_agent_status(
         None => Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
-                error: "Agent not found".to_string(),
+                error: ERROR_AGENT_NOT_FOUND.to_string(),
                 details: Some(format!("Agent type: {agent_type:?}")),
             }),
         )),
@@ -492,7 +553,12 @@ async fn scan_workspaces_directory(
         message: format!("Failed to get current directory: {e}"),
     })?;
 
-    let workspace_base_dir = current_dir.join("claude-workspaces");
+    // ⚡ PERFORMANCE DECISION: Workspace directory scanning
+    // Why: Simple filesystem-based workspace discovery
+    // Alternative: Database tracking (rejected: added complexity)
+    // Risk: Unbounded directory traversal for large workspace counts
+    // Mitigation: Consider adding depth/count limits
+    let workspace_base_dir = current_dir.join(WORKSPACES_DIR);
 
     if !workspace_base_dir.exists() {
         return Ok(Vec::new());
@@ -517,15 +583,15 @@ async fn scan_workspaces_directory(
         let workspace_name = path
             .file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or("unknown")
+            .unwrap_or(UNKNOWN_VALUE)
             .to_string();
 
         // Extract session ID if this is a session workspace
-        let session_id = if workspace_name.starts_with("session-") {
+        let session_id = if workspace_name.starts_with(SESSION_PREFIX) {
             Some(
                 workspace_name
-                    .strip_prefix("session-")
-                    .unwrap_or("unknown")
+                    .strip_prefix(SESSION_PREFIX)
+                    .unwrap_or(UNKNOWN_VALUE)
                     .to_string(),
             )
         } else {
@@ -543,7 +609,7 @@ async fn scan_workspaces_directory(
                 let datetime: chrono::DateTime<chrono::Utc> = time.into();
                 datetime.to_rfc3339()
             })
-            .unwrap_or_else(|_| "unknown".to_string());
+            .unwrap_or_else(|_| UNKNOWN_VALUE.to_string());
 
         let last_modified = metadata
             .modified()
@@ -551,7 +617,7 @@ async fn scan_workspaces_directory(
                 let datetime: chrono::DateTime<chrono::Utc> = time.into();
                 datetime.to_rfc3339()
             })
-            .unwrap_or_else(|_| "unknown".to_string());
+            .unwrap_or_else(|_| UNKNOWN_VALUE.to_string());
 
         // Calculate directory size and file count
         let (size_bytes, file_count) = calculate_directory_size(&path)?;
@@ -630,14 +696,15 @@ fn determine_workspace_status(
     let age = now.duration_since(created).unwrap_or_default();
     let last_activity = now.duration_since(modified).unwrap_or_default();
 
-    let status = if last_activity.as_secs() < 300 {
-        // 5 minutes
+    // ⚡ PERFORMANCE DECISION: Simple time-based workspace categorization
+    // Why: Quick status determination without complex activity tracking
+    // Alternative: Event-based tracking (rejected: requires persistent state)
+    // Trade-off: Less accurate but much simpler and stateless
+    let status = if last_activity.as_secs() < WORKSPACE_ACTIVE_THRESHOLD_SECS {
         "active"
-    } else if last_activity.as_secs() < 3600 {
-        // 1 hour
+    } else if last_activity.as_secs() < WORKSPACE_RECENT_THRESHOLD_SECS {
         "recent"
-    } else if age.as_secs() < 86400 {
-        // 24 hours
+    } else if age.as_secs() < WORKSPACE_IDLE_THRESHOLD_SECS {
         "idle"
     } else {
         "old"
