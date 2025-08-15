@@ -136,6 +136,7 @@ pub enum UserIntent {
 }
 
 use regex::Regex;
+use std::collections::HashSet;
 
 /// 🌌 SPIRAL CONSTELLATION BOT: Single Discord bot with dynamic agent personas
 /// ARCHITECTURE DECISION: One bot, multiple personalities based on mention context
@@ -147,6 +148,10 @@ pub struct SpiralConstellationBot {
     claude_client: Option<Arc<ClaudeCodeClient>>,
     // Orchestrator mode (full system integration)
     orchestrator: Option<Arc<AgentOrchestrator>>,
+    // 🏗️ ARCHITECTURE DECISION: Dynamic agent tracking
+    // Why: Agents self-register when active, no hardcoding
+    // Alternative: Hardcoded checks (rejected: violates DRY)
+    active_agents: Arc<Mutex<HashSet<String>>>,
     // Common fields
     #[allow(dead_code)]
     start_time: Instant,
@@ -351,6 +356,11 @@ impl SpiralConstellationBot {
         let intent_classifier = Arc::new(IntentClassifier::new());
         let secure_message_handler = Arc::new(SecureMessageHandler::new());
 
+        let active_agents = Arc::new(tokio::sync::Mutex::new(HashSet::new()));
+
+        // Register SpiralDev as active since we have a developer agent
+        active_agents.lock().await.insert("SpiralDev".to_string());
+
         Ok(Self {
             developer_agent: Some(Arc::new(developer_agent)),
             claude_client: Some(Arc::new(claude_client)),
@@ -361,6 +371,7 @@ impl SpiralConstellationBot {
             message_state_manager,
             security_validator,
             intent_classifier,
+            active_agents,
             secure_message_handler,
             update_queue: Arc::new(UpdateQueue::new()),
             approval_manager: Arc::new(ApprovalManager::new()),
@@ -397,6 +408,14 @@ impl SpiralConstellationBot {
         let intent_classifier = Arc::new(IntentClassifier::new());
         let secure_message_handler = Arc::new(SecureMessageHandler::new());
 
+        // Initialize active agents tracking
+        let active_agents = Arc::new(tokio::sync::Mutex::new(HashSet::new()));
+        // Register Orchestrator as active since we have it
+        active_agents
+            .lock()
+            .await
+            .insert("Orchestrator".to_string());
+
         Ok(Self {
             developer_agent: None,
             claude_client: None,
@@ -408,6 +427,7 @@ impl SpiralConstellationBot {
             security_validator,
             intent_classifier,
             secure_message_handler,
+            active_agents,
             update_queue: Arc::new(UpdateQueue::new()),
             approval_manager: Arc::new(ApprovalManager::new()),
             system_lock: Arc::new(SystemLock::new()),
@@ -990,14 +1010,36 @@ impl SpiralConstellationBot {
         self.discord_config.authorized_users.contains(&user_id)
     }
 
-    /// 🤖 AGENT STATUS: Check if developer agent is available
-    pub fn has_developer_agent(&self) -> bool {
-        self.developer_agent.is_some()
+    // Removed hardcoded agent checks - use is_agent_active() instead
+
+    /// 🏗️ ARCHITECTURE DECISION: Dynamic agent management
+    /// Why: Generic methods work with any agent type, no hardcoding
+    /// Alternative: Type-specific methods (rejected: doesn't scale)
+    /// Trade-off: Slightly more verbose but infinitely extensible
+
+    /// Check if a specific agent is currently active
+    pub async fn is_agent_active(&self, agent_name: &str) -> bool {
+        self.active_agents.lock().await.contains(agent_name)
     }
 
-    /// 🤖 AGENT STATUS: Check if orchestrator is available  
-    pub fn has_orchestrator(&self) -> bool {
-        self.orchestrator.is_some()
+    /// Register an agent as active (called when agent is initialized)
+    pub async fn register_active_agent(&self, agent_name: String) {
+        info!(
+            "[SpiralConstellation] Registering active agent: {}",
+            agent_name
+        );
+        self.active_agents.lock().await.insert(agent_name);
+    }
+
+    /// Unregister an agent (called when agent is stopped)
+    pub async fn unregister_agent(&self, agent_name: &str) {
+        info!("[SpiralConstellation] Unregistering agent: {}", agent_name);
+        self.active_agents.lock().await.remove(agent_name);
+    }
+
+    /// Get list of all currently active agents
+    pub async fn get_active_agents(&self) -> Vec<String> {
+        self.active_agents.lock().await.iter().cloned().collect()
     }
 
     /// 🌌 LORDGENOME DESPAIR: Generate contextual despair quotes for unauthorized access

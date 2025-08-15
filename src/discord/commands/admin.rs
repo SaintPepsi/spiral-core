@@ -1,5 +1,7 @@
 use super::CommandHandler;
-use crate::discord::spiral_constellation_bot::SpiralConstellationBot;
+use crate::discord::{
+    agent_registry::get_agent_registry, spiral_constellation_bot::SpiralConstellationBot,
+};
 use serenity::{model::channel::Message, prelude::Context};
 use std::time::Instant;
 
@@ -82,29 +84,35 @@ impl AdminCommand {
             metrics.rate_limited
         ));
 
-        // Agent status - Check actual agent availability
+        // Agent status - Dynamic from registry
+        // 🏗️ ARCHITECTURE DECISION: Use registry for agent list
+        // Why: Single source of truth for available agents
+        // Alternative: Hardcoded list (rejected: violates DRY)
         panel.push_str("**🤖 Agent Status**\n");
 
-        let dev_status = if bot.has_developer_agent() {
-            "🟢 Available"
-        } else {
-            "🔴 Not Available"
-        };
-        panel.push_str(&format!("• SpiralDev: {dev_status}\n"));
+        let all_agents = get_agent_registry().get_all_agents().await;
 
-        let orchestrator_status = if bot.has_orchestrator() {
-            "🟢 Available"
+        if all_agents.is_empty() {
+            panel.push_str("• No agents registered\n\n");
         } else {
-            "🔴 Not Available"
-        };
-        panel.push_str(&format!("• Orchestrator: {orchestrator_status}\n"));
+            for agent in all_agents {
+                // 🏗️ ARCHITECTURE DECISION: Generic active check
+                // Why: No hardcoding of specific agent types
+                // Alternative: Type-specific checks (rejected: doesn't scale)
+                let is_active = bot.is_agent_active(&agent.name).await;
 
-        // Other agents not yet implemented
-        panel.push_str("• SpiralPM: 🔴 Not Implemented\n");
-        panel.push_str("• SpiralQA: 🔴 Not Implemented\n");
-        panel.push_str("• SpiralDecide: 🔴 Not Implemented\n");
-        panel.push_str("• SpiralCreate: 🔴 Not Implemented\n");
-        panel.push_str("• SpiralCoach: 🔴 Not Implemented\n\n");
+                let status = if is_active {
+                    "🟢 Available"
+                } else if agent.available {
+                    "🟡 Registered"
+                } else {
+                    "🔴 Not Available"
+                };
+
+                panel.push_str(&format!("• {}: {}\n", agent.name, status));
+            }
+            panel.push_str("\n");
+        }
 
         // Performance stats - HONEST metrics only
         let generation_time = start_time.elapsed();
