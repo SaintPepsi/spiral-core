@@ -146,21 +146,35 @@ impl SoftwareDeveloperAgent {
             .collect();
 
         // Format output based on the type of request
-        let output = if task.content.starts_with("INFORMATION QUERY:") {
-            // For information queries, just show the explanation/result
+        let output = if task.content.starts_with("INFORMATION QUERY:")
+            || task.content.starts_with("GREETING:")
+            || task.content.starts_with("HELP REQUEST:")
+        {
+            // For information queries, greetings, or help - just show the explanation/result
+            // 🏗️ ARCHITECTURE DECISION: Clean output for non-code responses
+            // Why: Avoids misleading "Generated code" claims for greetings
+            // Alternative: Always show code format (rejected: confusing for users)
             if !code_result.explanation.trim().is_empty() {
                 code_result.explanation.clone()
-            } else {
+            } else if !code_result.code.trim().is_empty() && code_result.code != "No code generated"
+            {
                 code_result.code.clone()
+            } else {
+                "I'm ready to help with your development tasks.".to_string()
             }
-        } else if !code_result.code.trim().is_empty() && code_result.code != "No code generated" {
-            // For actual code generation, use the traditional format
+        } else if !code_result.code.trim().is_empty()
+            && code_result.code != "No code generated"
+            && code_result.code != code_result.explanation
+        {
+            // For actual code generation (when code differs from explanation)
+            // Only show "Generated code" format when we actually generated distinct code
             format!(
                 "Generated {} code:\n\n{}\n\nExplanation:\n{}",
                 code_result.language, code_result.code, code_result.explanation
             )
         } else {
-            // For other requests (analysis, etc.), just show explanation
+            // For other requests where code == explanation or no real code
+            // Just show the response without duplicate formatting
             code_result.explanation.clone()
         };
 
@@ -300,5 +314,75 @@ impl Agent for SoftwareDeveloperAgent {
         self.claude_client
             .analyze_task(&task.content, context)
             .await
+    }
+
+    /// 🏗️ ARCHITECTURE DECISION: Developer-specific capabilities
+    /// Why: Developer agent defines its own supported languages and tools
+    /// Alternative: Hardcoded in enum (rejected: violates SRP)
+    fn capabilities(&self) -> crate::models::AgentCapability {
+        crate::models::AgentCapability {
+            name: "Software Developer".to_string(),
+            description:
+                "Autonomous code generation with language detection and Claude Code integration"
+                    .to_string(),
+            supported_languages: vec![
+                "rust".to_string(),
+                "python".to_string(),
+                "javascript".to_string(),
+                "typescript".to_string(),
+                "go".to_string(),
+                "java".to_string(),
+                "c".to_string(),
+            ],
+            required_tools: vec!["claude_code_client".to_string()],
+        }
+    }
+
+    /// 🏗️ ARCHITECTURE DECISION: Developer-specific output formatting
+    /// Why: Developer agent knows best how to present code output
+    /// Alternative: Generic formatting (rejected: loses context-specific presentation)
+    fn format_response(&self, result: &TaskResult) -> String {
+        const MAX_OUTPUT_RESPONSE: usize = 1500;
+
+        match &result.result {
+            crate::models::TaskExecutionResult::Success {
+                output,
+                files_created,
+                files_modified,
+            } => {
+                // Extract key information and provide concise summary
+                let mut summary = String::new();
+
+                // Check if this is actual code generation or just informational
+                if output.starts_with("Generated") && output.contains("code:") {
+                    // Show full code output
+                    if output.len() > MAX_OUTPUT_RESPONSE {
+                        summary.push_str(&output[..MAX_OUTPUT_RESPONSE]);
+                        summary.push_str("\n\n... (output truncated for Discord limits)");
+                    } else {
+                        summary.push_str(output);
+                    }
+                } else {
+                    // For non-code responses, show concise summary
+                    summary.push_str(output);
+                }
+
+                // Add file information if any
+                if !files_created.is_empty() || !files_modified.is_empty() {
+                    summary.push_str("\n\n**📁 Files:**\n");
+                    if !files_created.is_empty() {
+                        summary.push_str(&format!("• Created: {} files\n", files_created.len()));
+                    }
+                    if !files_modified.is_empty() {
+                        summary.push_str(&format!("• Modified: {} files\n", files_modified.len()));
+                    }
+                }
+
+                summary
+            }
+            crate::models::TaskExecutionResult::Failure { error, .. } => {
+                format!("❌ Development task failed: {error}")
+            }
+        }
     }
 }

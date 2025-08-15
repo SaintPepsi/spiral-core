@@ -32,7 +32,7 @@ pub mod security {
 pub mod errors {
     pub const MESSAGE_TOO_LONG: &str =
         "❌ Message too long for processing. Please keep requests under 4000 characters.";
-    pub const UNKNOWN_AGENT: &str = "❓ I'm not sure which agent you'd like to talk to. Try mentioning @SpiralDev, @SpiralPM, @SpiralQA, @SpiralKing, or use a role mention!";
+    pub const UNKNOWN_AGENT: &str = "❓ I'm not sure which agent you'd like to talk to. Try mentioning @SpiralDev or @SpiralPM!";
     pub const SEND_FAILED: &str = "Failed to send message";
     pub const ROLE_CREATION_FAILED: &str = "❌ Failed to create roles";
     pub const ROLE_ASSIGNMENT_FAILED: &str = "❌ Failed to assign role";
@@ -41,7 +41,8 @@ pub mod errors {
     pub const NOT_IN_SERVER_ASSIGNMENT: &str = "❌ Role assignment only works in servers, not DMs.";
     pub const INVALID_USER_FORMAT: &str = "❌ Invalid user ID or mention format.";
     pub const ROLE_NOT_FOUND: &str = "❓ Unknown role";
-    pub const ROLE_NOT_FOUND_DETAILED: &str = "❓ Unknown role: `{}`. Available: SpiralDev, SpiralPM, SpiralQA, SpiralDecide, SpiralCreate, SpiralCoach, SpiralKing";
+    pub const ROLE_NOT_FOUND_DETAILED: &str =
+        "❓ Unknown role: `{}`. Available: SpiralDev, SpiralPM";
 }
 
 /// Success messages

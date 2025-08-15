@@ -19,11 +19,7 @@ mod tests {
         let agent_types = vec![
             AgentType::SoftwareDeveloper,
             AgentType::ProjectManager,
-            AgentType::QualityAssurance,
-            AgentType::DecisionMaker,
-            AgentType::CreativeInnovator,
-            AgentType::ProcessCoach,
-            AgentType::SpiralKing,
+            // Only test implemented agents
         ];
 
         for agent_type in agent_types {

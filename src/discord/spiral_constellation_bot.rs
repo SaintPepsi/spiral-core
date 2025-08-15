@@ -34,31 +34,23 @@ use serenity::{
 };
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
 /// Agent role name mappings for detection
 const AGENT_ROLE_MAPPINGS: &[(&str, AgentType)] = &[
     ("SpiralDev", AgentType::SoftwareDeveloper),
     ("SpiralPM", AgentType::ProjectManager),
-    ("SpiralQA", AgentType::QualityAssurance),
-    ("SpiralDecide", AgentType::DecisionMaker),
-    ("SpiralCreate", AgentType::CreativeInnovator),
-    ("SpiralCoach", AgentType::ProcessCoach),
-    ("SpiralKing", AgentType::SpiralKing),
+    // Only include implemented agents
 ];
 
 /// Agent mention keyword mappings for text detection
 const AGENT_MENTION_MAPPINGS: &[(&[&str], AgentType)] = &[
     (&["dev", "developer", "code"], AgentType::SoftwareDeveloper),
     (&["pm", "manager", "project"], AgentType::ProjectManager),
-    (&["qa", "quality", "test"], AgentType::QualityAssurance),
-    (&["decide", "decision"], AgentType::DecisionMaker),
-    (
-        &["create", "creative", "innovate"],
-        AgentType::CreativeInnovator,
-    ),
-    (&["coach", "process"], AgentType::ProcessCoach),
-    (&["king", "spiralking", "lordgenome"], AgentType::SpiralKing),
+    // 🏗️ ARCHITECTURE DECISION: Only map to implemented agents
+    // Why: Avoid confusion with unavailable agents
+    // Alternative: Keep all mappings (rejected: misleading to users)
 ];
 
 /// 🔒 SECURITY EVENT: Structured logging for security-related events
@@ -136,7 +128,7 @@ pub enum UserIntent {
 }
 
 use regex::Regex;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// 🌌 SPIRAL CONSTELLATION BOT: Single Discord bot with dynamic agent personas
 /// ARCHITECTURE DECISION: One bot, multiple personalities based on mention context
@@ -146,11 +138,13 @@ pub struct SpiralConstellationBot {
     // Direct mode (standalone Discord bot)
     developer_agent: Option<Arc<SoftwareDeveloperAgent>>,
     claude_client: Option<Arc<ClaudeCodeClient>>,
+    // 🏗️ ARCHITECTURE DECISION: Dynamic agent registry
+    // Why: Look up agents by type without hardcoding
+    // Alternative: Individual agent fields (rejected: tight coupling)
+    agent_registry: Arc<std::sync::Mutex<HashMap<AgentType, Arc<dyn Agent>>>>,
     // Orchestrator mode (full system integration)
     orchestrator: Option<Arc<AgentOrchestrator>>,
-    // 🏗️ ARCHITECTURE DECISION: Dynamic agent tracking
-    // Why: Agents self-register when active, no hardcoding
-    // Alternative: Hardcoded checks (rejected: violates DRY)
+    // Agent availability tracking
     active_agents: Arc<Mutex<HashSet<String>>>,
     // Common fields
     #[allow(dead_code)]
@@ -317,11 +311,7 @@ impl AgentPersona {
         match agent_type {
             AgentType::SoftwareDeveloper => &AgentPersona::DEVELOPER,
             AgentType::ProjectManager => &AgentPersona::PROJECT_MANAGER,
-            AgentType::QualityAssurance => &AgentPersona::QUALITY_ASSURANCE,
-            AgentType::DecisionMaker => &AgentPersona::DECISION_MAKER,
-            AgentType::CreativeInnovator => &AgentPersona::CREATIVE_INNOVATOR,
-            AgentType::ProcessCoach => &AgentPersona::PROCESS_COACH,
-            AgentType::SpiralKing => &AgentPersona::SPIRAL_KING,
+            // Only implemented agents - no unused personas
         }
     }
 
@@ -361,9 +351,20 @@ impl SpiralConstellationBot {
         // Register SpiralDev as active since we have a developer agent
         active_agents.lock().await.insert("SpiralDev".to_string());
 
+        // 🏗️ ARCHITECTURE DECISION: Build agent registry
+        // Why: Dynamic agent lookup by type
+        // Alternative: Hardcoded if statements (rejected: tight coupling)
+        let dev_agent_arc = Arc::new(developer_agent);
+        let mut agent_registry = HashMap::new();
+        agent_registry.insert(
+            AgentType::SoftwareDeveloper,
+            dev_agent_arc.clone() as Arc<dyn Agent>,
+        );
+
         Ok(Self {
-            developer_agent: Some(Arc::new(developer_agent)),
+            developer_agent: Some(dev_agent_arc.clone()),
             claude_client: Some(Arc::new(claude_client)),
+            agent_registry: Arc::new(std::sync::Mutex::new(agent_registry)),
             orchestrator: None,
             start_time: Instant::now(),
             stats: Arc::new(tokio::sync::Mutex::new(BotStats::default())),
@@ -419,6 +420,7 @@ impl SpiralConstellationBot {
         Ok(Self {
             developer_agent: None,
             claude_client: None,
+            agent_registry: Arc::new(std::sync::Mutex::new(HashMap::new())), // Orchestrator has its own agents
             orchestrator: Some(orchestrator),
             start_time: Instant::now(),
             stats: Arc::new(tokio::sync::Mutex::new(BotStats::default())),
@@ -661,123 +663,100 @@ impl SpiralConstellationBot {
     }
 
     /// 🎭 PERSONA RESPONSE: Format response in the agent's persona style
+    /// 🏗️ ARCHITECTURE DECISION: Delegate formatting to agents
+    /// Why: Each agent knows best how to format its output
+    /// Alternative: Centralized formatting (rejected: violates SOLID)
     fn format_persona_response(
         &self,
         agent_type: &AgentType,
         result: &crate::models::TaskResult,
     ) -> String {
         let persona = AgentPersona::for_agent_type(agent_type);
+        let mut response = String::new();
 
+        // Persona header
+        response.push_str(&format!("{} **{}**\n", persona.emoji, persona.name));
+
+        // Completion status
         match &result.result {
             crate::models::TaskExecutionResult::Success {
                 output,
                 files_created,
                 files_modified,
             } => {
-                let mut response = String::new();
+                // Dynamic completion message
+                let completion_message =
+                    if output.starts_with("Generated") && output.contains("code:") {
+                        persona.completion_style
+                    } else if !files_created.is_empty() || !files_modified.is_empty() {
+                        "✅ Task completed successfully!"
+                    } else {
+                        "✅ Completed!"
+                    };
+                response.push_str(&format!("{completion_message}\n\n"));
 
-                // Persona-specific header
-                response.push_str(&format!("{} **{}**\n", persona.emoji, persona.name));
-                response.push_str(&format!("{}\n\n", persona.completion_style));
+                // 🏗️ ARCHITECTURE DECISION: Use agent registry for formatting
+                // Why: Dynamic agent lookup without hardcoding
+                // Alternative: Switch on agent type (rejected: tight coupling)
+                let formatted_output = {
+                    let registry = self.agent_registry.lock().unwrap();
+                    if let Some(agent) = registry.get(agent_type) {
+                        // Use the agent's own formatting
+                        agent.format_response(result)
+                    } else {
+                        // Fallback to generic formatting if agent not in registry
+                        self.generic_format_output(output, files_created, files_modified)
+                    }
+                };
 
-                // For SoftwareDeveloper, provide concise summary instead of full output
-                match agent_type {
-                    AgentType::SoftwareDeveloper => {
-                        // Extract key information and provide concise summary
-                        let summary =
-                            self.extract_dev_summary(output, files_created, files_modified);
-                        response.push_str(&summary);
-                    }
-                    AgentType::ProjectManager => {
-                        response.push_str("**📊 Strategic Analysis:**\n");
-                        if output.len() > MAX_OUTPUT_RESPONSE {
-                            response.push_str(&output[..MAX_OUTPUT_RESPONSE]);
-                            response.push_str("\n\n... (output truncated for Discord limits)");
-                        } else {
-                            response.push_str(output);
-                        }
-                    }
-                    AgentType::QualityAssurance => {
-                        response.push_str("**🔍 Quality Assessment:**\n");
-                        if output.len() > MAX_OUTPUT_RESPONSE {
-                            response.push_str(&output[..MAX_OUTPUT_RESPONSE]);
-                            response.push_str("\n\n... (output truncated for Discord limits)");
-                        } else {
-                            response.push_str(output);
-                        }
-                    }
-                    _ => {
-                        response.push_str("**📋 Analysis Results:**\n");
-                        if output.len() > MAX_OUTPUT_RESPONSE {
-                            response.push_str(&output[..MAX_OUTPUT_RESPONSE]);
-                            response.push_str("\n\n... (output truncated for Discord limits)");
-                        } else {
-                            response.push_str(output);
-                        }
-                    }
-                }
-
-                // For non-dev agents, show file summaries
-                if *agent_type != AgentType::SoftwareDeveloper {
-                    if !files_created.is_empty() {
-                        response.push_str(&format!(
-                            "\n\n📁 **Files Created:** {}",
-                            files_created.len()
-                        ));
-                        for file in files_created.iter().take(3) {
-                            response.push_str(&format!("\n• `{file}`"));
-                        }
-                        if files_created.len() > 3 {
-                            response
-                                .push_str(&format!("\n• ... and {} more", files_created.len() - 3));
-                        }
-                    }
-
-                    if !files_modified.is_empty() {
-                        response.push_str(&format!(
-                            "\n\n✏️ **Files Modified:** {}",
-                            files_modified.len()
-                        ));
-                        for file in files_modified.iter().take(3) {
-                            response.push_str(&format!("\n• `{file}`"));
-                        }
-                        if files_modified.len() > 3 {
-                            response.push_str(&format!(
-                                "\n• ... and {} more",
-                                files_modified.len() - 3
-                            ));
-                        }
-                    }
-                }
-
-                // Persona-specific footer
-                response.push_str(&format!("\n\n*—{} @ SpiralConstellation*", persona.name));
-
-                response
+                response.push_str(&formatted_output);
             }
-            crate::models::TaskExecutionResult::Failure {
-                error,
-                partial_output,
-            } => {
-                let mut response = String::new();
-                response.push_str(&format!("{} **{}**\n", persona.emoji, persona.name));
-                response.push_str(&format!("{} {}", persona.error_style, error));
-
-                if let Some(partial) = partial_output {
-                    response.push_str("\n\n**Partial Results:**\n");
-                    response.push_str(partial);
-                }
-
-                response.push_str(&format!("\n\n*—{} @ SpiralConstellation*", persona.name));
-                response
+            crate::models::TaskExecutionResult::Failure { error, .. } => {
+                response.push_str(&format!("{} {error}", persona.error_style));
             }
         }
+
+        // Persona-specific footer
+        response.push_str(&format!("\n\n*—{} @ SpiralConstellation*", persona.name));
+
+        response
     }
 
     /// 🧹 CLEAN MESSAGE: Remove mentions and extract clean content
     fn clean_message_content(&self, content: &str) -> String {
         let cleaned = self.mention_regex.replace_all(content, "").to_string();
         cleaned.trim().to_string()
+    }
+
+    /// 📋 GENERIC OUTPUT FORMATTING: Format output without agent-specific logic
+    fn generic_format_output(
+        &self,
+        output: &str,
+        files_created: &[String],
+        files_modified: &[String],
+    ) -> String {
+        let mut response = String::new();
+
+        // Add output with truncation if needed
+        if output.len() > MAX_OUTPUT_RESPONSE {
+            response.push_str(&output[..MAX_OUTPUT_RESPONSE]);
+            response.push_str("\n\n... (output truncated for Discord limits)");
+        } else {
+            response.push_str(output);
+        }
+
+        // Add file information if any
+        if !files_created.is_empty() || !files_modified.is_empty() {
+            response.push_str("\n\n**📁 Files:**\n");
+            if !files_created.is_empty() {
+                response.push_str(&format!("• Created: {} files\n", files_created.len()));
+            }
+            if !files_modified.is_empty() {
+                response.push_str(&format!("• Modified: {} files\n", files_modified.len()));
+            }
+        }
+
+        response
     }
 
     /// 📋 CONCISE DEV SUMMARY: Extract key information for developer responses
@@ -1016,18 +995,32 @@ impl SpiralConstellationBot {
     /// Why: Generic methods work with any agent type, no hardcoding
     /// Alternative: Type-specific methods (rejected: doesn't scale)
     /// Trade-off: Slightly more verbose but infinitely extensible
-
+    ///
     /// Check if a specific agent is currently active
     pub async fn is_agent_active(&self, agent_name: &str) -> bool {
         self.active_agents.lock().await.contains(agent_name)
     }
 
     /// Register an agent as active (called when agent is initialized)
-    pub async fn register_active_agent(&self, agent_name: String) {
+    /// 🏗️ ARCHITECTURE DECISION: Verify Discord role exists when registering
+    /// Why: Ensure agents can be mentioned in Discord when they're active
+    /// Alternative: Create roles on demand (rejected: needs bot permissions)
+    pub async fn register_active_agent(&self, agent_name: String, ctx: Option<&Context>) {
         info!(
             "[SpiralConstellation] Registering active agent: {}",
             agent_name
         );
+
+        // Check if Discord role exists for this agent (if context provided)
+        // Note: We can't check specific guilds without guild_id in config
+        // This would need to be done in the ready event or when handling messages
+        if let Some(_ctx) = ctx {
+            info!(
+                "[SpiralConstellation] Agent {} registered. Discord role check will be performed in ready event.",
+                agent_name
+            );
+        }
+
         self.active_agents.lock().await.insert(agent_name);
     }
 
@@ -1076,7 +1069,7 @@ impl SpiralConstellationBot {
         self.register_error_recovery_handlers(manager).await;
 
         // Register dashboard refresh handler
-        self.register_dashboard_handlers(manager).await;
+        // Dashboard refresh handler removed - not working properly
 
         info!(
             "[SpiralConstellation] Reaction handlers registered: {:?}",
@@ -1277,61 +1270,7 @@ impl SpiralConstellationBot {
             .await;
     }
 
-    /// Register handlers for dashboard refresh
-    async fn register_dashboard_handlers(
-        &self,
-        manager: &reaction_handler::ReactionHandlerManager,
-    ) {
-        // Note: We use a different approach here since we can't easily access the bot instance
-        // from within the closure. The refresh will simply add a timestamp to show it was refreshed.
-        manager
-            .register_simple(
-                messages::emojis::RETRY.to_string(),  // Using the 🔄 emoji  
-                "Refresh admin dashboard",
-                true,  // Requires auth
-                |ctx, reaction, _user| {
-                    Box::pin(async move {
-                        // Get the original message
-                        let mut message = reaction
-                            .message(&ctx.http)
-                            .await
-                            .map_err(|e| format!("Failed to get message: {e}"))?;
-
-                        // Check if this is an admin dashboard message
-                        if !message.content.contains(messages::patterns::ADMIN_DASHBOARD_TITLE) {
-                            return Ok(()); // Not a dashboard message, let other handlers process it
-                        }
-
-                        // For a real refresh, we'd regenerate the dashboard here
-                        // Since we can't easily access bot stats from this closure,
-                        // we'll add a timestamp to show the refresh happened
-                        let timestamp = chrono::Utc::now().timestamp();
-                        let refresh_note = format!(
-                            "\n\n*🔄 Last refreshed: <t:{timestamp}:R>*\n*React with 🔄 to refresh dashboard*"
-                        );
-
-                        // Remove any existing refresh note and add new one
-                        let mut updated_content = message.content.clone();
-                        if let Some(pos) = updated_content.find("*🔄 Last refreshed:") {
-                            updated_content.truncate(pos);
-                        } else if let Some(pos) = updated_content.find("*React with 🔄") {
-                            updated_content.truncate(pos);
-                        }
-                        updated_content.push_str(&refresh_note);
-
-                        // Edit the message with updated content
-                        message
-                            .edit(&ctx.http, serenity::builder::EditMessage::new()
-                                .content(updated_content))
-                            .await
-                            .map_err(|e| format!("Failed to update dashboard: {e}"))?;
-
-                        Ok(())
-                    })
-                },
-            )
-            .await;
-    }
+    // Dashboard refresh handler removed - not working properly
 
     /// Handle approval reactions
     async fn handle_approval_reaction(
@@ -1681,16 +1620,7 @@ impl EventHandler for ConstellationBotHandler {
                         }
                     }
 
-                    // If it's an admin dashboard message, add refresh emoji
-                    if command_response.contains(messages::patterns::ADMIN_DASHBOARD_TITLE) {
-                        if let Err(e) = response_msg.react(&ctx.http, emojis::RETRY).await {
-                            warn!("[SpiralConstellation] Failed to add refresh reaction to admin dashboard: {}", e);
-                        } else {
-                            info!(
-                                "[SpiralConstellation] Added refresh reaction to admin dashboard"
-                            );
-                        }
-                    }
+                    // Dashboard refresh reaction removed - not working properly
                 }
                 Err(e) => {
                     let error_str = e.to_string();
@@ -1884,6 +1814,38 @@ impl EventHandler for ConstellationBotHandler {
             warn!("[SpiralConstellation] Failed to send intent response");
             None
         };
+
+        // 🏗️ ARCHITECTURE DECISION: Check agent availability before execution
+        // Why: Prevent confusing responses when agent is registered but not available
+        // Alternative: Always fallback to direct mode (rejected: misleading to users)
+        // Check if agent is actually available (not just registered)
+        let is_agent_available = self.bot.active_agents.lock().await.contains(persona.name);
+
+        if !is_agent_available && self.bot.orchestrator.is_some() {
+            // Agent is registered but not available
+            let unavailable_response = format!(
+                "{} **{}**\n❌ **Not Available**\n\nSorry, {} is not currently available. The agent is registered in the system but not actively running.\n\nPlease try again later or use a different agent.",
+                persona.emoji,
+                persona.name,
+                persona.name
+            );
+
+            if let Some(ref mut msg_ref) = intent_msg {
+                let _ = msg_ref
+                    .edit(
+                        &ctx.http,
+                        serenity::builder::EditMessage::new().content(unavailable_response),
+                    )
+                    .await;
+            } else {
+                let _ = msg.reply(&ctx.http, unavailable_response).await;
+            }
+
+            // Remove eyes reaction since we can't process
+            // Note: We can't easily get bot's user ID here, so just leave the reaction
+
+            return;
+        }
 
         // Step 4: Create and execute task based on agent type and intent
         let task = self.bot.create_task_with_persona(
@@ -2226,6 +2188,34 @@ impl EventHandler for ConstellationBotHandler {
         info!("[Event] Available personas: SpiralDev, SpiralPM, SpiralQA, SpiralDecide, SpiralCreate, SpiralCoach");
         info!("[Event] Role support: Discord roles can be created with '!spiral setup roles'");
         info!("[Event] Usage: @SpiralDev, role mentions, or !spiral join <role>");
+
+        // 🏗️ ARCHITECTURE DECISION: Verify Discord roles for active agents on startup
+        // Why: Ensure agents can be properly mentioned when they're active
+        // Alternative: Lazy check on first mention (rejected: delays first interaction)
+        // Check Discord roles for active agents
+        let active_agents = self.bot.get_active_agents().await;
+        if !active_agents.is_empty() && !ready.guilds.is_empty() {
+            info!(
+                "[Event] Checking Discord roles for active agents: {:?}",
+                active_agents
+            );
+
+            // Use the first available guild for role checking
+            let guild_id = ready.guilds[0].id;
+            for agent_name in active_agents {
+                if let Some(role) = self.bot.find_agent_role(&ctx, guild_id, &agent_name).await {
+                    info!(
+                        "[Event] ✅ Discord role exists for {}: {} (ID: {})",
+                        agent_name, role.name, role.id
+                    );
+                } else {
+                    warn!(
+                        "[Event] ⚠️ No Discord role found for active agent: {}. Consider running '!spiral setup roles'",
+                        agent_name
+                    );
+                }
+            }
+        }
 
         // Set bot activity status to show the commands
         use serenity::all::ActivityData;

@@ -366,6 +366,47 @@ impl Agent for ProjectManagerAgent {
             raw_analysis: format!("Project Manager analysis for task: {}", task.id),
         })
     }
+
+    /// 🏗️ ARCHITECTURE DECISION: PM-specific capabilities
+    /// Why: Project Manager defines its own capabilities and requirements
+    /// Alternative: Hardcoded in enum (rejected: violates SRP)
+    fn capabilities(&self) -> crate::models::AgentCapability {
+        crate::models::AgentCapability {
+            name: "Project Manager".to_string(),
+            description: "Strategic analysis and task coordination".to_string(),
+            supported_languages: vec![], // PM doesn't generate code directly
+            required_tools: vec![
+                "claude_code_client".to_string(),
+                "github_client".to_string(),
+            ],
+        }
+    }
+
+    /// 🏗️ ARCHITECTURE DECISION: PM-specific strategic formatting
+    /// Why: Project Manager formats output for strategic clarity
+    /// Alternative: Generic formatting (rejected: loses strategic context)
+    fn format_response(&self, result: &TaskResult) -> String {
+        const MAX_OUTPUT_RESPONSE: usize = 1500;
+
+        match &result.result {
+            crate::models::TaskExecutionResult::Success { output, .. } => {
+                let mut response = String::new();
+                response.push_str("**📊 Strategic Analysis:**\n");
+
+                if output.len() > MAX_OUTPUT_RESPONSE {
+                    response.push_str(&output[..MAX_OUTPUT_RESPONSE]);
+                    response.push_str("\n\n... (output truncated for Discord limits)");
+                } else {
+                    response.push_str(output);
+                }
+
+                response
+            }
+            crate::models::TaskExecutionResult::Failure { error, .. } => {
+                format!("❌ Strategic planning failed: {error}")
+            }
+        }
+    }
 }
 
 /// Project plan structure

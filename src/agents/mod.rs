@@ -25,6 +25,32 @@ pub trait Agent: Send + Sync {
     async fn can_handle(&self, task: &Task) -> bool;
     async fn execute(&self, task: Task) -> Result<TaskResult>;
     async fn analyze_task(&self, task: &Task) -> Result<TaskAnalysis>;
+
+    /// 🏗️ ARCHITECTURE DECISION: Agent-specific capabilities
+    /// Why: Each agent knows its own capabilities best
+    /// Alternative: Centralized in enum (rejected: violates SRP, creates coupling)
+    fn capabilities(&self) -> crate::models::AgentCapability {
+        // Default implementation - agents should override
+        crate::models::AgentCapability {
+            name: self.name(),
+            description: self.description(),
+            supported_languages: vec![],
+            required_tools: vec![],
+        }
+    }
+
+    /// 🏗️ ARCHITECTURE DECISION: Agent-specific response formatting
+    /// Why: Each agent type handles its own output formatting
+    /// Alternative: Centralized formatting (rejected: violates SOLID principles)
+    fn format_response(&self, result: &TaskResult) -> String {
+        // Default implementation - agents can override
+        match &result.result {
+            crate::models::TaskExecutionResult::Success { output, .. } => output.clone(),
+            crate::models::TaskExecutionResult::Failure { error, .. } => {
+                format!("Task failed: {error}")
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

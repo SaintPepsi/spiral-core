@@ -23,15 +23,14 @@ pub struct Task {
 ///
 /// Each agent type has specific capabilities and responsibilities
 /// within the orchestration system.
+/// 🏗️ ARCHITECTURE DECISION: Only implemented agent types
+/// Why: Remove unused complexity, follow YAGNI principle
+/// Alternative: Keep all planned types (rejected: premature abstraction)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum AgentType {
     SoftwareDeveloper,
     ProjectManager,
-    QualityAssurance,
-    DecisionMaker,
-    CreativeInnovator,
-    ProcessCoach,
-    SpiralKing,
+    // Future agents can be added when actually implemented
 }
 
 /// Task priority levels
@@ -131,11 +130,7 @@ impl FromStr for AgentType {
         match s {
             "SoftwareDeveloper" => Ok(AgentType::SoftwareDeveloper),
             "ProjectManager" => Ok(AgentType::ProjectManager),
-            "QualityAssurance" => Ok(AgentType::QualityAssurance),
-            "DecisionMaker" => Ok(AgentType::DecisionMaker),
-            "CreativeInnovator" => Ok(AgentType::CreativeInnovator),
-            "ProcessCoach" => Ok(AgentType::ProcessCoach),
-            "SpiralKing" => Ok(AgentType::SpiralKing),
+            // Only implemented agents
             _ => Err(format!("Unknown agent type: {s}")),
         }
     }
@@ -146,68 +141,13 @@ impl AgentType {
         match mention.to_lowercase().as_str() {
             "dev" | "developer" | "code" => Some(AgentType::SoftwareDeveloper),
             "pm" | "manager" | "project" => Some(AgentType::ProjectManager),
-            "qa" | "quality" | "test" => Some(AgentType::QualityAssurance),
-            "decision" | "decide" => Some(AgentType::DecisionMaker),
-            "creative" | "innovate" => Some(AgentType::CreativeInnovator),
-            "coach" | "process" => Some(AgentType::ProcessCoach),
-            "king" | "spiralking" | "lordgenome" => Some(AgentType::SpiralKing),
+            // Only implemented agents
             _ => None,
         }
     }
 
-    pub fn capabilities(&self) -> AgentCapability {
-        match self {
-            AgentType::SoftwareDeveloper => AgentCapability {
-                name: "Software Developer".to_string(),
-                description:
-                    "Autonomous code generation with language detection and Claude Code integration"
-                        .to_string(),
-                supported_languages: vec![
-                    "rust".to_string(),
-                    "python".to_string(),
-                    "javascript".to_string(),
-                    "typescript".to_string(),
-                    "go".to_string(),
-                    "java".to_string(),
-                    "cpp".to_string(),
-                    "c".to_string(),
-                ],
-                required_tools: vec!["claude_code_client".to_string()],
-            },
-            AgentType::ProjectManager => AgentCapability {
-                name: "Project Manager".to_string(),
-                description: "Strategic analysis and task coordination".to_string(),
-                supported_languages: vec![],
-                required_tools: vec![
-                    "claude_code_client".to_string(),
-                    "github_client".to_string(),
-                ],
-            },
-            AgentType::SpiralKing => AgentCapability {
-                name: "The Immortal Spiral King".to_string(),
-                description: "Comprehensive code review with deep architectural analysis and long-term system stability assessment from a millennial perspective".to_string(),
-                supported_languages: vec![
-                    "rust".to_string(),
-                    "python".to_string(),
-                    "javascript".to_string(),
-                    "typescript".to_string(),
-                    "go".to_string(),
-                    "java".to_string(),
-                    "c".to_string(),
-                    "cpp".to_string(),
-                ],
-                required_tools: vec![
-                    "claude_code_client".to_string(),
-                    "static_analysis".to_string(),
-                    "architectural_review".to_string(),
-                ],
-            },
-            _ => AgentCapability {
-                name: format!("{self:?}"),
-                description: "Agent capability not yet implemented".to_string(),
-                supported_languages: vec![],
-                required_tools: vec![],
-            },
-        }
-    }
+    // 🏗️ ARCHITECTURE DECISION: Removed capabilities()
+    // Why: Capabilities belong to agent implementations, not enum
+    // Alternative: Keep here (rejected: violates SRP, creates coupling)
+    // Agents now implement capabilities() in their own structs via Agent trait
 }

@@ -98,9 +98,9 @@ impl AdminCommand {
         if all_agents.is_empty() {
             panel.push_str("• No agents in registry\n");
             if !active_from_bot.is_empty() {
-                panel.push_str(&format!("• Active in bot: {:?}\n", active_from_bot));
+                panel.push_str(&format!("• Active in bot: {active_from_bot:?}\n"));
             }
-            panel.push_str("\n");
+            panel.push('\n');
         } else {
             for agent in all_agents {
                 // 🏗️ ARCHITECTURE DECISION: Generic active check
@@ -118,7 +118,7 @@ impl AdminCommand {
 
                 panel.push_str(&format!("• {}: {}\n", agent.name, status));
             }
-            panel.push_str("\n");
+            panel.push('\n');
         }
 
         // Performance stats - HONEST metrics only
@@ -155,9 +155,7 @@ impl AdminCommand {
         panel.push_str("• `!spiral security stats` - View detailed security metrics\n");
         panel.push_str("• `!spiral security reset` - Reset security metrics\n");
         panel.push_str("• `!spiral debug <message>` - Debug specific issues\n");
-        panel.push_str("• `!spiral ratelimit @user` - Check user rate limits\n\n");
-
-        panel.push_str("*React with 🔄 to refresh dashboard*");
+        panel.push_str("• `!spiral ratelimit @user` - Check user rate limits\n");
 
         panel
     }

@@ -114,11 +114,15 @@ For standard Rust development commands and practices, see [Coding Standards](doc
 format!("User {user_id} has {count} items")
 println!("Error: {error}")
 log::info!("Processing file: {file_path}")
+response.push_str(&format!("{completion_message}\n\n"))
+write!(f, "Task {task_id} status: {status}")
 
 // ❌ BAD - Positional arguments (causes Clippy warnings)
 format!("User {} has {} items", user_id, count)
 println!("Error: {}", error)
 log::info!("Processing file: {}", file_path)
+response.push_str(&format!("{}\n\n", completion_message))
+write!(f, "Task {} status: {}", task_id, status)
 ```
 
 **Exception**: Use positional when you need special formatting:
@@ -126,7 +130,15 @@ log::info!("Processing file: {}", file_path)
 ```rust
 format!("{:.2}", value)  // Format with 2 decimal places
 format!("{:?}", debug_struct)  // Debug formatting
+format!("{:>10}", padded)  // Right-aligned with padding
 ```
+
+**Why**:
+
+- More readable - variable names provide context
+- Prevents Clippy `uninlined_format_args` warnings
+- Modern Rust idiom since Rust 1.58
+- Reduces bugs from argument order mistakes
 
 ### Self-Update System
 
@@ -220,6 +232,7 @@ The Spiral Core system follows strict architectural principles to ensure maintai
 
 - **SOLID Principles**: Single Responsibility, Open-Closed, Liskov Substitution, Interface Segregation, Dependency Inversion
 - **DRY Principle**: Don't Repeat Yourself - single source of truth for all knowledge
+- **YAGNI Principle**: You Aren't Gonna Need It - don't add functionality until it's actually needed
 - **Deliberate Decoupling**: Code naturally couples - fight this with inline logic, behavior passing, and explicit dependencies
 - **SID Naming**: Short, Intuitive, Descriptive naming conventions
 - **Early Return Pattern**: Use negative conditions with early returns for all validation and error handling
@@ -228,6 +241,45 @@ The Spiral Core system follows strict architectural principles to ensure maintai
 - **No Deadline Compromise**: Deadlines are the anti-spiral abyss - we work by priority: Quality > Urgency > Importance to Business. Never compromise code quality for artificial time constraints
 - **Consensus-Driven Continuous Improvement**: Incremental, organic evolution of the codebase, agents, and system through collaborative consensus rather than disruptive changes or competing proposals
 - **Aggressive Proximity Audit Documentation**: Critical decisions, security controls, and audit points documented directly in code where they matter
+
+### YAGNI (You Aren't Gonna Need It) Standard
+
+**Philosophy**: Resist the temptation to add features, abstractions, or complexity "just in case" they might be needed later.
+
+**Key Principles**:
+
+- **Build for today's requirements**: Only implement what's actually needed now
+- **Delete unused code**: Remove rather than comment out unused functionality
+- **Avoid premature abstraction**: Don't create generic solutions for single use cases
+- **Resist pattern anticipation**: Don't implement patterns you think you'll need
+
+**Examples**:
+
+```rust
+// ❌ BAD - Creating unused agent types "for the future"
+enum AgentType {
+    SoftwareDeveloper,  // ✅ Implemented
+    ProjectManager,     // ✅ Implemented
+    QualityAssurance,   // ❌ Not implemented
+    DecisionMaker,      // ❌ Not implemented
+    CreativeInnovator,  // ❌ Not implemented
+}
+
+// ✅ GOOD - Only what's implemented
+enum AgentType {
+    SoftwareDeveloper,
+    ProjectManager,
+    // Add more when actually implemented
+}
+```
+
+**Anti-Patterns to Avoid**:
+
+- Creating "flexible" APIs with unused parameters
+- Building generic frameworks for specific problems
+- Adding database fields "we might need"
+- Implementing unused configuration options
+- Creating abstractions with single implementations
 
 ### Deliberate Decoupling Standard
 
