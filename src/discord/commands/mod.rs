@@ -3,6 +3,7 @@ use serenity::{model::channel::Message, prelude::Context};
 use tracing::debug;
 
 pub mod admin;
+pub mod claude_agents;
 pub mod debug;
 pub mod debug_progress;
 pub mod help;
@@ -128,11 +129,33 @@ pub const AVAILABLE_COMMANDS: &[CommandInfo] = &[
         category: CommandCategory::Updates,
         requires_auth: true,
     },
+    // 🏗️ ARCHITECTURE DECISION: Dual command aliases for discoverability
+    // Why: Users might look for "agents" or "claude-agents"
+    // Alternative: Single command (rejected: reduces discoverability)
+    // Trade-off: Slight duplication in command list
+    // Audit: Both must route to same handler in CommandRouter::route_command
+    CommandInfo {
+        name: "agents",
+        prefix: "!spiral agents",
+        description: "List all available Claude validation and utility agents",
+        category: CommandCategory::General,
+        requires_auth: false,
+    },
+    CommandInfo {
+        name: "claude-agents",
+        prefix: "!spiral claude-agents",
+        description: "List all available Claude validation and utility agents",
+        category: CommandCategory::General,
+        requires_auth: false,
+    },
 ];
 
 /// Command router for handling all !spiral commands
+/// 📐 SOLID: Single Responsibility - Each command handler manages one concern
+/// 🔍 AUDIT CHECKPOINT: All commands must be registered here AND in AVAILABLE_COMMANDS
 pub struct CommandRouter {
     pub admin: admin::AdminCommand,
+    pub claude_agents: claude_agents::ClaudeAgentsCommand,
     pub debug: debug::DebugCommand,
     pub debug_progress: debug_progress::DebugProgressCommand,
     pub help: help::HelpCommand,
@@ -152,6 +175,7 @@ impl CommandRouter {
     pub fn new() -> Self {
         Self {
             admin: admin::AdminCommand::new(),
+            claude_agents: claude_agents::ClaudeAgentsCommand::new(),
             debug: debug::DebugCommand::new(),
             debug_progress: debug_progress::DebugProgressCommand::new(),
             help: help::HelpCommand::new(),
@@ -196,8 +220,14 @@ impl CommandRouter {
                 );
 
                 // Route to appropriate handler based on command name
+                // 🔄 DRY PATTERN: Command name to handler mapping
+                // Critical: This mapping must stay synchronized with AVAILABLE_COMMANDS
+                // Audit: Verify all commands in AVAILABLE_COMMANDS have handlers here
                 let result = match command_info.name {
                     "admin" => self.admin.handle(content, msg, ctx, bot).await,
+                    // 📐 SOLID: Both commands use same handler (DRY principle)
+                    "agents" => self.claude_agents.handle(content, msg, ctx, bot).await,
+                    "claude-agents" => self.claude_agents.handle(content, msg, ctx, bot).await,
                     "debug" => self.debug.handle(content, msg, ctx, bot).await,
                     "debug progress" => self.debug_progress.handle(content, msg, ctx, bot).await,
                     "help" => self.help.handle(content, msg, ctx, bot).await,

@@ -222,6 +222,7 @@ impl CommandHandler for SecurityCommand {
         _ctx: &Context,
         bot: &SpiralConstellationBot,
     ) -> Option<String> {
+        const SECURITY_BASE: &str = "!spiral security";
         const SECURITY_STATS: &str = "!spiral security stats";
         const SECURITY_REPORT: &str = "!spiral security report";
         const SECURITY_RESET: &str = "!spiral security reset";
@@ -254,6 +255,15 @@ impl CommandHandler for SecurityCommand {
                 );
                 bot.secure_message_handler.reset_security_metrics();
                 Some(self.generate_reset_confirmation(bot))
+            }
+            SECURITY_BASE => {
+                // Default to showing stats when just "!spiral security" is called
+                info!(
+                    "[SecurityCommand] Security stats (default) for admin {} ({})",
+                    msg.author.name,
+                    msg.author.id.get()
+                );
+                Some(self.generate_security_stats(bot))
             }
             _ => None,
         }

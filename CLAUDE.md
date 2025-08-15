@@ -74,6 +74,33 @@ Key components:
 - **Discord Bot Service**: Node.js/TypeScript for human interaction
 - **Specialized Agents**: Developer, Project Manager, QA, and more
 
+## 🚨 MANDATORY Development Practices
+
+**These practices are NON-NEGOTIABLE for all code changes:**
+
+### 1. 🏗️ Aggressive Proximity Audit Documentation
+
+- **EVERY significant decision must be documented WHERE IT HAPPENS**
+- Add audit markers directly in code: 🏗️ ARCHITECTURE, 🛡️ SECURITY, ⚡ PERFORMANCE
+- Document alternatives considered and trade-offs made
+- If someone would ask "why?", the answer must be in the code
+
+### 2. 🔧 Const Usage Requirements
+
+- **NO hardcoded strings that appear 3+ times**
+- Command patterns MUST use const definitions
+- API routes MUST use const definitions
+- Run const-usage-checker after EVERY change
+
+### 3. 📋 Pre-Completion Checklist
+
+- Run ALL validation steps (cargo test, check, fmt, clippy)
+- Verify proximity audit comments are present
+- Verify const usage for repeated strings
+- No placeholder/fake implementations
+
+**Failure to follow these practices = Task NOT complete**
+
 ## Development Commands
 
 For standard Rust development commands and practices, see [Coding Standards](docs/CODING_STANDARDS.md#standard-development-commands).
@@ -631,7 +658,24 @@ if response.success {
    - Error handling is explicit
    - No mock data or fake implementations
 
-5. **No Bullshit Code Verification** ⚠️ CRITICAL
+5. **🏗️ Aggressive Proximity Audit** 🆕 MANDATORY
+
+   - **Every significant decision must be documented AT THE POINT OF CODE**
+   - Use audit markers: 🏗️ ARCHITECTURE, 🛡️ SECURITY, ⚡ PERFORMANCE, 🔍 AUDIT, 🔄 DRY, 📐 SOLID
+   - Document: Why this approach? What alternatives were rejected? What are the trade-offs?
+   - If a reviewer would ask "why?", the answer must already be in a comment
+   - See [Audit Documentation Standard](docs/AUDIT_DOCUMENTATION_STANDARD.md)
+
+6. **🔧 Const Usage Verification** 🆕 MANDATORY
+
+   - **All repeated strings (3+ uses) must be extracted to const**
+   - Command patterns MUST use const (never hardcode "!spiral ...")
+   - API routes MUST use const definitions
+   - Error messages should be const for consistency
+   - Run const-usage-checker: `.claude/utility-agents/const-usage-checker.md`
+   - NO string literal should appear more than twice in the same file
+
+7. **No Bullshit Code Verification** ⚠️ CRITICAL
    - **No placeholder functions**: Every function actually does what its name suggests
    - **No fake status messages**: All status/success messages reflect real operations
    - **No pattern-matching assumptions**: Verified actual architecture, not assumed
@@ -647,6 +691,8 @@ if response.success {
 3. **Check Formatting** - `cargo fmt -- --check` (MUST be formatted)
 4. **Run Clippy** - `cargo clippy --all-targets` (NO errors allowed)
 5. **Verify Changes** - Manually verify your changes work as intended
+6. **Proximity Audit** - Verify critical decisions are documented in code
+7. **Const Check** - Verify no repeated string literals remain
 
 ## 📚 Discord Command Documentation
 

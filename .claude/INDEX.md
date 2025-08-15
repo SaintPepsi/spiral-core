@@ -57,7 +57,10 @@ General-purpose agents for various development tasks.
 |-------|------|---------|
 | Agent Validator | `utility-agents/agent-validator.md` | Validates agent prompt quality and structure |
 | Claude Improver | `utility-agents/claude-improver.md` | Improves code quality and refactoring |
+| Const Usage Checker | `utility-agents/const-usage-checker.md` | Ensures proper const usage after checklist completion |
 | Documentation Analyzer | `utility-agents/documentation-lean-analyzer.md` | Analyzes documentation for clarity and completeness |
+| DRY Analyzer | `utility-agents/dry-analyzer.md` | Detection and elimination of code duplication |
+| Package Updater | `utility-agents/package-updater-rust.md` | Rust dependency management and updates |
 
 ## Usage in Self-Update System
 
