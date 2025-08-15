@@ -1,7 +1,7 @@
 # Spiral Core Makefile
 # Provides consistent commands across all platforms
 
-.PHONY: help setup build test fmt lint clean start stop pre-commit
+.PHONY: help setup build test fmt lint clean start stop pre-commit validate analyze
 
 # Default target
 help:
@@ -11,6 +11,8 @@ help:
 	@echo "  make test       - Run all tests"
 	@echo "  make fmt        - Format code (Rust + Markdown)"
 	@echo "  make lint       - Run linting checks"
+	@echo "  make validate   - Run comprehensive quality validation (build, test, lint, fmt)"
+	@echo "  make analyze    - Run post-commit analysis agents"
 	@echo "  make clean      - Clean build artifacts"
 	@echo "  make start      - Start Spiral Core"
 	@echo "  make stop       - Stop Spiral Core"
@@ -20,6 +22,7 @@ help:
 setup:
 	@echo "🔧 Setting up Spiral Core development environment..."
 	@./scripts/setup-git-hooks.sh
+	@./scripts/setup-analysis-hooks.sh
 	@echo "✅ Setup complete!"
 
 # Build the project
@@ -41,6 +44,26 @@ fmt:
 lint:
 	cargo clippy --all-targets -- -D warnings
 	cargo fmt -- --check
+
+# Run comprehensive quality validation
+validate:
+	@./scripts/validate-quality.sh
+
+# Run post-commit analysis agents
+analyze:
+	@echo "🤖 Running post-commit analysis agents..."
+	@if [ ! -f ./target/release/spiral-analyze ] && [ ! -f ./target/debug/spiral-analyze ]; then \
+		echo "Building spiral-analyze binary..."; \
+		cargo build --bin spiral-analyze; \
+	fi
+	@if [ -f ./target/release/spiral-analyze ]; then \
+		./target/release/spiral-analyze; \
+	elif [ -f ./target/debug/spiral-analyze ]; then \
+		./target/debug/spiral-analyze; \
+	else \
+		echo "❌ Failed to build spiral-analyze binary"; \
+		exit 1; \
+	fi
 
 # Clean build artifacts
 clean:

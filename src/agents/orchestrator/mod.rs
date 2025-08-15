@@ -16,6 +16,14 @@ use tracing::{debug, error, info, warn};
 mod atomic_state;
 use atomic_state::AtomicTaskStateManager;
 
+// 🏗️ ARCHITECTURE DECISION: Modular service architecture
+// Why: Break up god object into focused, single-responsibility services
+// Alternative: Keep monolithic orchestrator (rejected: violates SOLID principles)
+pub mod agent_registry;
+pub mod result_store;
+pub mod status_manager;
+pub mod task_queue;
+
 #[derive(Clone)]
 pub struct AgentOrchestrator {
     agents: Arc<RwLock<HashMap<AgentType, Box<dyn Agent>>>>,
