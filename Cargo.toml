@@ -60,10 +60,6 @@ path = "src/bin/discord_bot.rs"
 name = "run_phase2"
 path = "src/bin/run_phase2.rs"
 
-[[bin]]
-name = "spiral-analyze"
-path = "src/bin/spiral-analyze.rs"
-
 # Feature flags control optional functionality and test configurations
 # These allow selective compilation of code based on cargo features
 [features]

@@ -26,8 +26,6 @@
 
 /// Agent orchestration and management
 pub mod agents;
-/// Read-only analysis agents for code quality
-pub mod analysis;
 /// HTTP API server and endpoints
 pub mod api;
 /// Authentication and authorization
